@@ -24,7 +24,7 @@ export type WeldRow = WeldInput & {
   groupPhysicalRoot?: { id: number; exists: boolean; replaced: boolean; wdi: number | null }
   chainContinuation?: JointChainContinuation
   earlyCoilDecisionAccepted?: boolean
-  preHeatTreatmentLnkEnabled?: boolean
+  preHeatTreatmentMode?: import('./pre-heat-treatment-policy').PreHeatTreatmentMode
   rowVersion?: string
   activeDispatcherTasks?: string
   duplicateControls?: DuplicateControlRecord[]
@@ -33,13 +33,15 @@ export type WeldRow = WeldInput & {
   jsrDocumentId?: number
   checklistDocumentId?: number
   zniDocumentId?: number
+  custom1DocumentId?: number
+  custom2DocumentId?: number
   layeredVikEdgesDocumentId?: number
   layeredVikLayersDocumentId?: number
   layeredPvkEdgesDocumentId?: number
   layeredPvkLayersDocumentId?: number
   systemDocumentIds?: Partial<Record<WeldFieldKey, number>>
 }
-export type WeldDraft = WeldInput & { id?: number }
+export type WeldDraft = WeldInput & { id?: number; preHeatTreatmentConfirmation?: import('./pre-heat-treatment-change').PreHeatTreatmentConfirmation; chainActualityConfirmation?: import('./chain-actuality').ChainActualityConfirmation }
 
 export type RepeatedJointCreateTask = {
   kind: 'create'

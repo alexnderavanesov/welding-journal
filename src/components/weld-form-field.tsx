@@ -1,10 +1,14 @@
 import { getControlPairAssignmentIssues } from '@/lib/control-pair-assignment'
+import { ConfirmActionDialog } from '@/components/confirm-action-dialog'
+import { getAssignmentWarning, type AssignmentWarning } from '@/lib/assignment-warnings'
+import { loadAssignmentWarningSettings } from '@/lib/assignment-warning-settings'
 import { FileText } from 'lucide-react'
 import { isTConnectionType } from '@/lib/connection-type'
 import { isSupportRepair, SUPPORT_REPAIR_LENGTH_REASON } from '@/lib/support-weld-length'
 import { memo, useEffect, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { WeldFormActualityField } from './weld-form-actuality-field'
 import { WeldFormConnectionTypeField } from '@/components/weld-form-connection-type-field'
 import { WeldFormMaterialGroupField } from '@/components/weld-form-material-group-field'
 import { WeldFormMaterialGroupHelp } from '@/components/weld-form-material-group-help'
@@ -58,6 +62,7 @@ type WeldFormFieldProps = {
   setDraft: Dispatch<SetStateAction<WeldInput>>
   hideLabel?: boolean
   controlPickerLayout?: 'grid' | 'row'
+  allowTechnologyCardAutoAssignment?: boolean
 }
 
 function WeldFormFieldComponent({
@@ -71,7 +76,19 @@ function WeldFormFieldComponent({
   setDraft,
   hideLabel = false,
   controlPickerLayout = 'grid',
+  allowTechnologyCardAutoAssignment = false,
 }: WeldFormFieldProps) {
+  const [pendingAssignment, setPendingAssignment] = useState<{ value: string | boolean; warning: AssignmentWarning; source: WeldInput } | null>(null)
+  const finishAssignmentWarning = (confirmed: boolean) => {
+    if (!pendingAssignment) return
+    const pending = pendingAssignment
+    setPendingAssignment(null)
+    setDraft(current => {
+      // Keep unrelated edits, and never apply a confirmation to changed inputs.
+      if ([field.key, 'id', 'connectionType', 'd1', 'd2'].some(key => current[key as WeldFieldKey] !== pending.source[key as WeldFieldKey])) return current
+      return { ...current, [field.key]: confirmed ? pending.value : null }
+    })
+  }
   const stampOptions = stampSelectOptions?.[field.key]
   const stampValue = stampOptions ? getStampSelectValue(draft[field.key]) : ''
   const label = hideLabel ? null : ['weldingMethod', 'connectionType', 'materialGroup'].includes(field.key)
@@ -89,8 +106,12 @@ function WeldFormFieldComponent({
   }
   return (
     <div className={cn('space-y-1.5 text-sm', field.key === 'weldingJournalNote' && 'col-span-full min-w-0')}>
+      {pendingAssignment ? <ConfirmActionDialog title="Подтвердить назначение контроля" tone="warning"
+        itemName={pendingAssignment.warning.detail} description={pendingAssignment.warning.text}
+        confirmLabel="Да, назначить" cancelLabel="Нет, оставить пусто"
+        onConfirm={() => finishAssignmentWarning(true)} onClose={() => finishAssignmentWarning(false)} /> : null}
       {label}
-      {field.key === 'technologyCardNumber' ? <WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /> : stampOptions ? (
+      {field.key === 'revisionActuality' ? <WeldFormActualityField draft={draft} setDraft={setDraft} inputRef={element => { fieldRefs.current[field.key] = element }} /> : field.key === 'technologyCardNumber' ? <WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} allowAutoAssignment={allowTechnologyCardAutoAssignment} /> : stampOptions ? (
         <Select
           searchable
           aria-label={field.label}
@@ -176,22 +197,6 @@ function WeldFormFieldComponent({
             }))
           }
         />
-      ) : field.key === 'revisionActuality' ? (
-        <Select
-          ref={(element) => {
-            fieldRefs.current[field.key] = element
-          }}
-          value={String(draft[field.key] ?? '')}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              [field.key]: event.target.value || null,
-            }))
-          }
-        >
-          <option value="">Пусто</option>
-          <option value="не актуален">не актуален</option>
-        </Select>
       ) : RESULT_FIELD_KEYS.has(field.key) ? (
         <Select
           ref={(element) => {
@@ -225,21 +230,13 @@ function WeldFormFieldComponent({
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
           }}
-          onChange={(value) =>
-            setDraft((current) => ({
-              ...current,
-              [field.key]:
-                value === 'yes'
-                  ? field.kind === 'boolean'
-                    ? true
-                    : 'да'
-                  : value === 'additional'
-                      ? 'дополнительный'
-                      : value === 'cancelled'
-                        ? 'отменен'
-                        : null,
-            }))
-          }
+          onChange={(value) => {
+            const nextValue = value === 'yes' ? field.kind === 'boolean' ? true : 'да'
+              : value === 'additional' ? 'дополнительный' : value === 'cancelled' ? 'отменен' : null
+            const warning = getAssignmentWarning(draft, field.key, nextValue, loadAssignmentWarningSettings())
+            if (warning && nextValue !== null) setPendingAssignment({ value: nextValue, warning, source: draft })
+            else setDraft(current => ({ ...current, [field.key]: nextValue }))
+          }}
           onBasisChange={(value) => {
             const basisField = getControlBasisFieldByAssignmentKey(field.key)
             if (!basisField) return
@@ -282,6 +279,7 @@ function WeldFormFieldComponent({
 }
 
 export const WeldFormField = memo(WeldFormFieldComponent, areWeldFormFieldPropsEqual)
+export { FreeTextField as WeldFormFreeTextField }
 
 function getTextDraftValue(value: WeldInput[WeldFieldKey]) {
   return typeof value === 'string' ? value : null
@@ -530,6 +528,7 @@ function ControlAvailabilityPicker({
               type="button"
               disabled={option.disabled}
               aria-label={option.label}
+              aria-pressed={active}
               onClick={() => {
                 if (!option.disabled) onChange(option.value)
               }}
@@ -667,6 +666,8 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
     previous.setDraft !== next.setDraft ||
     previous.hideLabel !== next.hideLabel ||
     previous.controlPickerLayout !== next.controlPickerLayout ||
+    previous.allowTechnologyCardAutoAssignment !== next.allowTechnologyCardAutoAssignment ||
+    (['hasRk', 'hasUzk'].includes(previous.field.key) && ['id', 'connectionType', 'd1', 'd2'].some(key => previous.draft[key as WeldFieldKey] !== next.draft[key as WeldFieldKey])) ||
     JSON.stringify(getAssignmentOptionReasons(previous.draft, previous.field.key)) !== JSON.stringify(getAssignmentOptionReasons(next.draft, next.field.key)) ||
     getRepairRequiredReason(previous.draft, previous.field.key) !== getRepairRequiredReason(next.draft, next.field.key) ||
     getAssignmentRemovalReason(previous.draft, previous.field.key) !== getAssignmentRemovalReason(next.draft, next.field.key) ||
@@ -684,6 +685,8 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
   }
 
   if (getReadOnlyReason(next.field.key, next.draft)) return true
+
+  if (next.field.key === 'technologyCardNumber') return previous.draft === next.draft
 
   if (previous.field.key === 'finalStatus') {
     return calculateFinalStatus(previous.draft) === calculateFinalStatus(next.draft)

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from '@tanstack/react-router'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
 import {
   ClientSideRowModelModule, ClientSideRowModelApiModule, ColumnApiModule, CustomFilterModule, QuickFilterModule,
@@ -15,7 +16,7 @@ import { useProgramPageScroll } from './line-program-page-scroll'
 import { positionGridPopup } from './grid-popup-position'
 import { CONNECTION_RULES, SUPPORT_CONNECTION_RULES_PENDING, connectionRuleSpan, type ConnectionRule } from '@/lib/connection-rules'
 import { CONNECTION_RULE_NOTES } from '@/lib/connection-rule-notes'
-import { CHECK_PARAMETERS_HREF, getSystemRulesSection, type SystemRulesSection } from '@/lib/reference-navigation'
+import { ASSIGNMENT_WARNINGS_HREF, CHECK_PARAMETERS_HREF, getSystemRulesSection, type SystemRulesSection } from '@/lib/reference-navigation'
 import './system-rules-page.css'
 
 const MODULES = [ClientSideRowModelModule, ClientSideRowModelApiModule, ColumnApiModule, CustomFilterModule, QuickFilterModule,
@@ -41,12 +42,20 @@ const DEFAULT_COLUMN: ColDef<ConnectionRule> = {
   minWidth: 220, flex: 1, cellDataType: false, cellClass: 'connection-rule-cell',
 }
 
-function RuleValue({ data, value }: ICellRendererParams<ConnectionRule>) {
+const RULE_LINK_CLASS = 'text-sky-700 underline decoration-sky-300 underline-offset-2 outline-none hover:text-sky-900 focus-visible:ring-2 focus-visible:ring-sky-400'
+
+function RuleValue({ data, value, colDef }: ICellRendererParams<ConnectionRule>) {
   if (data?.checkParametersLink) return <a href={CHECK_PARAMETERS_HREF} className="connection-rule-text text-sky-700 underline decoration-sky-300 underline-offset-2 outline-none hover:text-sky-900 focus-visible:ring-2 focus-visible:ring-sky-400">Параметры проверки</a>
+  const field = colDef?.field
+  if (field && data?.assignmentWarningColumns?.some(column => column === field)) {
+    const text = String(value ?? ''), label = 'с предупреждением', index = text.indexOf(label)
+    if (index >= 0) return <span className="connection-rule-text">{text.slice(0, index)}<a href={ASSIGNMENT_WARNINGS_HREF} className={RULE_LINK_CLASS} title="Открыть настройки предупреждений">{label}</a>{text.slice(index + label.length)}</span>
+  }
   return <span className="connection-rule-text">{value}</span>
 }
 
 export function SystemRulesPage() {
+  const router = useRouter({ warn: false })
   const [section, setSection] = useState(() => getSystemRulesSection(window.location.search))
   const [visited, setVisited] = useState<SystemRulesSection[]>([section])
   const show = useCallback((next: SystemRulesSection) => {
@@ -62,28 +71,45 @@ export function SystemRulesPage() {
     show(next)
     const url = new URL(window.location.href)
     url.pathname = '/account'; url.searchParams.set('tab', 'rules'); url.searchParams.set('section', next)
-    if (url.href !== window.location.href) window.history.pushState(window.history.state, '', url)
+    if (url.href !== window.location.href) {
+      // A tab change keeps the page and our newly focused tab in place.
+      // Raw pushState lets route restoration overwrite the strip's scrollLeft.
+      if (router) void router.navigate({ href: url.pathname + url.search + url.hash, resetScroll: false })
+      else window.history.pushState(window.history.state, '', url)
+    }
   }
-  const tabs = [{ id: 'connections', label: 'Соединения' }, { id: 'checks', label: 'Параметры проверки' }] as const
+  const tabs = [{ id: 'connections', label: 'Соединения' }, { id: 'checks', label: 'Параметры проверки' }, { id: 'assignments', label: 'Назначения и расчёты' }] as const
   return <section className="min-w-0 space-y-4" aria-label="Правила системы">
-    <div role="tablist" aria-label="Разделы правил системы" className={`flex h-14 overflow-x-auto border-b border-slate-200 bg-slate-50 ${section === 'checks' ? 'sticky top-0 z-30' : ''}`}>
+    <div role="tablist" aria-label="Разделы правил системы" className={`flex h-14 overflow-x-auto border-b border-slate-200 bg-slate-50 ${section !== 'connections' ? 'sticky top-0 z-30' : ''}`}>
       {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" aria-selected={section === tab.id} tabIndex={section === tab.id ? 0 : -1}
         id={`system-rules-tab-${tab.id}`} aria-controls={`system-rules-panel-${tab.id}`} onClick={() => select(tab.id)}
         onKeyDown={event => {
           const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
-            : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? 1 - index : undefined
+            : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+            : event.key === 'ArrowRight' ? (index + 1) % tabs.length : undefined
           if (next == null) return
           event.preventDefault(); select(tabs[next].id)
-          document.getElementById(`system-rules-tab-${tabs[next].id}`)?.focus({ preventScroll: true })
+          const selectedTab = document.getElementById(`system-rules-tab-${tabs[next].id}`)
+          selectedTab?.focus({ preventScroll: true })
+          const strip = selectedTab?.parentElement
+          if (selectedTab && strip) {
+            const tabBounds = selectedTab.getBoundingClientRect(), stripBounds = strip.getBoundingClientRect()
+            // Move only the tab strip; scrolling all ancestors can move the
+            // sticky strip again when the newly selected panel changes height.
+            strip.scrollLeft += tabBounds.left < stripBounds.left ? tabBounds.left - stripBounds.left
+              : tabBounds.right > stripBounds.right ? tabBounds.right - stripBounds.right : 0
+          }
         }}
         className={`shrink-0 border-b-2 px-3 py-3 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-4 sm:text-sm ${section === tab.id ? 'border-sky-600 text-sky-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>)}
     </div>
     {tabs.map(tab => <div key={tab.id} role="tabpanel" id={`system-rules-panel-${tab.id}`} aria-labelledby={`system-rules-tab-${tab.id}`} hidden={section !== tab.id}>
       {visited.includes(tab.id) ? tab.id === 'connections' ? <ConnectionRulesTable active={section === tab.id} />
-        : <Suspense fallback={<p className="p-6 text-sm text-slate-500">Загрузка…</p>}><CheckParameters /></Suspense> : null}
+        : <Suspense fallback={<p className="p-6 text-sm text-slate-500">Загрузка…</p>}>{tab.id === 'checks' ? <CheckParameters /> : <AssignmentCalculationRules />}</Suspense> : null}
     </div>)}
   </section>
 }
+
+const AssignmentCalculationRules = lazy(() => import('./assignment-calculation-rules').then(module => ({ default: module.AssignmentCalculationRules })))
 
 const CheckParameters = lazy(() => import('./welder-stamp-check-parameters').then(module => ({ default: module.WelderStampCheckParameters })))
 

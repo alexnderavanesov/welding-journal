@@ -118,14 +118,14 @@ describe('pre-heat-treatment control updates', () => {
     })).toThrow('УЗК не назначен')
   })
 
-  it('allows historical pre-TO completion after performed PSTO is cancelled', () => {
-    expect(canCreatePreHeatTreatmentRequest(makeRow({
+  it('does not offer new preliminary work after PSTO cancellation', () => {
+    expect(canCreatePreHeatTreatmentRequest(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoResult: 'проведено',
       preHeatTreatmentControls: [],
-    }), 'ВИК')).toBe(true)
+    }), 'ВИК')).toBe(false)
 
-    expect(canCreatePreHeatTreatmentRequest(makeRow({
+    expect(canCreatePreHeatTreatmentRequest(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoResult: null,
       pstoDate: null,
@@ -462,7 +462,7 @@ describe('pre-heat-treatment control updates', () => {
 })
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1,
     joint: 'F1',
     weldDate: '2026-08-01',

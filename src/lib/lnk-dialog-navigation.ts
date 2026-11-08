@@ -1,4 +1,4 @@
-import { startTransition } from 'react'
+import { startTransition, useEffect, useRef } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
 import { getLnkResultNavigationEntry } from '@/lib/lnk-result-navigation'
@@ -20,6 +20,7 @@ import type { useLnkResultActions } from '@/lib/use-lnk-result-actions'
 import type { useManagedLnkResultActions } from '@/lib/use-managed-lnk-result-actions'
 
 type LnkDialogNavigationOptions = Pick<ReturnType<typeof useHomeLnkController>,
+  | 'preHeatTreatmentLnkWorkflowMode'
   | 'preHeatTreatmentResultManagerMode'
   | 'preHeatTreatmentResultManagerRowIds'
   | 'setIsPreHeatTreatmentResultManagerOpen'
@@ -40,7 +41,7 @@ type LnkDialogNavigationOptions = Pick<ReturnType<typeof useHomeLnkController>,
   Pick<ReturnType<typeof useLnkResultActions>, 'openAddLnkResultModal' | 'openAddLnkResultModalForRow' | 'openAddLnkResultModalForRows'> &
   Pick<ReturnType<typeof useManagedLnkResultActions>, 'closeLnkResultManager' | 'openLnkResultManager'> & {
   closePreHeatTreatmentResultRegistryState: ReturnType<typeof useHomeLnkController>['closePreHeatTreatmentResultRegistry']
-  controlProcessSettings: { preHeatTreatmentLnkEnabled: boolean }
+  controlProcessSettings: { preHeatTreatmentMode: import('./pre-heat-treatment-policy').PreHeatTreatmentMode }
   lnkRows: WeldRow[]
   openLnkRequestRegistry: () => void
   preHeatTreatmentResultCorrectionMutation: { isPending: boolean }
@@ -49,7 +50,8 @@ type LnkDialogNavigationOptions = Pick<ReturnType<typeof useHomeLnkController>,
   canLeaveResultEditor?: () => boolean
 }
 
-export function createLnkDialogNavigation({
+export function useLnkDialogNavigation({
+  preHeatTreatmentLnkWorkflowMode,
   preHeatTreatmentResultManagerMode,
   preHeatTreatmentResultManagerRowIds,
   setIsPreHeatTreatmentResultManagerOpen,
@@ -79,6 +81,10 @@ export function createLnkDialogNavigation({
   setSelectedLnkIds,
   canLeaveResultEditor = () => true,
 }: LnkDialogNavigationOptions) {
+  const primarySelection = useRef<WeldRow[]>([])
+  useEffect(() => {
+    if (!preHeatTreatmentLnkWorkflowMode) primarySelection.current = []
+  }, [preHeatTreatmentLnkWorkflowMode])
   const openAllLnkResultRegistry = () => {
     if (!canLeaveResultEditor()) return
     setLnkResultRegistrySearch('')
@@ -132,15 +138,17 @@ export function createLnkDialogNavigation({
     requestSubmitMode: LnkRequestComposerMode = 'create',
   ) => {
     if (!canLeaveResultEditor()) return
-    const selectedRows = lnkRows.filter((row) => selectedRowIds.includes(row.id))
-    if (
-      stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE &&
-      !controlProcessSettings.preHeatTreatmentLnkEnabled
-    ) {
-      setMessage('НК до ТО выключен в настройках проекта.')
-      return
+    const selectedIds = new Set(selectedRowIds)
+    let selectedRows = lnkRows.filter(row => selectedIds.has(row.id))
+    if (stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
+      primarySelection.current = selectedRows
+    } else if (primarySelection.current.length) {
+      const byId = new Map(primarySelection.current.map(row => [row.id, row]))
+      for (const row of selectedRows) byId.set(row.id, row)
+      selectedRows = [...byId.values()]
+      primarySelection.current = []
+      setSelectedLnkIds(new Set(byId.keys()))
     }
-
     startTransition(() => {
       if (stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
         if (selectedRowIds.length > 0) setSelectedLnkIds(new Set(selectedRowIds))

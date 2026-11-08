@@ -8,11 +8,18 @@ import { lnkActionRow } from './lnk-grid-helpers'
 const SOURCE_JOINT = 'F5'
 const SECOND_JOINT = 'F6'
 const PROJECT = 'E2E точное исправление'
+let namingSettings: { value: string; updated_at: Date } | undefined
 
-test.beforeEach(async () => { await cleanupLineProgramProjects([PROJECT]) })
+test.beforeEach(async () => {
+  await cleanupLineProgramProjects([PROJECT])
+  namingSettings = await withE2eDatabase(async db => (await db.query("select value,updated_at from app_settings where key='request-conclusion'")).rows[0])
+})
 test.afterEach(async ({ context }) => {
   await Promise.all(context.pages().map(page => page.close()))
   await cleanupLineProgramProjects([PROJECT])
+  await withE2eDatabase(db => namingSettings
+    ? db.query("update app_settings set value=$1,updated_at=$2 where key='request-conclusion'", [namingSettings.value, namingSettings.updated_at])
+    : db.query("delete from app_settings where key='request-conclusion'"))
 })
 
 test('точное исправление ZV возвращает черновик и меняет дату всего документа атомарно', async ({ page }) => {
@@ -49,6 +56,9 @@ test('точное исправление ZV возвращает чернови
   await page.getByRole('checkbox', { name: `Выбрать стык E2E-ROOT-L1 ${SECOND_JOINT}`, exact: true }).click()
   await requestDate.fill('2026-08-09')
   await expect(page.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeHidden()
+  // This scenario needs one shared request, independently of the last saved
+  // split preference from other document workflows.
+  await page.getByRole('combobox', { name: 'Разделение документов', exact: true }).selectOption('line')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeHidden()
 

@@ -1,7 +1,7 @@
 import { isControlEnabledValue, isControlCancelledValue } from '@/lib/control-availability-values'
 import { getControlWorkflowAccess } from './control-workflow-access'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
+import { isPreHeatTreatmentStageEnabled, isPreHeatTreatmentApplicable, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getLnkMethodFamilyBlockReason } from './lnk-method-family'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -79,13 +79,8 @@ export type PrimaryLnkStageAccess = {
 
 type PrimaryLnkStageAccessSettings = Pick<
   ControlProcessSettings,
-  'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'
+  'preHeatTreatmentMode'
 >
-
-const STRICT_PRIMARY_LNK_STAGE_SETTINGS: PrimaryLnkStageAccessSettings = {
-  preHeatTreatmentLnkEnabled: true,
-  allowPrimaryLnkBeforePreviousStagesComplete: false,
-}
 
 const PRE_HEAT_TREATMENT_METHOD_CODES = new Set<string>(
   PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => method.code),
@@ -118,7 +113,7 @@ export function requiresPreHeatTreatmentLnk(row: PreHeatTreatmentPolicyRow) {
 }
 
 export function isPreHeatTreatmentLnkAvailable(row: WeldInput) {
-  return isPreHeatTreatmentStageEnabled(row) && requiresHeatTreatmentStagedLnk(row)
+  return getControlWorkflowAccess(row)?.preHeatTreatmentApplicable ?? isPreHeatTreatmentApplicable(row)
 }
 
 export function requiresHeatTreatmentStagedLnk(row: WeldInput) {
@@ -133,7 +128,6 @@ export function getPreHeatTreatmentControls(row: WeldInput) {
 
 export function getPreHeatTreatmentHistoryNote(row: WeldInput): string | undefined {
   if (getPreHeatTreatmentControls(row).length === 0) return undefined
-  if (!isPreHeatTreatmentStageEnabled(row)) return 'История: НК до ТО выключен, в расчёте не учитывается.'
   if (!isPreHeatTreatmentLnkAvailable(row)) return 'Сохранённая история. На текущей линии этап не предусмотрен. Заявки и заключения доступны для просмотра и отдельного исправления; основной этап ими автоматически не закрывается. Негодный результат сохраняет силу.'
   return undefined
 }
@@ -150,9 +144,7 @@ export function getPreHeatTreatmentControl(
 export function getRejectedPreHeatTreatmentControls(
   row: WeldInput,
 ): RejectedPreHeatTreatmentControl[] {
-  // A changed line removes future stage requirements, not an already recorded
-  // rejection. The separately agreed global switch still suspends this stage.
-  if (!isPreHeatTreatmentStageEnabled(row)) return []
+  // Applicability never erases a factual historical rejection.
 
   return getPreHeatTreatmentControls(row).flatMap((control) => {
     const methodCode = normalizeMethodCode(control.method)
@@ -194,8 +186,8 @@ export function getPreHeatTreatmentPendingFinalStatus(row: WeldInput) {
     }
     if (normalizeResult(control?.result) !== 'годен') hasPendingResult = true
   }
-  if (hasMissingRequest) return 'ожидает заявку' as const
-  if (hasPendingResult) return 'ожидает НК' as const
+  if (hasMissingRequest) return 'ожидает заявку до ТО' as const
+  if (hasPendingResult) return 'ожидает НК до ТО' as const
   return null
 }
 
@@ -230,7 +222,6 @@ export function getPrimaryPstoStartPrerequisites(row: WeldInput) {
   const projected = getControlWorkflowAccess(row)?.pstoPrerequisites
   if (projected) return projected
   const empty = { rejected: [] as string[], missingRequests: [] as string[], pendingResults: [] as string[] }
-  if (!isPreHeatTreatmentStageEnabled(row)) return empty
   empty.rejected = getRejectedPreHeatTreatmentControls(row).map(({ methodCode }) => methodCode)
   if (empty.rejected.length > 0 || !isControlEnabledValue(row.pstoRequired) || !requiresPreHeatTreatmentLnk(row)) return empty
   const requiredMethods = PRE_HEAT_TREATMENT_LNK_METHODS.filter((method) =>
@@ -270,13 +261,7 @@ export function getPrimaryLnkStageAccess(
   methodCode: string,
   settings?: PrimaryLnkStageAccessSettings,
 ): PrimaryLnkStageAccess {
-  const effectiveSettings = settings ?? {
-    ...STRICT_PRIMARY_LNK_STAGE_SETTINGS,
-    preHeatTreatmentLnkEnabled: isPreHeatTreatmentStageEnabled(row),
-  }
-  if (effectiveSettings.preHeatTreatmentLnkEnabled !== isPreHeatTreatmentStageEnabled(row)) {
-    row = { ...row, preHeatTreatmentLnkEnabled: effectiveSettings.preHeatTreatmentLnkEnabled } as WeldInput
-  }
+  if (settings) row = { ...row, preHeatTreatmentMode: settings.preHeatTreatmentMode }
   const normalizedMethod = normalizeMethodCode(methodCode)
   if (!isPreHeatTreatmentLnkMethodCode(normalizedMethod)) {
     return { status: 'ready', reason: '', debt: null }
@@ -289,10 +274,8 @@ export function getPrimaryLnkStageAccess(
   const debt = getPrimaryLnkStageDebt(row, normalizedMethod)
   if (!debt) return { status: 'ready', reason: '', debt: null }
 
-  const permissive = effectiveSettings.preHeatTreatmentLnkEnabled &&
-    effectiveSettings.allowPrimaryLnkBeforePreviousStagesComplete
   return {
-    status: permissive ? 'allowed-with-warning' : 'blocked',
+    status: 'allowed-with-warning',
     reason: debt.reason,
     debt,
   }
@@ -348,9 +331,7 @@ export function getPrimaryLnkRequestAccess(
 ): { status: 'ready' | 'blocked'; reason: string; debt: null } {
   const familyReason = getLnkMethodFamilyBlockReason(row, methodCode)
   if (familyReason) return { status: 'blocked', reason: familyReason, debt: null }
-  if (settings && settings.preHeatTreatmentLnkEnabled !== isPreHeatTreatmentStageEnabled(row)) {
-    row = { ...row, preHeatTreatmentLnkEnabled: settings.preHeatTreatmentLnkEnabled } as WeldInput
-  }
+  if (settings) row = { ...row, preHeatTreatmentMode: settings.preHeatTreatmentMode }
   const rejected = isPreHeatTreatmentLnkMethodCode(methodCode)
     ? getRejectedPreHeatTreatmentControls(row).map(({ methodCode: code }) => code)
     : []

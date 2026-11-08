@@ -3,6 +3,13 @@
 @tailwind utilities;
 
 @layer components {
+  /* Document titles are not contact names; Safari must not cover them with its contact picker. */
+  .document-template-title-input::-webkit-contacts-auto-fill-button {
+    display: none !important;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   .stamp-check-rules-container {
     container: stamp-check-rules / inline-size;
   }

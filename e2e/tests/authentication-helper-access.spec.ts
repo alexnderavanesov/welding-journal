@@ -9,7 +9,8 @@ import { changeCard } from '../../src/server/technology-cards'
 import * as XLSX from 'xlsx'
 import { saveRemoteDocumentTemplate } from '../../src/server/document-templates'
 import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
-import { deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
+import { deserializeRpcHttpResponse, deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
+import { loadProgramRows } from '../../src/lib/line-program-row-stream'
 
 test.beforeEach(resetE2eAccountFixtureLimits)
 
@@ -195,7 +196,12 @@ test('own-domain reads preserve line settings, statistics and reference history 
     expect(program.rows[0]).toMatchObject({ groupName: 'Б(а)', category: 'II', weldControlPercent: 30, pvkControlPercent: 10 })
     const calculation = await call('getLineProgramCalculation', { id: lineId })
     expect(calculation.line).toMatchObject({ weldControlPercent: 30, pvkControlPercent: 10 })
-    const joints = await call('getLineProgramJointPage', { id: lineId })
+    const jointUrl = new URL(siblingRpcUrl(observed, 'getLineProgramJointPage_createServerFn_handler'))
+    jointUrl.searchParams.set('payload', await serializeRpcData({ id: lineId }))
+    const jointResponse = await context.request.get(jointUrl.href, { headers: { origin: baseURL!, 'sec-fetch-site': 'same-origin', 'x-tsr-serverFn': 'true' } })
+    const jointPayload = await deserializeRpcHttpResponse(new Response(Uint8Array.from(await jointResponse.body()), { status: jointResponse.status(), headers: jointResponse.headers() })) as { result?: any; error?: Error }
+    expect(jointPayload.error).toBeUndefined()
+    const joints = await loadProgramRows(async () => jointPayload.result)
     expect(JSON.stringify(joints)).not.toContain('PRIVATE-')
     const statistics = await call('getStatisticsServerResult', { tab: 'lineSummary', from: '', to: '', unit: 'joints', projectFilter: '', selectedSubtitles: [], jointFilter: 'all' }, 'POST')
     expect(statistics.lineSummary.rows.find((row: any) => row.projectTitle === project)).toMatchObject({ line: 'L1', subtitleCode: 'A', total: 1 })

@@ -118,6 +118,7 @@ export async function syncLayeredControlDocumentsForWeldChangesInTransaction(
   tx: GeneratedDocumentsTransaction,
   currentRows: LayeredRow[],
   previousRows: ReadonlyMap<number, LayeredRow>,
+  options: { refreshTitlesOnly?: boolean } = {},
 ) {
   const requestedIds = [...new Set(currentRows.map((row) => Number(row.id)).filter(Number.isInteger))]
     .sort((left, right) => left - right)
@@ -129,7 +130,7 @@ export async function syncLayeredControlDocumentsForWeldChangesInTransaction(
   for (let offset = 0; offset < requestedIds.length; offset += 5000) {
     const persistedRows = await tx.select().from(weldJoints)
       .where(buildNumberArrayMatch(weldJoints.id, requestedIds.slice(offset, offset + 5000)))
-    await syncLayeredControlRowsInTransaction(tx, persistedRows, previousRows, { allowCreate: true })
+    await syncLayeredControlRowsInTransaction(tx, persistedRows, previousRows, { allowCreate: !options.refreshTitlesOnly, refreshTitlesOnly: options.refreshTitlesOnly })
   }
 }
 
@@ -183,7 +184,7 @@ async function syncLayeredControlRowsInTransaction(
   tx: GeneratedDocumentsTransaction,
   rows: LayeredRow[],
   previousRows: ReadonlyMap<number, LayeredRow>,
-  { allowCreate }: { allowCreate: boolean },
+  { allowCreate, refreshTitlesOnly = false }: { allowCreate: boolean; refreshTitlesOnly?: boolean },
 ) {
   if (rows.length === 0) return
   const rowIds = rows.map((row) => Number(row.id))
@@ -215,7 +216,7 @@ async function syncLayeredControlRowsInTransaction(
   const duplicateAssignments: Array<{ documentId: number; weldJointId: number }> = []
   for (const row of rows) {
     const methodsWithDocuments = [...(assignedMethodsByRow.get(row.id) ?? [])]
-    const guardError = getLayeredControlHistoryGuardError({
+    const guardError = !refreshTitlesOnly && getLayeredControlHistoryGuardError({
       previous: previousRows.get(row.id),
       current: row,
       methodsWithDocuments,
@@ -229,14 +230,24 @@ async function syncLayeredControlRowsInTransaction(
       const candidates = assignmentsByRowAndType.get(assignmentKey(row.id, type)) ?? []
       const existing = candidates[0]
       if (!existing && (!allowCreate || !requiredTypes.has(type))) continue
+      // A journal annotation cannot start/repair a workflow or rewrite its
+      // historical metadata. Only a configured title using the edited field
+      // needs refreshing; existing assignments and numbers remain intact.
+      const nameConfig = templateNameConfigs.get(type)
+      if (refreshTitlesOnly && !nameConfig?.parts.some(part => part.type === 'field' && part.field &&
+        row[part.field as keyof LayeredRow] !== previousRow?.[part.field as keyof LayeredRow])) continue
 
-      const documentNumber = existing?.documentNumber ?? (await getSequence(type)).take()
+      // Do not allocate/backfill a historical number during an annotation.
+      // A damaged numbered title can be repaired by its dedicated workflow.
+      if (refreshTitlesOnly && existing?.documentNumber == null &&
+        nameConfig?.parts.some(part => part.type === 'field' && part.field === '__documentNumber')) continue
+      const documentNumber = existing?.documentNumber ?? (refreshTitlesOnly ? 0 : (await getSequence(type)).take())
       const title = buildLayeredControlDocumentTitle({
         type,
         row,
         documentNumber,
         formedAt: existing?.createdAt ?? new Date(),
-        nameConfig: templateNameConfigs.get(type),
+        nameConfig,
       })
       const date = normalizeLayeredControlDate(row.weldDate)
       const fileName = makeXlsxFileName(title)
@@ -247,30 +258,44 @@ async function syncLayeredControlRowsInTransaction(
         targetDocumentId: existing?.documentId ?? null,
         title,
         fileName,
-        mimeType: XLSX_MIME_TYPE,
-        periodFrom: date,
-        periodTo: date,
-        rowCount: 1,
-        wdiTotal,
+        mimeType: refreshTitlesOnly ? existing!.mimeType : XLSX_MIME_TYPE,
+        periodFrom: refreshTitlesOnly ? existing!.periodFrom : date,
+        periodTo: refreshTitlesOnly ? existing!.periodTo : date,
+        rowCount: refreshTitlesOnly ? existing!.rowCount : 1,
+        wdiTotal: refreshTitlesOnly ? Number(existing!.wdiTotal ?? 0) : wdiTotal,
         documentNumber,
         shouldUpdate: Boolean(existing && (
           existing.title !== title ||
           existing.fileName !== fileName ||
-          existing.mimeType !== XLSX_MIME_TYPE ||
+          !refreshTitlesOnly && (existing.mimeType !== XLSX_MIME_TYPE ||
           existing.periodFrom !== date ||
           existing.periodTo !== date ||
           existing.rowCount !== 1 ||
           Number(existing.wdiTotal ?? 0) !== wdiTotal ||
-          existing.documentNumber !== documentNumber
+          existing.documentNumber !== documentNumber)
         )),
       })
-      duplicateAssignments.push(...candidates.slice(1).map((duplicate) => ({
+      if (!refreshTitlesOnly) duplicateAssignments.push(...candidates.slice(1).map((duplicate) => ({
         documentId: duplicate.documentId,
         weldJointId: duplicate.weldJointId,
       })))
     }
   }
 
+  if (refreshTitlesOnly) {
+    const changed = writes.filter(write => write.targetDocumentId != null && write.shouldUpdate)
+    if (changed.length) await auditSql(tx, [{ table: generatedDocuments,
+      where: buildNumberArrayMatch(generatedDocuments.id, changed.map(write => write.targetDocumentId!)),
+    }], () => tx.execute(sql`
+      update ${generatedDocuments} as document
+      set title = refreshed.title, file_name = refreshed.file_name, updated_at = ${new Date()}
+      from unnest(${sql.param(changed.map(write => write.targetDocumentId!))}::integer[],
+        ${sql.param(changed.map(write => write.title))}::text[],
+        ${sql.param(changed.map(write => write.fileName))}::text[]) as refreshed(id, title, file_name)
+      where document.id = refreshed.id
+    `))
+    return
+  }
   await persistLayeredControlDocumentWrites(tx, writes, duplicateAssignments)
   for (const sequence of sequences.values()) await sequence.persist()
 }

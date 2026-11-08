@@ -131,8 +131,8 @@ describe('welding journal import template', () => {
     if (!lnkNoteField || !pstoNoteField) return
 
     const lnkRow = { weldDate: '2026-07-31', hasVik: 'да', lnkNote: null }
-    const pstoRow = { weldDate: '2026-07-31', pstoRequired: 'да', pstoNote: null }
-    const rowOutsideReports = { weldDate: null, hasVik: null, pstoRequired: null }
+    const pstoRow = { preHeatTreatmentMode: 'allPsto' as const, weldDate: '2026-07-31', pstoRequired: 'да', pstoNote: null }
+    const rowOutsideReports = { preHeatTreatmentMode: 'allPsto' as const, weldDate: null, hasVik: null, pstoRequired: null }
 
     expect(canEditReportSpecificNote(lnkRow, 'lnkNote')).toBe(true)
     expect(canEditReportSpecificNote(pstoRow, 'pstoNote')).toBe(true)
@@ -149,7 +149,7 @@ describe('welding journal import template', () => {
 
   it('colors report note cells per row in fill and replace templates', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         joint: 'S1',
         weldDate: '2026-07-31',
@@ -158,7 +158,7 @@ describe('welding journal import template', () => {
         lnkNote: null,
         pstoNote: null,
       },
-      { id: 2, joint: 'S2', weldDate: null, hasVik: null, pstoRequired: null },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 2, joint: 'S2', weldDate: null, hasVik: null, pstoRequired: null },
     ] as never[]
 
     for (const bytes of [

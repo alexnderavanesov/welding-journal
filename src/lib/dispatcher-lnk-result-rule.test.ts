@@ -48,7 +48,7 @@ describe('mandatory SP-05 dispatcher result matrix', () => {
   it('cannot hide all simultaneous issues through legacy false, dismissal or acceptance', () => {
     const source = row({
       joint: 'F1R2', d2: 57, vikResult: 'вырез', rkResult: 'ремонт',
-      preHeatTreatmentLnkEnabled: false,
+      preHeatTreatmentMode: 'selected' as const,
       preHeatTreatmentControls: [{ id: 10, weldJointId: 1, method: 'ПВК', result: 'вырез' }],
       duplicateControls: [{ id: 20, weldJointId: 1, method: 'УЗК', result: 'ремонт', controlDate: '', conclusion: '', conclusionDate: '' }],
     })

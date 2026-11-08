@@ -40,8 +40,8 @@ test.afterEach(async ({ page }) => {
 for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage} documents save optional common pair and per-document empty overrides atomically`, async ({ page }) => {
   const isPre = stage === 'beforeHeatTreatment'
   const people = await withLineProgramFixture(async db => {
-    await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,psto_request,psto_request_date)
-      select $1,'SPEC','SPEC-L'||n,'F9900'||n,'2026-09-01','действующий','актуальная','да','да',
+    await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,pre_heat_treatment_required,psto_request,psto_request_date)
+      select $1,'SPEC','SPEC-L'||n,'F9900'||n,'2026-09-01','действующий','актуальная','да','да',true,
         case when $2::boolean then null else 'Spec PSTO request' end,case when $2::boolean then null else '2026-09-03'::date end from generate_series(1,2) n`, [project, isPre])
     await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date,defect_description)
       select id,'ВИК','Spec pre request','2026-09-02',case when $2::boolean then null else 'годен' end,
@@ -139,8 +139,8 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   // Raw fixture writes must advance the same revisions as an application save;
   // otherwise a cached count of two can accompany the three newly seeded rows.
   await withLineProgramFixture(async db => {
-    const inserted = await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,psto_request,psto_request_date)
-      values($1,'SPEC','SPEC-L3','F99003','2026-09-01','действующий','актуальная','да','да',case when $2::boolean then null else 'Spec PSTO request' end,case when $2::boolean then null else '2026-09-03'::date end) returning id`, [project, isPre])
+    const inserted = await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,pre_heat_treatment_required,psto_request,psto_request_date)
+      values($1,'SPEC','SPEC-L3','F99003','2026-09-01','действующий','актуальная','да','да',true,case when $2::boolean then null else 'Spec PSTO request' end,case when $2::boolean then null else '2026-09-03'::date end) returning id`, [project, isPre])
     await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date,defect_description)
       values($1,'ВИК','Spec pre request','2026-09-02',case when $2::boolean then null else 'годен' end,case when $2::boolean then null else 'Spec previous pre conclusion' end,case when $2::boolean then null else '2026-09-02'::date end,case when $2::boolean then null else 'ДНО' end)`, [inserted.rows[0].id, isPre])
   })

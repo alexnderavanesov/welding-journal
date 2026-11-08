@@ -2,6 +2,29 @@ import { describe, expect, it } from 'vitest'
 import { createAuditOriginResolver } from './audit-origin-policy'
 
 describe('audit provenance recorded with the operation', () => {
+  it.each(['saveJournalCellEdits', 'pasteJournalCells'])('attributes %s user fields without exposing managed fields', operation => {
+    const origin = createAuditOriginResolver(operation, {})
+    const row = { id: 7, weldingElectrodes: 'Э', isometry: 'ISO', finalStatus: 'годен', spool: 'SP' }
+    expect(origin('weld_joints', { id: 7 }, row, 'weldingElectrodes')).toBe('user')
+    expect(origin('weld_joints', { id: 7 }, row, 'isometry')).toBe('user')
+    expect(origin('weld_joints', { id: 7 }, row, 'finalStatus')).toBe('automatic')
+    expect(origin('weld_joints', { id: 7 }, row, 'spool')).toBe('automatic')
+  })
+  it('records explicit preliminary requirement and quick-fill overrides separately from generated values', () => {
+    const origin = createAuditOriginResolver('updateWeldJoint', { id: 7, preHeatTreatmentConfirmation: { required: true, fill: { overrides: { '7:result:ВИК': { name: 'Manual' } } } } })
+    expect(origin('weld_joints', {}, { id: 7, preHeatTreatmentRequired: true }, 'preHeatTreatmentRequired')).toBe('user')
+    expect(origin('weld_joints', {}, { id: 8, preHeatTreatmentRequired: true }, 'preHeatTreatmentRequired')).toBe('automatic')
+    const control = { weldJointId: 7, method: 'ВИК', result: 'годен', conclusionName: 'Manual', conclusionDate: '2026-11-01' }
+    expect(origin('pre_heat_treatment_controls', undefined, control, 'result')).toBe('user')
+    expect(origin('pre_heat_treatment_controls', undefined, control, 'conclusionName')).toBe('user')
+    expect(origin('pre_heat_treatment_controls', undefined, control, 'conclusionDate')).toBe('automatic')
+  })
+
+  it('attributes confirmed card actuality to the user across the entire chain, and request removal to its effect', () => {
+    const origin = createAuditOriginResolver('updateWeldJoint', { id: 7, chainActualityConfirmation: { active: false, confirmed: true, token: 'confirmed' } })
+    expect(origin('weld_joints', { id: 8 }, { id: 8, revisionActuality: 'не актуален' }, 'revisionActuality')).toBe('user')
+    expect(origin('weld_joints', { id: 8, rkRequest: 'R' }, { id: 8, rkRequest: null }, 'rkRequest')).toBe('automatic')
+  })
   it('separates entered NK results from statuses, documents and automatic names in the same save', () => {
     const before = { id: 7, vikResult: 'ожидает НК', finalStatus: 'ожидает НК' }
     const after = { ...before, vikResult: 'годен', vikConclusion: 'ВИК-1', vikConclusionDate: '2026-11-02', finalStatus: 'годен' }

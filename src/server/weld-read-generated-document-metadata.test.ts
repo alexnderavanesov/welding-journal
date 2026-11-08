@@ -44,15 +44,15 @@ describe('report generated-document metadata', () => {
   })
 
   it('does not overwrite normalized workflow policy with raw report metadata', async () => {
-    const sourceRow = { id: 6451, preHeatTreatmentLnkEnabled: true, pstoResult: 'ожидает заявку' } as WeldRow
+    const sourceRow = { id: 6451, preHeatTreatmentMode: 'allPsto' as const, pstoResult: 'ожидает заявку' } as WeldRow
     mocks.attachHeatTreatmentControlRelations.mockResolvedValue([{
-      ...sourceRow, preHeatTreatmentLnkEnabled: false,
+      ...sourceRow, preHeatTreatmentMode: 'selected' as const,
     }])
     mocks.loadGeneratedDocumentAssignments.mockResolvedValue([])
 
     const [result] = await attachReportPageMetadata([sourceRow], { includeJointWorkflowMetadata: false })
 
-    expect(result.preHeatTreatmentLnkEnabled).toBe(false)
+    expect(result.preHeatTreatmentMode).toBe('selected')
   })
 
   it('matches pre-TO and repeated-cycle documents after loading their relations', async () => {

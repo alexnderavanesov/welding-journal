@@ -1,3 +1,6 @@
+import { prepareCardPreHeatTreatment, finishCardPreHeatTreatment } from './pre-heat-treatment-chain'
+import { lockPreHeatTreatmentFillCounters } from './pre-heat-treatment-fill'
+import { prepareCardChainActuality, finishCardChainActuality } from './chain-actuality'
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 import { requireDb } from '@/db'
 import { movePstoChainException } from './psto-chain-policy'
@@ -44,6 +47,7 @@ import {
 } from '@/server/weld-line-move-stage'
 import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
 import { normalizeSubmittedWeldLineIdentity } from '@/lib/psto-line-assignment'
+import { prepareDocumentCreationIndex } from './document-name-conflicts'
 import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 
 export async function moveWeldJointChain({ data }: { data: WeldPayload }) {
@@ -58,8 +62,10 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     throw new Error('Не передан план переноса цепочки стыка.')
   }
 
+  if (data.preHeatTreatmentConfirmation?.fill) await prepareDocumentCreationIndex(true)
   return requireDb().transaction(async (tx) => {
     const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    if (data.preHeatTreatmentConfirmation?.fill) await lockPreHeatTreatmentFillCounters(tx)
     const [sourceSnapshot] = await tx
       .select()
       .from(weldJoints)
@@ -84,6 +90,8 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     const sourceIdentityKey = getPstoLineIdentityKey(sourceIdentity)
     const targetIdentityKey = getPstoLineIdentityKey(targetIdentity)
     await lockWeldLineMemberships(tx, [sourceIdentity, targetIdentity])
+    const preHeatTreatment = await prepareCardPreHeatTreatment(tx, sourceRowId, data.preHeatTreatmentConfirmation, data.mutationScope ?? 'welding')
+    const chainActuality = await prepareCardChainActuality(tx, sourceRowId, data.chainActualityConfirmation, data.mutationScope ?? 'welding')
 
     const lockedScopeRows = await tx
       .select()
@@ -226,6 +234,9 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     const transferredSpecialists = await captureTransferredSpecialists(tx, transferRowIds, toPre ? 'beforeHeatTreatment' : 'primary', data.weldChainLineMovePlan!.decisions.find(decision => transferRowIds.includes(decision.rowId))?.specialistTransferConfirmation)
     const savedControls = toPre ? await persistTransferredPrimaryControls(tx, records) : []
     await removeTransferredPreControlsInTransaction(tx, transferredPreControlIds)
+    // Check the confirmed history before this move refreshes document metadata
+    // and before actuality removes any pending requests.
+    if (preHeatTreatment) await finishCardPreHeatTreatment(tx, preHeatTreatment)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
     if (savedControls.length) await syncPreHeatTreatmentDocumentsInTransaction(tx, updatedRows, savedControls)
     await restoreTransferredSpecialists(tx, transferredSpecialists)
@@ -238,6 +249,8 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       scopes: getDispatcherDirtyScopes(records, previousRows),
     })
 
+    if (chainActuality) await finishCardChainActuality(tx, chainActuality)
+    if (chainActuality || preHeatTreatment) return [...(await loadPreviousWeldRows(tx, updatedRows)).values()]
     const recordsById = new Map(records.map((record) => [Number(record.id), record]))
     return updatedRows.map((row) => {
       const prepared = recordsById.get(row.id)

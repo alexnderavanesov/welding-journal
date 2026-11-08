@@ -8,7 +8,7 @@ import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('PstoResultDialog', () => {
   it('disables bulk selection when visible request rows are not selectable', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       projectTitle: 'Проект А',
       subtitleCode: '500',

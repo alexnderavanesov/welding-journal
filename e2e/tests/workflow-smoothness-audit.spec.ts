@@ -16,9 +16,9 @@ for (const scope of ['primary', 'beforeHeatTreatment', 'psto', 'tvmt'] as const)
     const probe = await createSmoothnessProbe(page, info)
     try {
       await withLineProgramFixture(async db => {
-        await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,has_vik,psto_required,stamp_1_k,lnk_created_at,psto_created_at)
-          select $1,'SM-WF','SM-WF','F'||lpad(n::text,4,'0'),'2026-10-01','С17','действующий','актуальная','да',$2,'Q000','2026-10-01','2026-10-01'
-          from generate_series(1,100) n`, [project, scope === 'primary' ? 'нет' : 'да'])
+        await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,has_vik,psto_required,pre_heat_treatment_required,stamp_1_k,lnk_created_at,psto_created_at)
+          select $1,'SM-WF','SM-WF','F'||lpad(n::text,4,'0'),'2026-10-01','С17','действующий','актуальная','да',$2,$3,'Q000','2026-10-01','2026-10-01'
+          from generate_series(1,100) n`, [project, scope === 'primary' ? 'нет' : 'да', scope !== 'primary'])
         if (scope === 'primary' && mode === 'result') await db.query(`update weld_joints set vik_request='SM-WF-R',vik_request_date='2026-10-02',vik_result='ожидает НК' where project_title=$1`, [project])
         if (scope !== 'primary' && (scope !== 'beforeHeatTreatment' || mode === 'result')) await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
           select id,'ВИК','SM-WF-PRE','2026-10-02',case when $2 then 'ожидает НК' else 'годен' end,

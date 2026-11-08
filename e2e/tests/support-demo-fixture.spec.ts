@@ -3,6 +3,34 @@ import { promisify } from 'node:util'
 import { expect, test } from '@playwright/test'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 import { normalizeNaksStamp } from '../../src/lib/welder-stamp-registry'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+
+const project = 'Демо Т/ОП — этапы'
+const cards = ['ДЕМО-ТК-ОП-2026-М01', 'ДЕМО-ТК-ОП-2026-М05', 'ДЕМО-ТК-ОП-2026-РАД']
+const certificates = ['ДЕМО-ОП-НК-2026', 'ДЕМО-ОП-ТО-2026']
+let initial: Awaited<ReturnType<typeof counts>> | undefined
+test.beforeEach(async () => {
+  initial = undefined
+  await withE2eDatabase(async db => {
+    expect((await db.query('select id from weld_joints where project_title=$1', [project])).rows).toEqual([])
+    expect((await db.query('select id from technology_cards where name=any($1::text[])', [cards])).rows).toEqual([])
+    expect((await db.query("select id from welder_stamps where naks_stamp in ('DT01','DT02')")).rows).toEqual([])
+    expect((await db.query('select id from specialists where certificate=any($1::text[])', [certificates])).rows).toEqual([])
+  })
+  initial = await counts()
+})
+test.afterEach(async () => {
+  if (!initial) return
+  // The script deliberately persists its demo. Only this test owns these
+  // verified-absent examples; do not let their cards alter later matching tests.
+  await cleanupLineProgramProjects([project])
+  await withLineProgramFixture(async db => {
+    await db.query('delete from technology_cards where name=any($1::text[])', [cards])
+    await db.query("delete from welder_stamps where naks_stamp in ('DT01','DT02')")
+    await db.query('delete from specialists where certificate=any($1::text[])', [certificates])
+  })
+  expect(await counts()).toEqual(initial)
+})
 
 const run = async (mode: string) => {
   const { stdout } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/seed-local-support-demo.ts', mode], {

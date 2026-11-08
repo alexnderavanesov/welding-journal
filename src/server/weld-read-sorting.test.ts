@@ -31,8 +31,8 @@ import {
 } from './weld-read'
 
 const sourceRows = [
-  { id: 2, joint: 'F970202', weldDate: '2026-09-01', hasVik: 'да', pstoRequired: 'да' },
-  { id: 1, joint: 'F970101', weldDate: '2026-09-01', hasVik: 'да', pstoRequired: 'да' },
+  { preHeatTreatmentMode: 'allPsto' as const, id: 2, joint: 'F970202', weldDate: '2026-09-01', hasVik: 'да', pstoRequired: 'да' },
+  { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F970101', weldDate: '2026-09-01', hasVik: 'да', pstoRequired: 'да' },
 ] as WeldRow[]
 
 function databaseRows(select: Record<string, unknown>, rows = sourceRows) {
@@ -48,9 +48,9 @@ describe('SQL-sorted report output survives server hydration', () => {
 
   it('checks the previous PSTO sort reference by prepared primary waiting labels while preserving sparse repeat and raw facts', () => {
     const rows: WeldRow[] = [
-      { id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: null },
-      { id: 2, weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'Заявка', pstoResult: null },
-      { id: 3, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: 'проведено',
+      { preHeatTreatmentMode: 'allPsto' as const, id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: null },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 2, weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'Заявка', pstoResult: null },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 3, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: 'проведено',
         pstoRepeatCycles: [{ id: 31, weldJointId: 3, sequence: 2, pstoRequest: 'Повторная' }] },
     ]
     expect(sortReportRows(rows, { fieldKey: 'pstoResult', direction: 'asc' }, 'heatTreatment').map(row => row.id)).toEqual([2, 1, 3])
@@ -74,10 +74,10 @@ describe('SQL-sorted report output survives server hydration', () => {
   })
 
   it.each(['source', 'derived'] as const)('PSTO %s DTO keeps cancelled primary errors through client preparation and grouping', async path => {
-    const stored: WeldRow[] = [{ id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01',
+    const stored: WeldRow[] = [{ preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01',
       pstoRequired: 'отменен', pstoRequest: 'ПСТО-1', pstoDate: '2026-09-02', pstoResult: 'ошибка',
       tvmtResult: 'не годен' },
-    { id: 2, joint: 'F2', line: 'L', weldDate: '2026-09-01',
+    { preHeatTreatmentMode: 'allPsto' as const, id: 2, joint: 'F2', line: 'L', weldDate: '2026-09-01',
       pstoRequired: 'отменен', pstoRequest: 'ПСТО-2', pstoDate: '2026-09-02', pstoResult: 'проведено',
       tvmtResult: 'годен' }]
     mocks.query.mockImplementation(async ({ text }) => ({ rows: text.includes('from "weld_joints"') && text.includes('"connection_type"') ? databaseRows(WELD_TABLE_SELECT, stored) : [] }))

@@ -11,7 +11,7 @@ import { assertNoNewPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatAccessValidationMessage } from './access-validation-message'
 import { accessContext } from './access-store'
 
-const base = { id: 1, joint: 'F1', weldDate: '2026-10-11', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentLnkEnabled: true } as WeldRow
+const base = { id: 1, joint: 'F1', weldDate: '2026-10-11', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentMode: 'allPsto' as const } as WeldRow
 const control = { id: 1, weldJointId: 1, method: 'ВИК' as const, requestName: 'V-1', requestDate: '2026-10-01', result: 'ожидает НК' }
 const formatMessage = formatAccessValidationMessage
 function asViewer<T>(area: 'lnk' | 'psto', owner: boolean, run: () => T) {
@@ -29,10 +29,10 @@ for (const owner of [false, true]) describe(owner ? 'owner' : 'limited user', ()
       methodCode: 'ВИК', result: 'годен', conclusionName: 'C-1', controlDate: '2026-10-05', formatMessage }) },
     { name: 'pre-TO correction', area: 'lnk', run: () => buildPreHeatTreatmentResultCorrectionWrite({ row: { ...base, preHeatTreatmentControls: [control] },
       control, result: 'годен', conclusionName: 'C-1', controlDate: '2026-10-05', formatMessage }) },
-    { name: 'repeat PSTO result', area: 'psto', run: () => buildRepeatPstoResultCycle({ row: { ...base, preHeatTreatmentLnkEnabled: false,
+    { name: 'repeat PSTO result', area: 'psto', run: () => buildRepeatPstoResultCycle({ row: { ...base, preHeatTreatmentMode: 'selected' as const,
       pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'P-2', pstoRequestDate: '2026-10-01' }] },
       diagramName: 'D-2', pstoDate: '2026-10-05', formatMessage }) },
-    { name: 'PSTO correction', area: 'psto', run: () => applyPstoCycleCorrection({ ...base, preHeatTreatmentLnkEnabled: false,
+    { name: 'PSTO correction', area: 'psto', run: () => applyPstoCycleCorrection({ ...base, preHeatTreatmentMode: 'selected' as const,
       pstoRequest: 'P-1', pstoRequestDate: '2026-10-12' }, { sequence: 1, stage: 'pstoRequest', action: 'update',
       name: 'P-1', date: '2026-10-01' }, DEFAULT_SAVE_CHECK_SETTINGS, formatMessage) },
     { name: 'PSTO document date validation', area: 'psto', run: () => assertNoNewPstoChronologyIssues(

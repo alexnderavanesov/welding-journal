@@ -163,8 +163,8 @@ describe('getWeldFormSaveBlockReason', () => {
       hasTvmt: null,
     } as WeldInput
 
-    expect(getWeldFormSaveBlockReason({ ...cycle, pstoRequired: 'да' }, initialValue)).toBeNull()
-    expect(getWeldFormSaveBlockReason({ ...cycle, pstoRequired: null }, initialValue)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ preHeatTreatmentMode: 'allPsto' as const, ...cycle, pstoRequired: 'да' }, initialValue)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ preHeatTreatmentMode: 'allPsto' as const, ...cycle, pstoRequired: null }, initialValue)).toBeNull()
   })
 
   it('does not disable control history through a legacy toggle', () => {
@@ -203,7 +203,7 @@ describe('getWeldFormSaveBlockReason', () => {
 
 
   it('allows clearing PSTO availability when only request and date exist', () => {
-    const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoRequest: 'ПСТО-1', pstoRequestDate: '10.06.2026' } as WeldInput
+    const draft = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: null, pstoRequest: 'ПСТО-1', pstoRequestDate: '10.06.2026' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
@@ -211,13 +211,13 @@ describe('getWeldFormSaveBlockReason', () => {
 
 
   it('keeps completed PSTO history valid without an active line assignment', () => {
-    const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026', pstoResult: 'проведено' } as WeldInput
+    const draft = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026', pstoResult: 'проведено' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
   it('does not treat PSTO financial references as execution history', () => {
-    const draft = {
+    const draft = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'S1',
       pstoRequired: null,
@@ -230,15 +230,15 @@ describe('getWeldFormSaveBlockReason', () => {
   })
 
   it('blocks a new cancellation of performed PSTO', () => {
-    const draft = { id: 1, joint: 'S1', pstoRequired: 'отменен', pstoResult: 'проведено' } as WeldInput
+    const draft = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: 'отменен', pstoResult: 'проведено' } as WeldInput
 
-    const previous = { ...initialValue, pstoRequired: 'да' } as WeldDraft
+    const previous = { preHeatTreatmentMode: 'allPsto' as const, ...initialValue, pstoRequired: 'да' } as WeldDraft
     expect(getWeldFormCancellationResultHint(draft, previous)).toBeNull()
     expect(getWeldFormSaveBlockReason(draft, previous)).toContain('нельзя отменить')
   })
 
   it('allows empty availability when no related report history exists', () => {
-    const draft = { id: 1, joint: 'S1', hasVik: null, pstoRequired: null } as WeldInput
+    const draft = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', hasVik: null, pstoRequired: null } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
@@ -366,7 +366,7 @@ describe('getWeldFormSaveBlockReason', () => {
   })
 
   it('allows restoring a missing PSTO cycle when an old post-TO LNK document already exists', () => {
-    const initialValue = {
+    const initialValue = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'S1',
       weldDate: '07.07.2026',
@@ -391,7 +391,7 @@ describe('getWeldFormSaveBlockReason', () => {
   })
 
   it('still blocks a new PSTO date error while restoring an incomplete cycle', () => {
-    const initialValue = {
+    const initialValue = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'S1',
       weldDate: '07.07.2026',
@@ -684,8 +684,8 @@ describe('getWeldFormSaveBlockReason', () => {
   })
 
   it('explains active PSTO result restoration after cancelled conducted result', () => {
-    const initialValue = { id: 1, joint: 'S1', pstoRequired: 'отменен', pstoResult: 'проведено' } as WeldDraft
-    const draft = { id: 1, joint: 'S1', pstoRequired: 'да', pstoResult: 'проведено' } as WeldInput
+    const initialValue = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: 'отменен', pstoResult: 'проведено' } as WeldDraft
+    const draft = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: 'да', pstoResult: 'проведено' } as WeldInput
 
     expect(getWeldFormReactivationResultHint(draft, initialValue)).toBe(
       'ПСТО: сейчас «проведено · назначение отменено», после сохранения будет «проведено»',

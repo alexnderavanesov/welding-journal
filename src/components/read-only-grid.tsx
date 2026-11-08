@@ -48,11 +48,12 @@ const LOCALE = { noRowsToShow: 'По текущему поиску и фильт
 
 /** Local presentation only. Screens own source data and export; the optional
  * displayed-row callback includes the whole filtered set, not just the viewport. */
-export function ReadOnlyGrid<T>({ label, pageScroll = false, expandedIds, columnFilters = false, onDisplayedRowsChange, ...props }: AgGridReactProps<T> & {
+export function ReadOnlyGrid<T>({ label, pageScroll = false, expandedIds, columnFilters = false, popupClassName, onDisplayedRowsChange, ...props }: AgGridReactProps<T> & {
   label: string
   pageScroll?: boolean
   expandedIds?: ReadonlySet<string>
   columnFilters?: boolean
+  popupClassName?: string
   onDisplayedRowsChange?: (rows: T[]) => void
 }) {
   const root = useRef<HTMLDivElement>(null)
@@ -79,6 +80,7 @@ export function ReadOnlyGrid<T>({ label, pageScroll = false, expandedIds, column
   const postProcessPopup = (params: PostProcessPopupParams) => {
     popupColumn.current = params.column?.getColId() ?? null
     params.ePopup.classList.add('read-only-grid-popup')
+    if (popupClassName) params.ePopup.classList.add(popupClassName)
     if (typeof params.column?.getColDef().filter === 'string') params.ePopup.dataset.filterLabel = params.column?.getColDef().headerName ?? 'Фильтр'
     else delete params.ePopup.dataset.filterLabel
     positionGridPopup(params)

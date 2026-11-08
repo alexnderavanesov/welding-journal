@@ -12,7 +12,7 @@ import {
 
 describe('generated document types', () => {
   it('keeps automatic layered conclusions outside manual generation', () => {
-    expect(MANUAL_GENERATED_DOCUMENT_TYPES).toEqual(['weldingJournal', 'checklist', 'zni'])
+    expect(MANUAL_GENERATED_DOCUMENT_TYPES).toEqual(['weldingJournal', 'checklist', 'zni', 'custom1', 'custom2'])
     expect(GENERATED_DOCUMENT_TYPES).toEqual([
       ...MANUAL_GENERATED_DOCUMENT_TYPES,
       ...LAYERED_CONTROL_DOCUMENT_TYPES,

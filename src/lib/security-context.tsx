@@ -54,7 +54,7 @@ export function useSecurityGuard() {
     return false
   }
   return {
-    requireSettingsChangePassword: async () => ['templates', 'checks', 'dispatcher', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes', 'references'].some(key => can(`${key}.edit` as Permission)),
+    requireSettingsChangePassword: async () => ['templates', 'checks', 'dispatcher', 'assignmentWarnings', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes', 'references'].some(key => can(`${key}.edit` as Permission)),
     requireEditPassword: (_label?: string) => allowed(`${area}.edit`),
     requireImportPassword: (_label?: string) => allowed(`${area}.import`),
     requireDocumentGenerationPassword: (_label?: string) => allowed(area === 'documents' ? 'documents.generate' : `${area}.generate`),

@@ -46,7 +46,7 @@ it('preserves template identities and constructor field configuration for templa
   }
 })
 it('preserves common configuration, profile identity and already filtered history identifiers', () => {
-  const configuration = { values: { data: { connectionType: ['С17'] }, processes: { preHeatTreatmentLnkEnabled: true } } }
+  const configuration = { values: { data: { connectionType: ['С17'] }, processes: { preHeatTreatmentMode: 'allPsto' as const } } }
   expect(redactOperationResult(user('data.view'), 'app-settings.ts', 'listAppSettingsSnapshot', configuration)).toEqual(configuration)
   expect(redactOperationResult(user('data.view'), 'app-settings.ts', 'saveAppSetting', configuration)).toEqual(configuration)
   const profile = { id: 'user-id', name: 'Сотрудник' }

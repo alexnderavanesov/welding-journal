@@ -45,6 +45,9 @@ test('one versus ten expanded stamp branches: scrolling, resizing and idle after
     Object.assign(window, { nestedGridIntervalAudit: state })
   })
   const probe = await createSmoothnessProbe(page, info)
+  const profiler = process.env.NESTED_CPU_PROFILE === '1' && info.project.name === 'chromium'
+    ? await page.context().newCDPSession(page) : null
+  await profiler?.send('Profiler.enable')
   try {
     // This helper verifies the disposable local target and invalidates derived
     // caches atomically. No shared smoothness fixture or working data is changed.
@@ -116,8 +119,11 @@ test('one versus ten expanded stamp branches: scrolling, resizing and idle after
           expect(Math.abs(position.columnWidth - reference.columnWidth), 'Same initial joint-column width').toBeLessThan(2)
           const name = `nested:${branches}-branches:${gesture}:${round}`
           observations.push({ name, position, mountedJointGrids: await page.locator('[data-program-grid="joints"]').count() })
+          const profile = profiler && branches === 10 && gesture === 'scroll' && round === 1
+          if (profile) await profiler.send('Profiler.start')
           if (gesture === 'scroll') await probe.scroll(name, grid.locator('.ag-grid-viewport').first())
           else await probe.resize(name, grid, 'joint')
+          if (profile) await writeFile(info.outputPath('nested-scroll.cpuprofile'), JSON.stringify((await profiler.send('Profiler.stop')).profile))
         }
       }
 

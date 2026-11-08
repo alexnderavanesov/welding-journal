@@ -1,5 +1,6 @@
 import type { WeldInput } from '@/lib/weld-fields'
 import { getTechnologyCardAutoAssignment } from '@/lib/technology-card-matching'
+import { getTechnologyCardMaterialChanges } from '@/lib/technology-card-materials'
 import { normalizeTechnologyCardName } from '@/lib/technology-card-name'
 import { loadTechnologyCardMatcher, markTechnologyCardsUsed, resolveTechnologyCardNames } from '@/server/technology-card-registry'
 import { lockTechnologyCardRegistry } from '@/server/technology-card-registry-lock'
@@ -30,7 +31,11 @@ export async function prepareTechnologyCardWeldWrites(tx: Transaction, records: 
     const matcher = await loadTechnologyCardMatcher(tx)
     for (const row of autoRows) {
       const name = getTechnologyCardAutoAssignment(previousRows.get(Number(row.id)) ?? null, row, matcher)
-      if (name) row.technologyCardNumber = name
+      if (name) {
+        row.technologyCardNumber = name
+        const card = matcher.match(row).cards.find(card => card.name === name)
+        if (card) Object.assign(row, getTechnologyCardMaterialChanges(row, card))
+      }
     }
   }
   await markTechnologyCardsUsed(tx, [...changed.flatMap(row => [row, previousRows.get(Number(row.id)) ?? {}]), ...autoRows, ...selected])

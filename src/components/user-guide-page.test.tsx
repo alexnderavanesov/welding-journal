@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { UserGuidePage } from '@/components/user-guide-page'
@@ -30,7 +30,7 @@ describe('UserGuidePage', () => {
 
     expect(screen.getByRole('button', { name: 'Все правила' })).toHaveAttribute('aria-pressed', 'true')
     expect(await screen.findByRole('link', { name: /Справочная карта системы/ })).toBeInTheDocument()
-    const referenceLinks = screen.getAllByRole('link')
+    const referenceLinks = within(screen.getByRole('navigation')).getAllByRole('link')
     expect(referenceLinks).toHaveLength(18)
     expect(referenceLinks.at(-2)).toHaveTextContent('Таблицы правил и кейсов')
     expect(referenceLinks.at(-1)).toHaveTextContent('Настройки')
@@ -43,7 +43,7 @@ describe('UserGuidePage', () => {
 
     expect(screen.getByRole('heading', { name: 'ЛНК: заявки и результаты' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'С чего начать', hidden: true }).closest('.hidden')).toBeInTheDocument()
-    expect(screen.getByText('5 из 15')).toBeInTheDocument()
+    expect(screen.getByText('6 из 16')).toBeInTheDocument()
   })
 
   it('searches inside the selected guide mode and can clear an empty result', () => {

@@ -24,7 +24,7 @@ describe('same removal rules as the weld card', () => {
     expect(getProgramAssignmentError(row, { РК: '' }, false)).toMatch(/нельзя снять/)
   })
   it('protects performed preheat work even when its stage is disabled', () => {
-    const row: WeldRow = { ...base, preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', requestName: 'До ТО', result: 'годен' }] }
+    const row: WeldRow = { ...base, preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', requestName: 'До ТО', result: 'годен' }] }
     expect(getProgramAssignmentError(row, { РК: '' })).toMatch(/НК до ТО/)
     expect(getProgramAssignmentError(row, { РК: 'отменен' })).toMatch(/нельзя отменить/)
     expect(getProgramAssignmentError(row, { ПВК: '' })).toBe('')

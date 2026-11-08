@@ -75,11 +75,56 @@ describe('dispatcher task index staging', () => {
     expect(execute).toHaveBeenCalledTimes(2)
     const firstBatch = new PgDialect().sqlToQuery(execute.mock.calls[0][0])
     const lastBatch = new PgDialect().sqlToQuery(execute.mock.calls[1][0])
-    expect(firstBatch.params[0]).toHaveLength(50)
-    expect(lastBatch.params[0]).toEqual(['scope-a', 'scope-a'])
-    expect(lastBatch.params[1]).toEqual([51, 52])
-    expect(lastBatch.params[2]).toEqual([100, 1])
-    expect(JSON.parse((lastBatch.params[3] as string[])[1])).toEqual([{ key: 'task-5101' }])
+    expect(firstBatch.params).toHaveLength(50 * 4)
+    expect(lastBatch.params).toHaveLength(2 * 4)
+    expect(lastBatch.params).toEqual([
+      'scope-a', 51, 100, JSON.stringify(tasks.slice(5000, 5100)),
+      'scope-a', 52, 1, JSON.stringify([{ key: 'task-5101' }]),
+    ])
+    const restored: RepeatedJointTask[] = []
+    let pageNumber = 1
+    for (const batch of [firstBatch, lastBatch]) {
+      expect(batch.sql).toContain('values ')
+      expect(batch.sql).not.toContain('unnest(')
+      for (let offset = 0; offset < batch.params.length; offset += 4) {
+        const page = tasks.slice((pageNumber - 1) * 100, pageNumber * 100)
+        expect(batch.params.slice(offset, offset + 4)).toEqual(['scope-a', pageNumber, page.length, JSON.stringify(page)])
+        restored.push(...JSON.parse(batch.params[offset + 3] as string))
+        pageNumber++
+      }
+    }
+    expect(restored).toEqual(tasks)
+  })
+
+  it('preserves exact task JSON with Unicode, quotes, backslashes, newlines and empty strings', async () => {
+    const execute = vi.fn().mockResolvedValue(undefined)
+    const writer = createDispatcherTaskPageStageWriter({ execute })
+    const text = ['Линия 中文 🔧', 'quote"', "single'", '\\', '\n', '{,} NULL'].join('|')
+    const row = { id: 1, projectTitle: text, subtitleCode: '', line: text, joint: '' }
+    const task: RepeatedJointTask = {
+      kind: 'check', key: text, row, sourceRow: row,
+      sourceJoint: text, targetJoint: '', baseJoint: '', suffix: 'R',
+      reason: text, details: '',
+    }
+    const emptyKeyTask = { ...task, key: '' }
+    await writer.append(text, [])
+    await writer.flush()
+    expect(execute).not.toHaveBeenCalled()
+    await writer.append(text, [task])
+    await writer.append('', [emptyKeyTask])
+    await writer.flush()
+    await writer.flush()
+
+    expect(execute).toHaveBeenCalledTimes(1)
+    const batch = new PgDialect().sqlToQuery(execute.mock.calls[0][0])
+    expect(batch.sql).not.toContain(text)
+    expect(batch.params).toEqual([
+      text, 1, 1, JSON.stringify([task]),
+      '', 1, 1, JSON.stringify([emptyKeyTask]),
+    ])
+    expect(JSON.parse(batch.params[3] as string)).toEqual([task])
+    expect(JSON.parse(batch.params[7] as string)).toEqual([emptyKeyTask])
+    expect(writer.getMetrics()).toEqual({ pageCount: 2, taskCount: 2, insertRequestCount: 1, pendingTaskCount: 0 })
   })
 
   it('starts a separate page range for every line and keeps a partial final page', async () => {
@@ -92,8 +137,10 @@ describe('dispatcher task index staging', () => {
 
     expect(writer.getMetrics()).toEqual({ pageCount: 3, taskCount: 102, insertRequestCount: 1, pendingTaskCount: 0 })
     const batch = new PgDialect().sqlToQuery(execute.mock.calls[0][0])
-    expect(batch.params[0]).toEqual(['old-line', 'old-line', 'new-line'])
-    expect(batch.params[1]).toEqual([1, 2, 1])
-    expect(batch.params[2]).toEqual([100, 1, 1])
+    expect(batch.params).toEqual([
+      'old-line', 1, 100, JSON.stringify(tasks.slice(0, 100)),
+      'old-line', 2, 1, JSON.stringify(tasks.slice(100)),
+      'new-line', 1, 1, JSON.stringify(tasks.slice(0, 1)),
+    ])
   })
 })

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { AppSidebar } from './app-sidebar'
+import { ReportPageHeader } from './report-page-header'
 import { SiteSecurityGate, useAccess } from '@/lib/security-context'
 import { UsersPanel, accountRoleLabel } from './account-users-panel'
 import { UserRound, UsersRound, LogOut, BookOpenText, ClipboardList, BookOpenCheck } from 'lucide-react'
@@ -65,7 +66,9 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
   function leaveSession() { setStorageIdentity(null); queryClient.clear(); window.location.assign('/account') }
   async function signOut() { const { authClient } = await import('@/lib/auth-client'); const result = await authClient.signOut(); if (result.error) throw new Error('Не удалось завершить сеанс.'); leaveSession() }
   return <div className={`mx-auto max-w-[1500px] ${tab === 'activity' ? 'flex h-[calc(100dvh-2rem)] min-h-[36rem] flex-col gap-6 lg:h-[calc(100dvh-4rem)]' : 'space-y-6'}`}>
-    <header className="flex shrink-0 flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">{tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'}</h1><p className="mt-1 text-sm text-slate-500">{identity.name} · {accountRoleLabel(identity.role)}</p></div>{tab === 'profile' ? <Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button> : null}</header>
+    <ReportPageHeader title={tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'} stickyLeft={0} fluid summary={`${identity.name} · ${accountRoleLabel(identity.role)}`}>
+      {tab === 'profile' ? <div className="flex justify-end"><Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button></div> : null}
+    </ReportPageHeader>
     <div role="tablist" aria-label="Аккаунт и доступ" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()

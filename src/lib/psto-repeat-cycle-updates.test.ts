@@ -9,7 +9,7 @@ import {
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('repeat PSTO and TVMT cycle updates', () => {
-  const failedPrimary = {
+  const failedPrimary = { preHeatTreatmentMode: 'allPsto' as const,
     id: 10,
     joint: 'F10',
     pstoRequired: 'да',

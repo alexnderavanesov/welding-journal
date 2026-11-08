@@ -50,7 +50,7 @@ describe('line card overview', () => {
     expect(summarizeLineProgram([{ ...row, rkResult: 'ремонт', hasRk: null }], line)).toMatchObject({ pending: 0, rejected: 0, errors: 1 })
   })
   it('uses card status including PSTO/TVMT cycles without changing control quotas', () => {
-    const controlled = { ...row, preHeatTreatmentLnkEnabled: false, hasVik: 'да', vikResult: 'годен', hasRk: 'да', rkResult: 'годен', hasPvk: 'да', pvkResult: 'годен' }
+    const controlled = { ...row, preHeatTreatmentMode: 'selected' as const, hasVik: 'да', vikResult: 'годен', hasRk: 'да', rkResult: 'годен', hasPvk: 'да', pvkResult: 'годен' }
     const failed = { ...controlled, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoResult: 'проведено', pstoDate: '2026-09-02', tvmtRequest: 'ТВМТ-1', tvmtResult: 'не годен' }
     const fixed = { ...failed, pstoRepeatCycles: [{ id: 1, weldJointId: row.id, sequence: 2, pstoRequest: 'ПСТО-2', pstoResult: 'проведено', pstoDate: '2026-09-03', tvmtRequest: 'ТВМТ-2', tvmtResult: 'годен' }] }
     const plain = summarizeLineProgram([controlled], line)

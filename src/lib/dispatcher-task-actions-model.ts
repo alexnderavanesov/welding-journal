@@ -22,8 +22,6 @@ export type DispatcherTaskActionId =
   | 'open-stamp-registry'
   | 'rename-joint'
   | 'restore-coil'
-  | 'set-chain-inactive'
-  | 'set-chain-active'
   | 'show-task'
   | 'suspend-welder'
   | 'toggle-officiality'
@@ -46,8 +44,7 @@ export function getDispatcherTaskActionSpecs(
   options: DispatcherTaskActionOptions = {},
 ): DispatcherTaskActionSpec[] {
   if (task.kind === 'check' && task.reason === CHAIN_ACTUALITY_REASON) return [
-    action('set-chain-inactive', 'Сделать цепочку неактуальной', 'primary'),
-    action('set-chain-active', 'Вернуть актуальность цепочке'),
+    action('edit-weld', 'Открыть карточку стыка', 'primary'),
   ]
   if (task.kind === 'check' && task.systemWarningCode === 'СП-09' && task.coilRestorationRootId != null) return [
     ...(task.coilRestorationRootId === task.row.id ? [action('restore-coil', 'Проверить отмену ошибочной катушки', 'primary')] : []),

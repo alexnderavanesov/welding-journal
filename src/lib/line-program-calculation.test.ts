@@ -8,7 +8,7 @@ import {
 } from './line-program-calculation'
 
 function row(id: number, overrides: Partial<WeldRow> = {}): WeldRow {
-  return { id, joint: `F${id}`, connectionType: 'СШ', weldDate: '2026-09-01',
+  return { preHeatTreatmentMode: 'allPsto', id, joint: `F${id}`, connectionType: 'СШ', weldDate: '2026-09-01',
     officiality: 'действующий', revisionActuality: 'актуальная', hasVik: 'да', stamp1K: 'A', ...overrides }
 }
 function rows(count: number) { return Array.from({ length: count }, (_, i) => row(i + 1)) }

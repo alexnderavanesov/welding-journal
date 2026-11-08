@@ -22,7 +22,7 @@ describe('non-optional system order of own NDT', () => {
     expect(findFirstNewLnkChronologySaveBlockReason([{ ...assigned, rkConclusionDate: '2026-09-13' }], [previous], settings)).toContain('требуется годный ПВК')
   })
   it('also permits late PVK assignment before TO without substituting results between stages', () => {
-    const previous: WeldRow = { ...row, hasPvk: null, pvkResult: null, preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+    const previous: WeldRow = { ...row, hasPvk: null, pvkResult: null, preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [
       { id: 1, weldJointId: 1, method: 'ВИК', result: 'годен', conclusionDate: '2026-09-09' },
       { id: 2, weldJointId: 1, method: 'РК', result: 'годен', conclusionDate: '2026-09-12' },
     ] }
@@ -52,7 +52,7 @@ describe('non-optional system order of own NDT', () => {
   for (let left = 0; left < slots.length; left++) for (let right = left + 1; right < slots.length; right++) {
     const pair = [slots[left], slots[right]]
     it(`counts own failures across both stages: ${pair.map(slot => `${slot.method}/${slot.beforeHeatTreatment ? 'pre' : 'primary'}`).join(' + ')}`, () => {
-      const value: WeldRow = { ...row, preHeatTreatmentLnkEnabled: true,
+      const value: WeldRow = { ...row, preHeatTreatmentMode: 'allPsto' as const,
         rkResult: 'годен', uzkResult: 'годен', rkConclusionDate: '2026-09-11', uzkConclusionDate: '2026-09-11',
         preHeatTreatmentControls: methods.map((method, index) => ({
           id: index + 1, weldJointId: 1, method: { vik: 'ВИК', pvk: 'ПВК', rk: 'РК', uzk: 'УЗК' }[method],
@@ -68,7 +68,7 @@ describe('non-optional system order of own NDT', () => {
     })
   }
   it('checks the pre-TO stage separately, without substituting a primary VIK', () => {
-    const before: WeldRow = { ...row, preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+    const before: WeldRow = { ...row, preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [
       { id: 10, weldJointId: 1, method: 'РК', result: 'годен', conclusionDate: '2026-09-09' },
     ] }
     expect(systemIssues(before).length).toBeGreaterThan(0)

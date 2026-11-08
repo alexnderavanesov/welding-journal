@@ -22,14 +22,14 @@ function makeRow(overrides: Partial<WeldRow>): WeldRow {
 
 describe('LNK workflow routing', () => {
   it('routes a PSTO joint with missing pre-control documents to the pre-TO request workflow', () => {
-    const row = makeRow({ pstoRequired: 'да', hasVik: 'да' })
+    const row = makeRow({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', hasVik: 'да' })
 
     expect(getPreferredLnkRequestStage(row)).toBe('beforeHeatTreatment')
     expect(canCreateLnkWorkflowRequest(row)).toBe(true)
   })
 
   it('routes a requested pre-control to the pre-TO result workflow', () => {
-    const row = makeRow({
+    const row = makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       preHeatTreatmentControls: [{
@@ -60,7 +60,7 @@ describe('LNK workflow routing', () => {
   })
 
   it('does not combine selected joints that require different document stages', () => {
-    const preRow = makeRow({ id: 1, pstoRequired: 'да', hasVik: 'да' })
+    const preRow = makeRow({ preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да', hasVik: 'да' })
     const primaryRow = makeRow({ id: 2, joint: 'F2', hasVik: 'да' })
 
     expect(getCommonLnkRequestStage([preRow, primaryRow])).toBeNull()

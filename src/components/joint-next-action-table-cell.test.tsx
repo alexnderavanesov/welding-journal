@@ -65,7 +65,7 @@ describe('JointNextActionTableCell', () => {
   })
 
   it('opens the joint picture from the cell background without triggering the parent row', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 14,
       joint: 'F14',
       weldDate: '2026-08-31',

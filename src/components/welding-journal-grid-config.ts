@@ -3,6 +3,7 @@ import {
   CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule, ColumnAutoSizeModule,
   CustomFilterModule, CellStyleModule, RowStyleModule,
   LocaleModule, GridStateModule,
+  CustomEditorModule,
   type RowClassParams,
 } from 'ag-grid-community'
 import { CellSelectionModule, ColumnMenuModule, RowGroupingModule, ServerSideRowModelModule, ServerSideRowModelApiModule } from 'ag-grid-enterprise'
@@ -18,6 +19,9 @@ export const MODULES = [
   CustomFilterModule, CellStyleModule, RowStyleModule,
   LocaleModule, GridStateModule, CellSelectionModule, ColumnMenuModule, RowGroupingModule,
 ]
+// Direct cell input belongs to the welding journal. The other reports keep
+// their card/workflow editors without creating AG's cell-editing services.
+export const JOURNAL_INLINE_MODULES = [...MODULES, CustomEditorModule]
 export const groupRowClass = ({ node }: RowClassParams<WeldRow>) => node.group ? `journal-group-tone-${node.level % 4}` : undefined
 export const LOCALE = {
   groupBy: 'Сгруппировать по «${variable}»', ungroupBy: 'Убрать группировку по «${variable}»', ungroupAll: 'Убрать группировку',

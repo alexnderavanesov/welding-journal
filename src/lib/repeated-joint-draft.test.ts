@@ -5,7 +5,7 @@ import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 
 describe('buildRepeatedJointDraft', () => {
   it('starts a fresh pre-TO, PSTO and TVMT cycle without copying related history', () => {
-    const draft = buildRepeatedJointDraft({
+    const draft = buildRepeatedJointDraft({ preHeatTreatmentMode: 'allPsto' as const,
       id: 10,
       joint: 'F1',
       weldDate: '2026-08-20',

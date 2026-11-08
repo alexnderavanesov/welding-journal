@@ -20,5 +20,5 @@ export const REPORT_LEFT_ALIGNED_FIELDS: ReadonlySet<WeldFieldKey> = new Set<Wel
   'preVikDefectDescription', 'preRkDefectDescription', 'preUzkDefectDescription', 'prePvkDefectDescription',
   'rkExposureScheme', 'preRkExposureScheme', 'heatTreatmentDiagram',
   'weldingJournalNote', 'lnkNote', 'pstoNote', 'testContour',
-  'jsrDocument', 'checklistDocument', 'zniDocument',
+  'jsrDocument', 'checklistDocument', 'zniDocument', 'custom1Document', 'custom2Document',
 ])

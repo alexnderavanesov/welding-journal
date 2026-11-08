@@ -42,6 +42,9 @@ import { useProgramDraft } from './line-program-drafts'
 import type { ProgramScopeCommand } from './line-program-scope-menu'
 import { lineProgramQueryPolicy, programPrimaryActionClass, ProgramError } from './line-program-primitives'
 import { unpackProgramRows } from '@/lib/line-program-row-payload'
+import { loadProgramRows, PROGRAM_ROWS_PROTOCOL } from '@/lib/line-program-row-stream'
+import { getAssignmentWarning } from '@/lib/assignment-warnings'
+import { loadAssignmentWarningSettings } from '@/lib/assignment-warning-settings'
 import { countProgramRows } from '@/lib/line-program-row-filters'
 import { ProgramQuickFilters, type ProgramQuickFilter } from './line-program-quick-filters'
 
@@ -56,6 +59,10 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
 }) {
   const queryClient = useQueryClient()
   const confirm = useConfirmAction()
+  const [warningPending, setWarningPending] = useState(false)
+  const warningLock = useRef(false)
+  const warningMounted = useRef(true)
+  useEffect(() => { warningMounted.current = true; return () => { warningMounted.current = false } }, [])
   const { requireEditPassword } = useSecurityGuard()
   const [selection, setSelection] = useProgramSessionState<ProgramSelection>(`editor:selection:${line.family ?? 'welds'}:${line.id}`, { slice: 'all' })
   const contextScope = useRef<ProgramSelection>({ slice: 'all' })
@@ -75,10 +82,12 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
   const [methods, setMethods] = useProgramSessionState(`editor:methods:${line.family ?? 'welds'}:${line.id}`, new Set<ProgramMethod>())
   const [assignment, setAssignment] = useProgramSessionState<ProgramAssignment>(`editor:assignment:${line.family ?? 'welds'}:${line.id}`, 'да')
   const [focusedMethod, setFocusedMethod] = useState<ProgramMethod | undefined>()
-  const [review, setReview] = useState<{ requestRemovals?: ControlRequestRemoval[]; token: string; excess: number; changed: number; request: LineProgramControlRequest } | null>(null)
+  const [review, setReview] = useState<{ requestRemovals?: ControlRequestRemoval[]; hiddenRemovalCount?: number; token: string; excess: number; changed: number; request: LineProgramControlRequest } | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
   const [feedback, setFeedback] = useState('')
-  const query = useQuery({ queryKey: ['line-program', 'rows', line.id, line.family ?? 'welds'], queryFn: async () => unpackProgramRows(await getLineProgramJointPage({ data: { id: line.id, family: line.family } })), enabled, ...lineProgramQueryPolicy })
+  const query = useQuery({ queryKey: ['line-program', 'rows', line.id, line.family ?? 'welds'],
+    queryFn: async ({ signal }) => unpackProgramRows(await loadProgramRows(rpcSignal => getLineProgramJointPage({ signal: rpcSignal, data: { id: line.id, family: line.family, transport: PROGRAM_ROWS_PROTOCOL } }), signal)),
+    enabled, ...lineProgramQueryPolicy })
   const revealToken = Math.max(0, ...workspaces.filter(workspace => workspace.open).map(workspace => workspace.selection.reveal ?? 0))
   const [readyComposition, setReadyComposition] = useState(0)
   useEffect(() => {
@@ -92,6 +101,8 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
   const rowVersions = useMemo(() => getExpectedWeldRowVersions(rows), [rows])
   const { manual, setManual, targets: draftTargets, acceptCurrentVersions } = useProgramDraft(line.id, rowVersions, line.family)
   const rowById = useMemo(() => new Map(rows.map(row => [row.id, row])), [rows])
+  const warningContext = useRef({ manual, rows, enabled })
+  warningContext.current = { manual, rows, enabled }
   const staleDraft = [...draftTargets.values()].some(target => String(rowById.get(target.id)?.rowVersion ?? '') !== target.version)
   const historyProtection = loadSaveCheckSettings().controlHistoryProtection
   const activePatch = () => Object.fromEntries([...methods].flatMap(method => [[method, assignment], ...(method !== 'Послойный ПВК' && requiresControlAssignmentBasis(assignment) ? [[PROGRAM_BASIS_FIELDS[method], batchBasis]] : [])])) as ProgramPatch
@@ -131,7 +142,7 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
   }, onSuccess: result => { if (result) { setReview(result); setAcknowledged(false) } } })
   const save = useMutation({ mutationFn: async () => {
     if (!review || !await requireEditPassword('сохранение назначений контроля')) return null
-    const consequences = [formatControlRequestRemovals(review.requestRemovals ?? []), ...cancellationHints].filter(Boolean).join('\n')
+    const consequences = [formatControlRequestRemovals(review.requestRemovals ?? [], review.hiddenRemovalCount), ...cancellationHints].filter(Boolean).join('\n')
     if (consequences && !await confirm({ title: 'Сохранить изменения назначений?', description: consequences, confirmLabel: 'Подтвердить и сохранить', cancelLabel: 'Вернуться', tone: 'warning' })) return null
     return applyLineProgramControl({ data: { ...review.request, previewToken: review.token, confirmedExcess: acknowledged } })
   }, onError: () => setReview(null), onSuccess: async result => {
@@ -147,7 +158,7 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
       ])
     }
   } })
-  const busy = preview.isPending || save.isPending
+  const busy = preview.isPending || save.isPending || warningPending
   const canSelect = useCallback((row: WeldRow) => isProgramEditableRow(row), [])
   const select = useCallback((id: number, checked: boolean) => { setSelected(previous => { const next = new Set(previous); checked ? next.add(id) : next.delete(id); return next }) }, [setSelected])
   const mergedValues = useCallback((row: WeldRow, patch: ProgramPatch) => {
@@ -157,11 +168,47 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     return values
   }, [manual])
   const getError = useCallback((row: WeldRow, method: ProgramMethod, value: ProgramAssignment) => getProgramAssignmentError(row, mergedValues(row, { [method]: value }), historyProtection), [mergedValues, historyProtection])
-  const applyChanges = (targets: WeldRow[], patch: ProgramPatch) => {
-    const updates = targets.map(row => ({ row, values: mergedValues(row, patch) }))
+  const applyChanges = async (targets: WeldRow[], patch: ProgramPatch) => {
+    if (busy || warningLock.current) return
+    let updates = targets.map(row => ({ row, values: mergedValues(row, patch) }))
     const problems = updates.map(({ row, values }) => { const error = getProgramAssignmentError(row, values, historyProtection); return error ? `${row.joint}: ${error}` : '' }).filter(Boolean)
     resetReview()
     if (problems.length) { setBatchError(problems.join(' ')); return }
+    const settings = loadAssignmentWarningSettings()
+    const warnings = targets.flatMap(row => (['РК', 'УЗК'] as const).flatMap(method => {
+      if (patch[method] === undefined) return []
+      const field = method === 'РК' ? 'hasRk' : 'hasUzk'
+      const current = { ...row, [field]: manual.get(row.id)?.[method] ?? row[field] }
+      const warning = getAssignmentWarning(current, field, patch[method], settings)
+      return warning ? [{ row, method, warning }] : []
+    }))
+    if (warnings.length) {
+      warningLock.current = true; setWarningPending(true)
+      try {
+        const confirmed = await confirm({ title: 'Подтвердить назначение контроля', tone: 'warning',
+          description: <div className="space-y-3">{(['rk', 'uzk'] as const).map(key => {
+            const matches = warnings.filter(item => item.warning.key === key)
+            return matches.length ? <div key={key}><p className="whitespace-pre-wrap">{matches[0].warning.text}</p><p className="mt-1 text-sm">Стыков: {matches.length}. {matches.slice(0, 5).map(item => `${item.row.joint}: ${item.warning.detail}`).join('; ')}{matches.length > 5 ? '; …' : ''}</p></div> : null
+          })}</div>, confirmLabel: 'Да, назначить', cancelLabel: 'Нет, оставить пусто' })
+        if (!warningMounted.current) return
+        if (!warningContext.current.enabled || warningContext.current.rows !== rows || warningContext.current.manual !== manual) {
+          setBatchError('Данные или черновик изменились во время подтверждения. Повторите назначение.'); return
+        }
+        if (!confirmed) {
+          updates = targets.map(row => {
+            const rejected = { ...patch }
+            for (const item of warnings) if (item.row.id === row.id) {
+              rejected[item.method] = ''
+              const basis = PROGRAM_BASIS_FIELDS[item.method]
+              rejected[basis] = manual.get(row.id)?.[basis] ?? String(row[basis] ?? '')
+            }
+            return { row, values: mergedValues(row, rejected) }
+          })
+          const blocked = updates.map(({ row, values }) => { const error = getProgramAssignmentError(row, values, historyProtection); return error ? `${row.joint}: ${error}` : '' }).filter(Boolean)
+          if (blocked.length) { setBatchError(`Назначение не изменено: ${blocked.join(' ')}`); return }
+        }
+      } finally { warningLock.current = false; if (warningMounted.current) setWarningPending(false) }
+    }
     setManual(previous => { const next = new Map(previous); for (const { row, values } of updates) Object.keys(values).length ? next.set(row.id, values) : next.delete(row.id); return next })
   }
   const openAssignments = useStableEventCallback((scope: ProgramSelection, id?: number, method?: ProgramMethod) => {

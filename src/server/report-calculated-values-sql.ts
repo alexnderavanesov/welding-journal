@@ -11,7 +11,8 @@ import { buildPstoCurrentReportValueSql } from './psto-report-current-values'
 import { buildPstoCycleSummarySql } from './psto-cycle-summary-sql'
 import { buildPreControlReportValueSql } from './report-pre-control-filter-sql'
 import { buildRkExposureSchemeSql } from './report-rk-filter-sql'
-import { cancelledLnkResultSql, reportResultSql, reportTextSql } from './report-filter-text-sql'
+import { reportResultSql, reportTextSql } from './report-filter-text-sql'
+import { journalControlValueSql } from './journal-display-sql'
 
 /** Values for selection/facets only. Full cards keep stored facts and history. */
 export function buildCalculatedReportValueSql(
@@ -31,15 +32,15 @@ export function buildCalculatedReportValueSql(
   }
   const preValue = buildPreControlReportValueSql(fieldKey)
   if (preValue) return preValue
+  // Facets and their predicates must use the same prepared result as cells
+  // and groups, including no-need after rejection and effective waiting labels.
+  if (LNK_METHODS.some(method => method.resultKey === fieldKey)) return journalControlValueSql(fieldKey)
   if (report === 'heatTreatment') {
     if (fieldKey === 'pstoCycleSummary') return buildPstoCycleSummarySql()
     const current = buildPstoCurrentReportValueSql(fieldKey)
     if (current) return current
   }
   if (report !== 'weldingJournal') {
-    const method = LNK_METHODS.find(method => method.resultKey === fieldKey)
-    if (method) return sql`case when lower(${reportTextSql(weldJoints[method.enabledKey])}) = 'отменен'
-      then ${cancelledLnkResultSql(weldJoints[method.resultKey])} else ${weldJoints[method.resultKey]} end`
     if (fieldKey === 'pstoResult') return sql`case when lower(${reportTextSql(weldJoints.pstoRequired)}) = 'отменен'
       then case when ${reportResultSql(weldJoints.pstoResult)} in ('проведено', 'да', 'проведено (отменен)')
         then 'проведено · назначение отменено' else 'отменен' end else ${weldJoints.pstoResult} end`

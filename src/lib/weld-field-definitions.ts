@@ -266,6 +266,22 @@ export const WELD_FIELDS = [
     virtual: true,
   },
   {
+    key: 'custom1Document',
+    dbName: '__custom1_document',
+    label: 'Пользовательский 1' as string,
+    kind: 'text',
+    group: 'Документы',
+    virtual: true,
+  },
+  {
+    key: 'custom2Document',
+    dbName: '__custom2_document',
+    label: 'Пользовательский 2' as string,
+    kind: 'text',
+    group: 'Документы',
+    virtual: true,
+  },
+  {
     key: 'layeredVikEdgesDocument',
     dbName: '__layered_vik_edges_document',
     label: 'ВИК кромок',
@@ -345,6 +361,10 @@ export const DATE_TIME_WELD_FIELD_KEYS = new Set<WeldFieldKey>([
 export type WeldFieldValue = string | number | boolean | Date | null
 export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldValue>> & {
   id?: number
+  /** Chain choice, changed only by the confirmed pre-TO workflow. */
+  preHeatTreatmentRequired?: boolean | null
+  /** Current project policy; never accepted as a writable weld field. */
+  preHeatTreatmentMode?: import('./pre-heat-treatment-policy').PreHeatTreatmentMode
   /** Dedicated line-program and layered-control workflows; never ordinary form fields. */
   lineProgramId?: number | null
   /** Read-only explanation of the active chain exception; shown in the existing basis summary. */

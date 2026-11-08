@@ -29,7 +29,11 @@ type WeldFormFieldGroup = {
   fields: WeldFormEditableField[]
 }
 
+import { WeldFormPreHeatTreatment } from './weld-form-pre-heat-treatment'
+
 type WeldFormSectionsProps = {
+  allowTechnologyCardAutoAssignment?: boolean
+  onOpenRoot?: (id: number) => void
   fieldsByGroup: WeldFormFieldGroup[]
   collapsedSections: ReadonlySet<string>
   draft: WeldInput
@@ -48,6 +52,8 @@ type WeldFormSectionsProps = {
 }
 
 export function WeldFormSections({
+  allowTechnologyCardAutoAssignment = false,
+  onOpenRoot,
   fieldsByGroup,
   collapsedSections,
   draft,
@@ -160,11 +166,13 @@ export function WeldFormSections({
             {draft.id && (['hasRk', 'hasUzk', 'hasPvk'].some(key => fieldStatusKeys.has(key as WeldFieldKey)) || draft.layeredControlRequest?.assigned) ? <WeldLineProgramImpact draft={draft} /> : null}
           </div>
           <div className="divide-y-2 divide-slate-200">
+            <WeldFormPreHeatTreatment draft={draft} setDraft={setDraft} onOpenRoot={onOpenRoot} />
             {controlAvailabilityFields.map((field) => (
               <Fragment key={field.key}>
                 <div className="grid grid-cols-1 gap-3 bg-white px-4 py-4 xl:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="border-l-4 border-slate-300 pl-3 pt-1 text-sm font-semibold text-slate-800">{field.label}</div>
                   <WeldFormField
+                    allowTechnologyCardAutoAssignment={allowTechnologyCardAutoAssignment}
                     field={field}
                     draft={draft}
                     suggestionDraft={calculationDraft}
@@ -199,6 +207,7 @@ export function WeldFormSections({
                 <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                   {fields.map((field) => (
                     <WeldFormField
+                      allowTechnologyCardAutoAssignment={allowTechnologyCardAutoAssignment}
                       key={field.key}
                       field={field}
                       draft={draft}
@@ -232,6 +241,7 @@ export function WeldFormSections({
                 <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                   {fields.map((field) => (
                     <WeldFormField
+                      allowTechnologyCardAutoAssignment={allowTechnologyCardAutoAssignment}
                       key={field.key}
                       field={field}
                       draft={draft}
@@ -276,6 +286,7 @@ export function WeldFormSections({
                   <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                     {fields.map((field) => (
                       <WeldFormField
+                        allowTechnologyCardAutoAssignment={allowTechnologyCardAutoAssignment}
                         key={field.key}
                         field={field}
                         draft={draft}

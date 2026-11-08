@@ -140,7 +140,7 @@ describe('primary staged result edits', () => {
   })
 })
 
-const preRow = (id: number, result = 'ремонт'): WeldRow => row(id, { preHeatTreatmentLnkEnabled: true,
+const preRow = (id: number, result = 'ремонт'): WeldRow => row(id, { preHeatTreatmentMode: 'allPsto' as const,
   preHeatTreatmentControls: [{ id: id * 10, weldJointId: id, method: 'ВИК', requestName: 'PRE', requestDate: '2026-09-01',
     result, conclusionName: 'PRE-C', conclusionDate: '2026-09-02' }] })
 function preHarness() {

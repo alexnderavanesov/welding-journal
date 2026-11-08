@@ -1,4 +1,7 @@
+import { PARTICIPANT_CATEGORY_LABELS, PARTICIPANT_FIELDS, PARTICIPANT_KINDS, isParticipantField, getParticipantTemplateIssues, normalizeParticipantKinds } from '@/lib/document-template-participants'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useSettingsDirty } from './settings-draft'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import { userStorage, scopedStorageKey } from '@/lib/user-storage'
 import { Select } from '@/components/ui/select'
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
@@ -49,6 +52,7 @@ import {
 } from '@/lib/document-template-storage'
 import {
   isGeneratedDocumentFieldKey,
+  isManualGeneratedDocumentType,
   isLayeredControlDocumentType,
 } from '@/lib/generated-document-types'
 import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
@@ -116,7 +120,7 @@ const BASE_FIELD_OPTIONS: TemplateFieldOption[] = [
 ]
 
 const TEMPLATE_FIELD_LABELS = new Map<DocumentTemplateFieldKey, string>(
-  [...SPECIALIST_TEMPLATE_FIELDS, ...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
+  [...PARTICIPANT_FIELDS, ...SPECIALIST_TEMPLATE_FIELDS, ...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
     .map(field => [field.key, field.label]),
 )
 
@@ -134,13 +138,14 @@ function isValidTemplateMultiplier(value: string | undefined) {
   return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized) && Number.isFinite(Number(normalized))
 }
 
-export type DocumentTemplateRepeatTarget = 'joint' | 'projectTitle' | 'subtitleCode' | 'line'
+export type DocumentTemplateRepeatTarget = 'joint' | 'projectTitle' | 'subtitleCode' | 'line' | 'participants'
 
 const REPEAT_TARGET_OPTIONS: Array<{
   value: DocumentTemplateRepeatTarget
   label: string
   description: string
 }> = [
+  { value: 'participants', label: 'Каждого участника работ', description: 'По участникам работ: одна строка на человека по выбранным стыкам. Повторяющиеся участники объединяются.' },
   {
     value: 'joint',
     label: 'Каждого стыка',
@@ -167,6 +172,7 @@ const NAME_FIELD_OPTIONS: Array<{ key: DocumentTemplateNameFieldKey; label: stri
   { key: '__periodFrom', label: 'Дата начала периода', group: 'Документ' },
   { key: '__periodTo', label: 'Дата окончания периода', group: 'Документ' },
   { key: '__formationDate', label: 'Дата формирования', group: 'Документ' },
+  { key: '__documentType', label: 'Название вида документа', group: 'Документ' },
   { key: '__documentNumber', label: 'Порядковый номер документа', group: 'Документ' },
   ...WELD_FIELDS.filter((field) => !isVirtualWeldField(field)).map((field) => ({
     key: field.key as keyof WeldInput,
@@ -282,6 +288,7 @@ export function includeTemplateCellInRepeatBlock(
 export function getDocumentTemplateRepeatTarget(
   config: DocumentTemplateConstructorConfig,
 ): DocumentTemplateRepeatTarget {
+  if (config.repeatMode === 'participants') return 'participants'
   if (config.repeatMode !== 'groups') return 'joint'
   if (
     config.repeatGroupBy === 'projectTitle' ||
@@ -298,17 +305,18 @@ export function applyDocumentTemplateRepeatTarget(
   preview: DocumentTemplateWorkbookPreview | null,
   target: DocumentTemplateRepeatTarget,
 ): DocumentTemplateConstructorConfig {
-  const repeatMode = target === 'joint' ? 'rows' : 'groups'
+  const repeatMode = target === 'participants' ? 'participants' : target === 'joint' ? 'rows' : 'groups'
   return {
     ...config,
     repeatMode,
-    repeatGroupBy: repeatMode === 'groups' ? target : undefined,
+    repeatGroupBy: target !== 'participants' && target !== 'joint' ? target : undefined,
+    participantKinds: repeatMode === 'participants' ? normalizeParticipantKinds(config.participantKinds) : undefined,
     bindings: config.bindings.map((binding) => {
       const insideRepeatBlock = isCellInRepeatBlock(config, preview, binding.cell)
       if (!insideRepeatBlock) {
         return binding.mode === 'summary' ? { ...binding, scope: undefined } : binding
       }
-      if (repeatMode === 'rows') {
+      if (repeatMode !== 'groups') {
         return convertDocumentTemplateBindingToJointRow(binding)
       }
       return convertDocumentTemplateBindingToGroupSummary(binding)
@@ -411,7 +419,7 @@ export function getDocumentTemplateBuilderIssues(
   preview: DocumentTemplateWorkbookPreview | null,
   options: { requireNameConfig?: boolean } = {},
 ) {
-  const issues: DocumentTemplateBuilderIssue[] = []
+  const issues: DocumentTemplateBuilderIssue[] = getParticipantTemplateIssues(draft)
   if (!draft.sheetName) issues.push({ message: 'Выберите лист шаблона.' })
   if (!draft.bindings.length) issues.push({ message: 'Назначьте хотя бы одну ячейку.' })
   const rowBindings = draft.bindings.filter((binding) => binding.mode === 'row')
@@ -438,8 +446,8 @@ export function getDocumentTemplateBuilderIssues(
   ) {
     issues.push({ message: 'Сводные ячейки должны находиться вне повторяемого блока строк.' })
   }
-  if (draft.bindings.some((binding) => getBindingParts(binding).length === 0)) {
-    issues.push({ message: 'Для каждой назначенной ячейки выберите поле.' })
+  for (const binding of draft.bindings.filter((binding) => getBindingParts(binding).length === 0)) {
+    issues.push({ cell: binding.cell, message: `Ячейка ${binding.cell}: выберите поле для заполнения или нажмите «Убрать назначение», чтобы оставить её как в Excel.` })
   }
   for (const binding of draft.bindings) {
     const parts = getBindingParts(binding)
@@ -482,6 +490,7 @@ export function getDocumentTemplateRepeatedRows(config: DocumentTemplateConstruc
 }
 
 export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentTemplateBuilderProps) {
+  const confirm = useConfirmAction()
   const isSystemTemplate = isSystemDocumentTemplateId(template.id)
   const [preview, setPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [draft, setDraft] = useState<DocumentTemplateConstructorConfig>(() => getInitialDraft(template))
@@ -489,6 +498,12 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   const [activeTab, setActiveTab] = useState<'content' | 'name'>('content')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(getInitialDraft(template))
+  useSettingsDirty('templates.constructor', isDirty, isSaving)
+  const requestClose = async () => {
+    if (isSaving) return
+    if (!isDirty || await confirm({ title: 'Закрыть конструктор?', description: 'Несохранённые изменения будут потеряны.', confirmLabel: 'Закрыть без сохранения', cancelLabel: 'Остаться', tone: 'warning' })) onClose()
+  }
   const [error, setError] = useState<string | null>(null)
   const [cellContextMenu, setCellContextMenu] = useState<ContextActionMenuState>(null)
   const [cellClipboard, setCellClipboard] = useState<DocumentTemplateCellClipboardPayload | null>(() =>
@@ -541,10 +556,12 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     [draft.bindings],
   )
   const fieldGroups = useMemo(() => {
-    const fieldOptions = (supportsCurrentDocumentFields
+    const participantFields: TemplateFieldOption[] = draft.repeatMode === 'participants'
+      ? PARTICIPANT_FIELDS.map(field => ({ ...field, group: 'Участник работ', kind: 'text' })) : []
+    const fieldOptions = [...participantFields, ...(supportsCurrentDocumentFields
       ? [...getSpecialistTemplateFields(template.id).map(field => ({ key: field.key, label: field.label, group: 'Специалисты документа', kind: 'text' as const })), ...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
       : BASE_FIELD_OPTIONS
-    ).filter((field) => (field.key !== '__groupIndex' || draft.repeatMode === 'groups')
+    )].filter((field) => (field.key !== '__groupIndex' || draft.repeatMode === 'groups')
       && normalizeDocumentTemplateStageField(field.key, template.id) === field.key)
     const groups = new Map<string, TemplateFieldOption[]>()
     for (const field of fieldOptions) {
@@ -587,6 +604,12 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       }
     }
     if (selectedCellInsideRepeatBlock) {
+      if (draft.repeatMode === 'participants') {
+        return {
+          label: 'Данные участника работ',
+          description: 'Ячейка заполняется отдельно для каждого человека в списке.',
+        }
+      }
       if (draft.repeatMode === 'groups') {
         return {
           label: 'Данные текущей группы',
@@ -893,7 +916,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   }
 
   return (
-    <LargeDialogShell onEscape={onClose} escapeDisabled={isSaving} maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
+    <LargeDialogShell onEscape={() => void requestClose()} escapeDisabled={isSaving} maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-950">Конструктор шаблона</h3>
@@ -903,7 +926,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
               : 'Настройте заполнение Excel и автоматическое название сформированного документа.'}
           </p>
         </div>
-        <button type="button" onClick={onClose} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Закрыть">
+        <button type="button" onClick={() => void requestClose()} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Закрыть">
           <X className="h-5 w-5" />
         </button>
       </div>
@@ -944,9 +967,10 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       {activeTab === 'content' ? (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-h-0 overflow-auto bg-slate-100/70 p-4">
-          <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
             <label className="text-xs font-semibold uppercase text-slate-500">Лист</label>
             <Select
+              aria-label="Лист шаблона"
               value={draft.sheetName}
               onChange={(event) => {
                 setSelectedCell('')
@@ -960,7 +984,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   bindings: [],
                 }))
               }}
-              className="w-auto h-9 rounded-md border-slate-300 py-1 text-sm"
+              className="h-9 w-auto min-w-24 max-w-full shrink-0 rounded-md border-slate-300 py-1 text-sm sm:max-w-sm"
             >
               {(preview?.sheetNames ?? template.sheetNames ?? []).map((sheetName) => (
                 <option key={sheetName} value={sheetName}>
@@ -992,18 +1016,20 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                 </thead>
                 <tbody>
                   {Array.from({ length: preview.rowCount }, (_, index) => preview.startRow + index).map((row) => {
+                    const inRepeatBlock = isRowInRepeatBlock(draft, row)
                     const cells = preview.cells
                       .filter((cell) => cell.row === row)
                       .sort((left, right) => left.column - right.column)
                     return (
-                      <tr key={row} className={isRowInRepeatBlock(draft, row) ? 'bg-sky-50' : undefined}>
-                        <th className="sticky left-0 z-10 border-b border-r border-slate-300 bg-slate-100 p-1">
+                      <tr key={row}>
+                        <th className={`sticky left-0 z-10 border-b border-r border-slate-300 p-1 ${inRepeatBlock ? 'bg-sky-50' : 'bg-slate-100'}`}>
                           <button
                             type="button"
                             onClick={() => setRepeatRow(row)}
+                            aria-pressed={inRepeatBlock}
                             title="Выбрать строку или расширить повторяемый блок"
                             className={`flex h-7 w-full items-center justify-center rounded text-xs font-semibold ${
-                              isRowInRepeatBlock(draft, row) ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-sky-50 hover:text-sky-700'
+                              inRepeatBlock ? 'bg-sky-100 text-sky-800 hover:bg-sky-200' : 'text-slate-500 hover:bg-sky-50 hover:text-sky-700'
                             }`}
                           >
                             {row}
@@ -1031,10 +1057,12 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                               }}
                               className={`relative h-11 max-w-60 cursor-pointer border-b border-r border-slate-200 px-2 py-1 align-middle ${
                                 selected
-                                  ? 'bg-sky-100 ring-2 ring-inset ring-sky-500'
-                                  : binding
-                                    ? 'bg-emerald-50 hover:bg-emerald-100'
-                                    : 'bg-white hover:bg-slate-50'
+                                  ? 'bg-sky-100 ring-1 ring-inset ring-sky-400'
+                                  : inRepeatBlock
+                                    ? 'bg-sky-50 hover:bg-sky-100'
+                                    : binding
+                                      ? 'bg-emerald-50 hover:bg-emerald-100'
+                                      : 'bg-white hover:bg-slate-50'
                               }`}
                             >
                               <div className="line-clamp-2 min-w-24 whitespace-pre-line">{cell.value}</div>
@@ -1150,6 +1178,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
               <label className="mt-3 block">
                 <span className="text-xs font-semibold text-slate-600">Создавать блок для</span>
                 <Select
+                  aria-label="Создавать блок для"
                   value={repeatTarget}
                   onChange={(event) =>
                     setDraft((current) =>
@@ -1162,7 +1191,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   }
                   className="mt-1 w-full rounded-md border-sky-200 bg-white text-sm text-slate-800"
                 >
-                  {REPEAT_TARGET_OPTIONS.map((option) => (
+                  {REPEAT_TARGET_OPTIONS.filter(option => option.value !== 'participants' || isManualGeneratedDocumentType(template.id)).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -1172,12 +1201,21 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   {REPEAT_TARGET_OPTIONS.find((option) => option.value === repeatTarget)?.description}
                 </span>
               </label>
+              {draft.repeatMode === 'participants' ? <div className="mt-3 space-y-2">
+                <span className="block text-xs font-semibold text-slate-600">Включить в список</span>
+                {PARTICIPANT_KINDS.map(kind => <label key={kind} className="flex items-center gap-2 text-sm text-slate-700">
+                  <Checkbox checked={normalizeParticipantKinds(draft.participantKinds).includes(kind)} onChange={event => setDraft(current => ({ ...current,
+                    participantKinds: event.target.checked ? [...normalizeParticipantKinds(current.participantKinds), kind] : normalizeParticipantKinds(current.participantKinds).filter(value => value !== kind),
+                  }))} /><span>{PARTICIPANT_CATEGORY_LABELS[kind]}</span>
+                </label>)}
+                <p className="text-xs leading-5 text-slate-500">Сварщики — по официальным клеймам. В заключениях учитываются только «Провёл контроль» и «Оператор-термист». Разряд и другие недостающие реквизиты можно вписать в скачанный Excel.</p>
+              </div> : null}
               <div className="mt-3 border-t border-sky-100 pt-3">
                 <div className="text-xs font-semibold text-slate-700">Размер повторяемой части</div>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {[1, 5, 20].map((count) => (
                     <div key={count} className="rounded-md border border-sky-100 bg-white px-2 py-1.5 text-center">
-                      <div className="text-[10px] text-slate-500">{count} {count === 1 ? 'объект' : 'объектов'}</div>
+                      <div className="text-[10px] text-slate-500">{count} {draft.repeatMode === 'participants' ? 'чел.' : count === 1 ? 'объект' : 'объектов'}</div>
                       <div className="mt-0.5 text-sm font-semibold text-sky-900">{getDocumentTemplateRepeatedRows(draft, count)} стр.</div>
                     </div>
                   ))}
@@ -1208,7 +1246,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   }
                   mode={selectedBinding.mode}
                   scope={selectedBinding.scope}
-                  fieldGroups={fieldGroups}
+                  fieldGroups={fieldGroups.map(([label, fields]) => [label, fields.filter(field => draft.repeatMode === 'participants' && selectedBinding.mode === 'row' ? field.key === '__index' || isParticipantField(field.key) : !isParticipantField(field.key))] as [string, TemplateFieldOption[]]).filter(([, fields]) => fields.length)}
                   onChange={updateSelectedParts}
                   onDeduplicateChange={(checked) =>
                     updateSelectedBinding(
@@ -1368,7 +1406,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
             Изменяются правила заполнения и автоназвания. Исходный Excel остается без изменений.
           </div>
         )}
-        <button type="button" onClick={onClose} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        <button type="button" onClick={() => void requestClose()} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
           Отмена
         </button>
         <button
@@ -1494,6 +1532,8 @@ function DocumentTemplateNameEditor({
 
                 {part.type === 'field' ? (
                   <Select
+                    searchable searchGroups popupSize="wide"
+                    aria-label={`Поле части названия ${index + 1}`}
                     value={part.field ?? ''}
                     onChange={(event) =>
                       updatePart(index, {
@@ -1654,6 +1694,17 @@ function CellPartsEditor({
       </div>
 
       <div className="space-y-2">
+        {!parts.length ? <Select
+          searchable searchGroups popupSize="wide"
+          aria-label="Поле для заполнения ячейки"
+          value=""
+          onChange={event => onChange([{ field: event.target.value as DocumentTemplateFieldKey }])}
+        >
+          <option value="" disabled>Выберите поле…</option>
+          {fieldGroups.map(([group, fields]) => <optgroup key={group} label={group}>
+            {fields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}
+          </optgroup>)}
+        </Select> : null}
         {parts.map((part, index) => (
           <div key={`${part.field}-${index}`} className="rounded-md border border-slate-200 bg-slate-50 p-2.5">
             <div className="mb-2 flex items-center gap-1">
@@ -1692,6 +1743,8 @@ function CellPartsEditor({
             </div>
 
             <Select
+              searchable searchGroups popupSize="wide"
+              aria-label={`Поле части ${index + 1}`}
               value={part.field}
               onChange={(event) => {
                 const field = event.target.value as DocumentTemplateFieldKey
@@ -1742,7 +1795,7 @@ function CellPartsEditor({
                             : undefined,
                         })
                       }}
-                      className="mt-1 w-full rounded-md border-slate-300 px-2 py-1.5 text-xs"
+                      className="mt-1 w-full rounded-md border-slate-300 pl-2 pr-8 py-1.5 text-xs"
                     >
                       <option value="none">Не сравнивать</option>
                       <option value="min">Минимальное из двух полей</option>
@@ -1754,11 +1807,13 @@ function CellPartsEditor({
                     <label className="block">
                       <span className="text-[11px] font-medium text-slate-500">Второе числовое поле</span>
                       <Select
+                        searchable searchGroups popupSize="wide"
+                        aria-label={`Второе числовое поле части ${index + 1}`}
                         value={part.compareField ?? ''}
                         onChange={(event) =>
                           updatePart(index, { compareField: event.target.value as DocumentTemplateFieldKey })
                         }
-                        className="mt-1 w-full rounded-md border-slate-300 px-2 py-1.5 text-xs"
+                        className="mt-1 w-full rounded-md border-slate-300 pl-2 pr-8 py-1.5 text-xs"
                       >
                         {numericFieldGroups.map(([group, fields]) => (
                           <optgroup key={group} label={group}>

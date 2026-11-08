@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
-import { loadBoundedDispatcherDirtyScopes, loadWelderStampDispatcherScopes, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
+import { loadBoundedDispatcherDirtyScopes, loadDispatcherDirtyScopeSelection, loadWelderStampDispatcherScopes, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
 import { FULL_REBUILD_GENERATION_KIND } from './dispatcher-refresh-catchup'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { getFinalStatusPersistenceChanges } from './final-status-persistence'
@@ -56,6 +56,13 @@ describe('bounded complete dispatcher contexts', () => {
     const { db, select } = contextDb([{ ...scope, joints }])
     expect(await loadBoundedDispatcherDirtyScopes(db, [scope])).toEqual(joints <= 5_000 ? [scope] : null)
     expect(select).toHaveBeenCalledOnce()
+  })
+
+  it.each([5_001, 6_000, 20_000, 250_000])('keeps a safe complete %i-row context eligible for unlocked staging', async joints => {
+    const { db } = contextDb([{ ...scope, joints }, { ...scope, line: 'L1', joints: 1 }])
+    expect(await loadDispatcherDirtyScopeSelection(db, [scope])).toEqual({
+      scopes: [scope, { ...scope, line: 'L1' }], rowCount: joints + 1,
+    })
   })
 
   it.each([500, 501])('limits %i complete scopes', async count => {

@@ -60,7 +60,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'dispatcherTasks',
   'jsrDocument',
   'checklistDocument',
-  'zniDocument',
+  'zniDocument', 'custom1Document', 'custom2Document',
   'pstoRequired',
   'pstoCancellationDate',
   ...CONTROL_BASIS_FIELD_KEYS,

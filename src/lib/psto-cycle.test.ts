@@ -10,7 +10,7 @@ import {
 
 describe('PSTO cycle timeline', () => {
   it('keeps existing PSTO and TVMT fields as the first cycle', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-001',
       pstoRequestDate: '2026-08-01',
@@ -42,7 +42,7 @@ describe('PSTO cycle timeline', () => {
   })
 
   it('creates an empty first cycle for an assigned PSTO position', () => {
-    expect(hasPrimaryPstoCycle({ pstoRequired: 'да' })).toBe(true)
+    expect(hasPrimaryPstoCycle({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да' })).toBe(true)
     expect(buildPstoCycleTimeline({ pstoRequired: 'да' })[0]).toMatchObject({
       source: 'primary',
       sequence: 1,
@@ -53,7 +53,7 @@ describe('PSTO cycle timeline', () => {
 
   it('adds repeat cycles after the primary cycle in sequence order', () => {
     const timeline = buildPstoCycleTimeline(
-      { pstoRequired: 'да', pstoResult: 'проведено', tvmtResult: 'требуется повторная ПСТО' },
+      { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', pstoResult: 'проведено', tvmtResult: 'требуется повторная ПСТО' },
       [
         { id: 30, weldJointId: 1, sequence: 3, pstoRequest: 'ПСТО-003' },
         { id: 20, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-002' },
@@ -81,7 +81,7 @@ describe('PSTO cycle timeline', () => {
 
   it('does not mistake a cancelled derived waiting status for a real PSTO cycle', () => {
     for (const pstoResult of ['ожидает', 'ожидает заявку', 'отменен']) {
-      const row = { pstoRequired: 'отменен', pstoResult }
+      const row = { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', pstoResult }
       expect(hasPrimaryPstoCycle(row)).toBe(false)
       expect(buildPstoCycleTimeline(row)).toEqual([])
     }

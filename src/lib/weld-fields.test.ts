@@ -85,12 +85,19 @@ describe('weld field order', () => {
       'jsrDocument',
       'checklistDocument',
       'zniDocument',
+      'custom1Document',
+      'custom2Document',
     ])
     expect(lnkSections.some((group) => group.section === 'Документы')).toBe(false)
     expect(pstoSections.some((group) => group.section === 'Документы')).toBe(false)
   })
 
   it('keeps document fields system-controlled and outside Excel imports', () => {
+    for (const key of ['custom1Document', 'custom2Document'] as const) {
+      expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has(key)).toBe(true)
+      expect(EXCEL_FIELDS.some(field => field.key === key)).toBe(false)
+      expect(formHiddenFieldKeys.has(key)).toBe(true)
+    }
     expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('jsrDocument')).toBe(true)
     expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('checklistDocument')).toBe(true)
     expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('zniDocument')).toBe(true)

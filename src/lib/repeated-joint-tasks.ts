@@ -94,9 +94,9 @@ export function buildRepeatedJointTasks(
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
   options: BuildRepeatedJointTasksOptions = {},
 ): RepeatedJointTask[] {
-  const enabled = options.controlProcessSettings?.preHeatTreatmentLnkEnabled
-  if (enabled !== undefined && rows.some((row) => row.preHeatTreatmentLnkEnabled !== enabled)) {
-    rows = rows.map((row) => ({ ...row, preHeatTreatmentLnkEnabled: enabled }))
+  const mode = options.controlProcessSettings?.preHeatTreatmentMode
+  if (mode !== undefined && rows.some((row) => row.preHeatTreatmentMode !== mode)) {
+    rows = rows.map((row) => ({ ...row, preHeatTreatmentMode: mode }))
   }
   const {
     includeControlHistoryChecks = true,

@@ -7,7 +7,7 @@ import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import { buildLnkChronologyCheckTasks } from '@/lib/repeated-joint-check-tasks'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
-const fresh = { id: 6620, joint: 'F1', line: '330-P42/P59-06-000', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentLnkExempt: true, pstoResult: 'ожидает заявку' } as WeldRow
+const fresh = { preHeatTreatmentMode: 'allPsto' as const, id: 6620, joint: 'F1', line: '330-P42/P59-06-000', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentLnkExempt: true, pstoResult: 'ожидает заявку' } as WeldRow
 
 describe('uniform pre-TO requirements', () => {
   it.each(['ожидает заявку', 'ожидает', null])('does not exempt an unstarted joint with PSTO result %s', (pstoResult) => {
@@ -31,28 +31,28 @@ describe('uniform pre-TO requirements', () => {
   })
 
   it('removes the disabled stage from the active workflow without changing documents', () => {
-    const row = { ...fresh, preHeatTreatmentLnkExempt: false, preHeatTreatmentLnkEnabled: false }
+    const row = { ...fresh, preHeatTreatmentLnkExempt: false, preHeatTreatmentMode: 'selected' as const }
     expect(requiresPreHeatTreatmentLnk(row)).toBe(false)
     expect(getPrimaryPstoStartBlockReason(row)).toBe('')
-    expect(getPreHeatTreatmentRequestBlockReason(row, 'ВИК')).toContain('выключен')
+    expect(getPreHeatTreatmentRequestBlockReason(row, 'ВИК')).toContain('не требуется')
   })
 
   it.each([true, false])('off/on applies equally to every joint, obsolete flag=%s', (flag) => {
-    const neighbour = { ...fresh, preHeatTreatmentLnkExempt: flag, preHeatTreatmentLnkEnabled: false }
+    const neighbour = { ...fresh, preHeatTreatmentLnkExempt: flag, preHeatTreatmentMode: 'selected' as const }
     const started = { ...neighbour, pstoRequest: 'ПСТО, начатая без этапа' }
     for (const row of [neighbour, started, buildRepeatedJointDraft(started, 'F1R1')]) {
-      expect(requiresPreHeatTreatmentLnk({ ...row, preHeatTreatmentLnkEnabled: false })).toBe(false)
-      expect(requiresPreHeatTreatmentLnk({ ...row, preHeatTreatmentLnkEnabled: true })).toBe(true)
+      expect(requiresPreHeatTreatmentLnk({ ...row, preHeatTreatmentMode: 'selected' as const })).toBe(false)
+      expect(requiresPreHeatTreatmentLnk({ ...row, preHeatTreatmentMode: 'allPsto' as const })).toBe(true)
     }
   })
 
   it('requires no incomplete-document or date repairs for a disabled historical stage', () => {
-    const row = { ...fresh, preHeatTreatmentLnkEnabled: false, weldDate: '2026-09-20',
+    const row = { ...fresh, preHeatTreatmentMode: 'selected' as const, weldDate: '2026-09-20',
       preHeatTreatmentControls: [{ id: 1, weldJointId: fresh.id, method: 'ВИК', requestName: 'Старая заявка', requestDate: '2026-09-01', result: 'годен' }],
     }
     expect(buildLnkChronologyCheckTasks([row])).toEqual([])
     expect(row.preHeatTreatmentControls).toHaveLength(1)
-    expect(buildLnkChronologyCheckTasks([{ ...row, preHeatTreatmentLnkEnabled: true }])).toHaveLength(1)
+    expect(buildLnkChronologyCheckTasks([{ ...row, preHeatTreatmentMode: 'allPsto' as const }])).toHaveLength(1)
   })
 
   it('allows historical request backfill but keeps chronology checks', () => {

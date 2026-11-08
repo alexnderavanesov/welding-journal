@@ -5,6 +5,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 type WeldFormProps = NonNullable<ReportWeldEditorProps['formProps']>
 
 type CreateReportWeldEditorPropsOptions = {
+  onOpenRoot?: WeldFormProps['onOpenRoot']
   editing: EditingState | null
   suggestionRows?: readonly WeldInput[]
   stampSelectOptions: WeldFormProps['stampSelectOptions']
@@ -20,6 +21,7 @@ type CreateReportWeldEditorPropsOptions = {
 }
 
 export function createReportWeldEditorProps({
+  onOpenRoot,
   editing,
   suggestionRows,
   stampSelectOptions,
@@ -38,6 +40,7 @@ export function createReportWeldEditorProps({
     formProps: editing
       ? {
           value: editing.record,
+          onOpenRoot,
           focusField: editing.focusField,
           returnPageScrollPosition: editing.returnPageScrollPosition,
           suggestionRows,

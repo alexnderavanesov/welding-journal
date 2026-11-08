@@ -1,4 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { ConfirmActionProvider } from '@/lib/confirm-action-context'
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const readWorkbookPreviewMock = vi.hoisted(() => vi.fn())
@@ -94,6 +96,18 @@ afterEach(() => {
 })
 
 describe('document template builder cell clipboard', () => {
+  it('offers a field immediately for an empty assignment and identifies the unfinished cell', async () => {
+    const template = createConfiguredTemplate()
+    template.constructorConfig!.bindings = [{ cell: 'A1', mode: 'row', parts: [] }]
+    const save = vi.fn().mockResolvedValue(true)
+    render(<DocumentTemplateBuilder template={template} onClose={vi.fn()} onSave={save} />)
+    await screen.findByLabelText('Ячейка A1')
+    expect(screen.getAllByText(/Ячейка A1: выберите поле/).length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Поле для заполнения ячейки' }), { target: { value: 'joint' } })
+    expect(screen.queryByText(/Ячейка A1: выберите поле/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить конструктор' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ bindings: [expect.objectContaining({ cell: 'A1', parts: [{ field: 'joint' }] })] })))
+  })
   it.each(['lnkConclusionVik', 'tvmtConclusion', 'pstoConclusion', 'layeredVikEdges', 'weldingJournal'] as const)('shows only the specialist fields appropriate to %s', async id => {
     render(<DocumentTemplateBuilder template={{ ...createConfiguredTemplate(), id }} onClose={vi.fn()} onSave={vi.fn()} />)
     await screen.findByLabelText('Ячейка A1')
@@ -201,3 +215,5 @@ describe('document template builder cell clipboard', () => {
     expect(window.localStorage.length).toBe(0)
   })
 })
+
+function render(ui: ReactElement) { return rtlRender(<ConfirmActionProvider>{ui}</ConfirmActionProvider>) }

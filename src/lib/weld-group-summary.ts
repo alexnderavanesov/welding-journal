@@ -28,7 +28,7 @@ export type WeldGroupSummary = {
 }
 
 const text = (value: unknown) => String(value ?? '').trim()
-const waiting = ['ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК'] as const
+const waiting = ['ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ожидает заявку до ТО', 'ожидает НК до ТО'] as const
 
 function createGroupLineIdentity() {
   const keys = new Map<string, string>()
@@ -173,7 +173,7 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
       if (hasRejection) rejected++
     }
     const status = errors ? 'ошибка' : waiting.find(status => currentStatuses.has(status))
-      ?? (rejected ? 'не годен' : partialChains ? 'неполная цепочка' : branches.size ? 'годен' : group.length ? 'заменены катушкой' : '—')
+      ?? (rejected ? 'не годен' : partialChains ? 'неполная цепочка' : currentStatuses.has('неактуальный') ? 'неактуальный' : branches.size ? 'годен' : group.length ? 'заменены катушкой' : '—')
     const common = (field: 'projectTitle' | 'subtitleCode') => {
       const values = new Set(group.map(row => text(row[field])))
       return values.size === 1 ? values.values().next().value || '—' : '—'

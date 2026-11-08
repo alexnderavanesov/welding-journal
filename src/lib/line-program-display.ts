@@ -31,7 +31,7 @@ export function buildLineProgramDisplay(rows: readonly WeldRow[], groups: readon
     for (const row of physical) {
       if (good.has(row.id) || rejected.has(row.id) || errors.has(row.id)) continue
       const status = states.get(row.id)
-      const stage = status === 'ожидает сварку' ? 'welding' : status === 'ожидает заявку' ? 'request' : status === 'ожидает НК' ? 'control' : 'other'
+      const stage = status === 'ожидает сварку' ? 'welding' : (status === 'ожидает заявку' || status === 'ожидает заявку до ТО') ? 'request' : (status === 'ожидает НК' || status === 'ожидает НК до ТО') ? 'control' : 'other'
       incompleteStages[stage]++
     }
     return { reducible: countProgramRemovalHints(hints, members.map(row => row.id)), count: physical.length, journalRows: members.length,

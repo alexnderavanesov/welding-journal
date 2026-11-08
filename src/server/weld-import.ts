@@ -148,7 +148,7 @@ export async function listWeldingJournalImportScope({
 async function attachImportRepairRequirements<T extends { id: number }>(rows: T[]) {
   if (!rows.length) return rows
   const db = requireDb()
-  const context = await loadProgramRuleContext(db, rows as WeldRow[], (rows[0] as WeldRow).preHeatTreatmentLnkEnabled !== false)
+  const context = await loadProgramRuleContext(db, rows as WeldRow[], (rows[0] as WeldRow).preHeatTreatmentMode ?? 'selected')
   const requirements = buildProgramRepairRequirements(context.rows, context.approved, await loadProgramSystemIndexSettings(db))
   return rows.map(row => ({ ...row, programRepairRequirements: requirements.get(row.id) ?? [] }))
 }
@@ -377,13 +377,16 @@ export async function lockAndAssertWeldRowVersions(
 }
 
 export async function importWeldJoints({
-  data,
+  data: input,
 }: {
   data: { records: WeldInput[] }
 }) {
   await assertSecurityScope(getWeldImportSecurityScope('newRecords'))
-  assertWeldImportRowLimit(data.records.length)
-  if (data.records.length === 0) return { inserted: 0, rows: [] }
+  assertWeldImportRowLimit(input.records.length)
+  if (input.records.length === 0) return { inserted: 0, rows: [] }
+  // Preparation derives line/chain fields in place. A rejected transaction must
+  // not add those fields to a caller's DTO that may be corrected and resubmitted.
+  const data = { records: input.records.map(record => ({ ...record })) }
   const db = requireDb()
 
   return db.transaction(async (tx) => {

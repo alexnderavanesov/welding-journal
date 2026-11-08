@@ -29,7 +29,7 @@ describe('LNK control stages', () => {
   })
 
   it('requires both stages only when PSTO and the selected method are assigned', () => {
-    const row = { pstoRequired: 'да', hasVik: 'да', hasRk: 'да' }
+    const row = { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', hasVik: 'да', hasRk: 'да' }
 
     expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['beforeHeatTreatment', 'primary'])
     expect(getRequiredLnkControlStages(row, 'РК')).toEqual(['beforeHeatTreatment', 'primary'])
@@ -37,13 +37,13 @@ describe('LNK control stages', () => {
   })
 
   it('keeps every assigned method in the primary stage when PSTO is absent', () => {
-    const row = { pstoRequired: '', hasVik: 'да' }
+    const row = { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: '', hasVik: 'да' }
 
     expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['primary'])
   })
 
   it('requires pre-control for every assigned PSTO row, including obsolete exemptions', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Историческая заявка ПСТО',
       hasVik: 'да',
@@ -52,8 +52,8 @@ describe('LNK control stages', () => {
 
     expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['beforeHeatTreatment', 'primary'])
     expect(getPrimaryPstoStartBlockReason(row)).toContain('Сначала создайте заявки НК до ТО')
-    expect(getPreHeatTreatmentPendingFinalStatus(row)).toBe('ожидает заявку')
-    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toContain('НК до ТО')
+    expect(getPreHeatTreatmentPendingFinalStatus(row)).toBe('ожидает заявку до ТО')
+    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toBe('')
     expect(getPrimaryLnkStageBlockReason({
       ...row,
       pstoRequest: 'Заявка ПСТО',
@@ -62,11 +62,11 @@ describe('LNK control stages', () => {
       tvmtRequest: 'Заявка ТВМТ',
       tvmtResult: 'годен',
       tvmtConclusionDate: '2026-09-02',
-    }, 'ВИК')).toContain('НК до ТО')
+    }, 'ВИК')).toBe('')
   })
 
   it('opens primary LNK after an officially cancelled cycle with failed TVMT', () => {
-    expect(getPrimaryLnkStageBlockReason({
+    expect(getPrimaryLnkStageBlockReason({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       hasVik: 'да',
       pstoRequest: 'Заявка ПСТО',
@@ -122,7 +122,7 @@ describe('LNK control stages', () => {
   })
 
   it('opens post-heat-treatment control only after pre-control, PSTO and good TVMT', () => {
-    const base = {
+    const base = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       weldDate: '2026-08-01',
@@ -136,7 +136,7 @@ describe('LNK control stages', () => {
       tvmtConclusionDate: '2026-08-11',
       preHeatTreatmentControls: [],
     }
-    expect(getPrimaryLnkStageBlockReason(base, 'ВИК')).toContain('завершите НК до ТО: ВИК')
+    expect(getPrimaryLnkStageBlockReason(base, 'ВИК')).toBe('')
 
     const preComplete = {
       ...base,
@@ -151,21 +151,21 @@ describe('LNK control stages', () => {
     }
     expect(getPrimaryLnkStageBlockReason(preComplete, 'ВИК')).toBe('')
     expect(getPrimaryLnkStageBlockReason({ ...preComplete, tvmtResult: 'не годен' }, 'ВИК'))
-      .toContain('требуется повторная ПСТО')
+      .toBe('')
   })
 
-  it('keeps an incomplete staged workflow blocked in strict mode', () => {
-    const access = getPrimaryLnkStageAccess({
+  it('allows incomplete stages with a warning without a separate permission toggle', () => {
+    const access = getPrimaryLnkStageAccess({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       pstoRequired: 'да',
       hasVik: 'да',
     } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', {
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
+      preHeatTreatmentMode: 'allPsto' as const,
+
     })
 
-    expect(access.status).toBe('blocked')
+    expect(access.status).toBe('allowed-with-warning')
     expect(access.reason).toContain('Сначала завершите НК до ТО: ВИК')
     expect(access.debt?.missingPreHeatTreatmentControls).toEqual([
       { methodCode: 'ВИК', nextAction: 'request' },
@@ -173,7 +173,7 @@ describe('LNK control stages', () => {
   })
 
   it('allows manual primary LNK with a warning in permissive mode', () => {
-    const access = getPrimaryLnkStageAccess({
+    const access = getPrimaryLnkStageAccess({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       pstoRequired: 'да',
@@ -185,8 +185,8 @@ describe('LNK control stages', () => {
         requestName: 'Заявка ВИК до ТО',
       }],
     } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', {
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+      preHeatTreatmentMode: 'allPsto' as const,
+
     })
 
     expect(access.status).toBe('allowed-with-warning')
@@ -197,16 +197,16 @@ describe('LNK control stages', () => {
 
   it('keeps the existing PSTO-to-primary sequence when pre-TO control is disabled', () => {
     const settings = {
-      preHeatTreatmentLnkEnabled: false,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+      preHeatTreatmentMode: 'selected' as const,
+
     }
-    expect(getPrimaryLnkStageAccess({
+    expect(getPrimaryLnkStageAccess({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       pstoRequired: 'да',
       hasVik: 'да',
       preHeatTreatmentLnkExempt: true,
-    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', settings).status).toBe('blocked')
+    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', settings).status).toBe('allowed-with-warning')
     expect(getPrimaryLnkStageAccess({
       id: 1,
       joint: 'F1',
@@ -222,7 +222,7 @@ describe('LNK control stages', () => {
   })
 
   it('keeps a rejected pre-TO result blocked even in permissive mode', () => {
-    const access = getPrimaryLnkStageAccess({
+    const access = getPrimaryLnkStageAccess({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       pstoRequired: 'да',
@@ -235,8 +235,8 @@ describe('LNK control stages', () => {
         result: 'вырез',
       }],
     } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', {
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+      preHeatTreatmentMode: 'allPsto' as const,
+
     })
 
     expect(access.status).toBe('blocked')
@@ -245,18 +245,18 @@ describe('LNK control stages', () => {
   })
 
   it('does not use duplicate controls in primary-stage readiness', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       duplicateControls: [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'годен' }],
     }
 
-    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toContain('завершите НК до ТО: ВИК')
+    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toBe('')
     expect(getPrimaryPstoStartBlockReason(row)).toContain('создайте заявки НК до ТО: ВИК')
   })
 
   it('starts primary PSTO only after every assigned pre-TO method is good', () => {
-    const base = {
+    const base = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       hasVik: 'да',
@@ -290,7 +290,7 @@ describe('LNK control stages', () => {
   })
 
   it('describes rejected pre-TO control as no need for downstream stages', () => {
-    const rejected = {
+    const rejected = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       preHeatTreatmentControls: [{
@@ -307,7 +307,7 @@ describe('LNK control stages', () => {
   })
 
   it('distinguishes a missing pre-TO request from an existing PSTO request', () => {
-    expect(getPrimaryPstoStartStatusLabel({
+    expect(getPrimaryPstoStartStatusLabel({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
     })).toBe('ожидает заявку НК до ТО: ВИК')
@@ -324,22 +324,22 @@ describe('LNK control stages', () => {
       conclusionName: 'Заключение РК до ТО',
     }
 
-    expect(getRejectedPreHeatTreatmentControls({
+    expect(getRejectedPreHeatTreatmentControls({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasRk: 'да',
       preHeatTreatmentControls: [control],
     } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toHaveLength(1)
-    expect(getRejectedPreHeatTreatmentControls({
+    expect(getRejectedPreHeatTreatmentControls({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasRk: 'отменен',
       preHeatTreatmentControls: [control],
     } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toHaveLength(1)
-    expect(getRejectedPreHeatTreatmentControls({
+    expect(getRejectedPreHeatTreatmentControls({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       hasRk: 'да',
       preHeatTreatmentControls: [control],
     } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toHaveLength(1)
-    expect(getRejectedPreHeatTreatmentControls({
+    expect(getRejectedPreHeatTreatmentControls({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoResult: 'проведено',
       hasRk: 'да',

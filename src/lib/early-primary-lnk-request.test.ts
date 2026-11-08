@@ -12,26 +12,26 @@ import { buildRepeatTvmtResultCycle } from '@/lib/psto-repeat-cycle-updates'
 
 const row = (values: Partial<WeldRow> = {}) => ({
   id: 1, joint: 'F43', projectTitle: 'Риформинг', weldDate: '2026-03-14',
-  hasVik: 'да', pstoRequired: 'да', preHeatTreatmentLnkEnabled: false,
+  hasVik: 'да', pstoRequired: 'да', preHeatTreatmentMode: 'selected' as const,
   ...values,
 }) as WeldRow
 
 describe('requests are scheduling, not evidence of completed primary control', () => {
   it.each(LNK_METHODS)('keeps request and result readiness separate for $code', (method) => {
-    const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: false }
-    const previous = row({ preHeatTreatmentLnkEnabled: true, [method.enabledKey]: 'да' })
+    const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' as const,  }
+    const previous = row({ preHeatTreatmentMode: 'allPsto' as const, [method.enabledKey]: 'да' })
     const [requested] = buildLnkRequestRows({ records: [previous], methodKeys: [method.requestKey], requestName: '1503-2', requestDate: '2026-03-14', controlProcessSettings: settings })
     expect(requested[method.requestKey]).toBe('1503-2')
-    expect(getPrimaryLnkStageAccess(requested, method.code, settings).status).toBe('blocked')
+    expect(getPrimaryLnkStageAccess(requested, method.code, settings).status).toBe('allowed-with-warning')
     expect(getLnkChronologyIssues([requested])).toEqual([])
     expect(() => buildLnkRequestRows({ records: [previous], methodKeys: [method.requestKey], requestName: 'Слишком рано', requestDate: '2026-03-13', controlProcessSettings: settings })).toThrow('раньше даты сварки')
     expect(buildLnkRequestRows({ records: [{ ...previous, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: method.code, result: 'вырез' }] }], methodKeys: [method.requestKey], requestName: 'Запрещено', requestDate: '2026-03-14', controlProcessSettings: settings })).toEqual([])
   })
 
   it.each([false, true])('allows an early request with pre-TO enabled=%s without a stage warning', (enabled) => {
-    const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: enabled, allowPrimaryLnkBeforePreviousStagesComplete: false }
+    const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const,  }
     const requested = buildLnkRequestRows({
-      records: [row({ preHeatTreatmentLnkEnabled: enabled })], methodKeys: ['vikRequest'],
+      records: [row({ preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })], methodKeys: ['vikRequest'],
       requestName: '1503-2', requestDate: '2026-03-15', controlProcessSettings: settings,
     })
     expect(requested).toHaveLength(1)

@@ -91,7 +91,7 @@ describe('unified assignments, latest approved requirements', () => {
     expect(next).toMatchObject({ hasVik: 'да', hasPvk: 'да', hasRk: 'да', layeredControlAssigned: true })
     expect(() => applyProgramPatch(next, { ПВК: 'отменен' })).toThrow(/ПВК/)
     expect(() => applyProgramPatch(next, { 'Послойный ПВК': 'отменен' })).toThrow(/отдельной/)
-    expect(() => applyProgramPatch(row(1, { connectionType: 'У', preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }), { 'Послойный ПВК': 'да' })).toThrow(/ремонт/)
+    expect(() => applyProgramPatch(row(1, { connectionType: 'У', preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }), { 'Послойный ПВК': 'да' })).toThrow(/ремонт/)
   })
   it.each(['отменен', 'дополнительный'])('does not silently replace %s PVK with layered control', hasPvk => {
     const original = row(1, { connectionType: 'У19', hasPvk })

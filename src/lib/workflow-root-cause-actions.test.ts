@@ -135,7 +135,7 @@ describe('workflow root-cause actions', () => {
 })
 
 function f5Row(overrides: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 5,
     projectTitle: 'Проект',
     subtitleCode: '400',

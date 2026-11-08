@@ -14,7 +14,7 @@ import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import { buildPstoCurrentReportValueSql, PSTO_CURRENT_SQL_FIELD_KEYS } from './psto-report-current-values'
 
 function row(values: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'Основная',
     pstoRequestDate: '2026-09-01', pstoDate: '2026-09-02', pstoResult: 'проведено',
     heatTreatmentDiagram: 'Д1', pstoNote: 'Основное примечание',
@@ -31,13 +31,13 @@ describe('PSTO current report projection', () => {
     ['stale waiting request label', { pstoRequest: 'Заявка', pstoResult: ' ОЖИДАЕТ ЗАЯВКУ ' }, 'ожидает'],
     ['stale waiting execution label', { pstoRequest: null, pstoResult: ' ОЖИДАЕТ ' }, 'ожидает заявку'],
     ['literal legacy request name', { pstoRequest: 'ожидает заявку', pstoResult: null }, 'ожидает'],
-    ['inactive', { pstoRequired: 'нет', pstoRequest: 'Заявка', pstoResult: null }, ''],
-    ['cancelled', { pstoRequired: 'отменен', pstoRequest: 'Заявка', pstoResult: null }, 'отменен'],
+    ['inactive', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'нет', pstoRequest: 'Заявка', pstoResult: null }, ''],
+    ['cancelled', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', pstoRequest: 'Заявка', pstoResult: null }, 'отменен'],
     ['sparse repeat', { pstoRequest: 'Заявка', pstoResult: null,
       pstoRepeatCycles: [{ id: 12, weldJointId: 1, sequence: 2, pstoRequest: 'Повторная' }] }, ''],
     ['stale rejected final status', { finalStatus: 'не годен', pstoRequest: null, pstoResult: null }, 'ожидает заявку'],
     ['stale duplicate final status', { finalStatus: 'не годен по дублю', pstoRequest: 'Заявка', pstoResult: null }, 'ожидает'],
-    ['automatic VIK with preheat rejection', { hasVik: null, preHeatTreatmentLnkEnabled: true,
+    ['automatic VIK with preheat rejection', { hasVik: null, preHeatTreatmentMode: 'allPsto' as const,
       preHeatTreatmentControls: [{ id: 31, weldJointId: 1, method: 'ВИК', result: 'ремонт' }] }, 'нет потребности'],
     ['legacy primary failed TVMT without PSTO execution', { pstoRequest: 'Заявка', pstoResult: null,
       tvmtResult: 'не годен', finalStatus: 'не годен' }, 'ожидает'],
@@ -45,7 +45,7 @@ describe('PSTO current report projection', () => {
       finalStatus: 'не годен', pstoRepeatCycles: [{ id: 12, weldJointId: 1, sequence: 2,
         pstoRequest: 'Повторная', tvmtResult: 'не годен' }] }, ''],
   ] as Array<[string, Partial<WeldRow>, string]>)('matches the full UI preparation for all current SQL fields: %s', (_name, values, expectedResult) => {
-    const source: WeldRow = { id: 1, weldDate: '2026-09-01', pstoRequired: 'да', ...values }
+    const source: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, weldDate: '2026-09-01', pstoRequired: 'да', ...values }
     const before = structuredClone(source)
     const fields = [...PSTO_CURRENT_SQL_FIELD_KEYS, 'pstoCycleSummary' as const]
     const [projected] = projectPstoReportDisplayValues([source], fields)
@@ -83,7 +83,7 @@ describe('PSTO current report projection', () => {
   })
 
   it.each(['нет', 'отменен'])('on %s ignores a later request-only repeat and retains the last performed cycle', pstoRequired => {
-    const source = row({ pstoRequired, pstoRepeatCycles: [
+    const source = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired, pstoRepeatCycles: [
       { id: 12, weldJointId: 1, sequence: 2, pstoDate: '2026-10-02', pstoResult: 'проведено', tvmtResult: 'годен' },
       { id: 13, weldJointId: 1, sequence: 3, pstoRequest: 'Сохранённая заявка', pstoRequestDate: '2026-10-05',
         tvmtRequest: 'Сохранённая заявка ТВМТ', tvmtRequestDate: '2026-10-06', tvmtResult: 'ожидает' },
@@ -97,14 +97,14 @@ describe('PSTO current report projection', () => {
   })
 
   it('retains the performed primary cycle when the inactive repeat has no execution facts', () => {
-    const source = row({ pstoRequired: 'нет', pstoRepeatCycles: [{ id: 12, weldJointId: 1, sequence: 2, pstoRequest: 'Заявка', tvmtResult: 'неизвестно' }] })
+    const source = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'нет', pstoRepeatCycles: [{ id: 12, weldJointId: 1, sequence: 2, pstoRequest: 'Заявка', tvmtResult: 'неизвестно' }] })
     const [display] = projectPstoReportDisplayValues([source], ['pstoDate', 'tvmtResult'])
     expect(display).toMatchObject({ pstoDate: '2026-09-02', tvmtResult: 'не годен' })
     expect(getCurrentPstoCycle(source)?.sequence).toBe(1)
   })
 
   it('keeps the latest request if no cycle has any execution facts', () => {
-    const source: WeldRow = { id: 1, pstoRequired: 'отменен', pstoRequest: 'Основная', pstoRepeatCycles: [
+    const source: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'отменен', pstoRequest: 'Основная', pstoRepeatCycles: [
       { id: 12, weldJointId: 1, sequence: 2, pstoRequest: 'История #2', pstoRequestDate: '2026-10-03' },
     ] }
     const [display] = projectPstoReportDisplayValues([source], ['pstoRequest', 'pstoRequestDate', 'pstoResult'])

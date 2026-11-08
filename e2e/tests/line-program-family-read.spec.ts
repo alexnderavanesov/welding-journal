@@ -10,17 +10,18 @@ import { summarizeLineProgram } from '../../src/lib/line-program-overview'
 import { attachProgramRepairRequirements } from '../../src/lib/line-program-repair-requirements'
 import { explainLineProgram } from '../../src/lib/line-program-explanation'
 import { unpackProgramRows } from '../../src/lib/line-program-row-payload'
-import { type getLineProgramCalculation, type getLineProgramExplanation, type getLineProgramJointPage,
+import { loadProgramRows, type ProgramRowsPayload, type ProgramRowsWireResult } from '../../src/lib/line-program-row-stream'
+import { type getLineProgramCalculation, type getLineProgramExplanation,
   loadLineProgramRows, loadProgramSystemIndexSettings, mapLineProgramCalculations, toLineProgramRecord } from '../../src/server/line-program'
 import { withLineProgramFixture, cleanupLineProgramProjects } from '../line-program-fixtures'
-import { deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
+import { deserializeRpcHttpResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
 
 const project = 'E2E program family read equivalence'
 const subtitle = 'FAMILY-READ'
 type PublicReadResults = {
   getLineProgramCalculation: Awaited<ReturnType<typeof getLineProgramCalculation>>
   getLineProgramExplanation: Awaited<ReturnType<typeof getLineProgramExplanation>>
-  getLineProgramJointPage: Awaited<ReturnType<typeof getLineProgramJointPage>>
+  getLineProgramJointPage: ProgramRowsPayload
 }
 async function publicRead<Name extends keyof PublicReadResults>(page: Page, observedUrl: string, name: Name, data: unknown): Promise<PublicReadResults[Name]> {
   const url = new URL(siblingRpcUrl(observedUrl, `${name}_createServerFn_handler`))
@@ -28,10 +29,12 @@ async function publicRead<Name extends keyof PublicReadResults>(page: Page, obse
   const response = await page.request.get(url.href, {
     headers: { origin: url.origin, 'sec-fetch-site': 'same-origin', 'x-tsr-serverFn': 'true' },
   })
-  const payload = await deserializeRpcResponse(await response.text()) as { result: PublicReadResults[Name]; error?: Error }
+  const payload = await deserializeRpcHttpResponse(new Response(Uint8Array.from(await response.body()), { status: response.status(), headers: response.headers() })) as {
+    result: PublicReadResults[Name] | ProgramRowsWireResult; error?: Error
+  }
   if (payload.error) throw payload.error
   expect(response.ok(), `${name}: authenticated public read`).toBe(true)
-  return payload.result
+  return (name === 'getLineProgramJointPage' ? await loadProgramRows(async () => payload.result as ProgramRowsWireResult) : payload.result) as PublicReadResults[Name]
 }
 test.afterEach(() => cleanupLineProgramProjects([project]))
 

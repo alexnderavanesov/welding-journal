@@ -9,7 +9,7 @@ import {
 
 describe('clearInactivePstoWaitingStatus', () => {
   it('preserves PSTO request and date when PSTO is inactive without result', () => {
-    const row = clearInactivePstoWaitingStatus({
+    const row = clearInactivePstoWaitingStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoDate: '30.06.2026',
@@ -22,7 +22,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('clears a stale waiting status after PSTO is cancelled without a request', () => {
-    const row = clearInactivePstoWaitingStatus({
+    const row = clearInactivePstoWaitingStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: null,
       pstoRequestDate: null,
@@ -34,7 +34,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('keeps PSTO request and date when inactive PSTO already has conducted result', () => {
-    const row = clearInactivePstoWaitingStatus({
+    const row = clearInactivePstoWaitingStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoDate: '30.06.2026',
@@ -46,7 +46,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('preserves documents even when only a waiting status exists', () => {
-    const row = clearInactivePstoWaitingStatus({
+    const row = clearInactivePstoWaitingStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoDate: '30.06.2026',
@@ -59,7 +59,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('preserves a cancelled request and financial references', () => {
-    const row = clearInactivePstoWaitingStatus({
+    const row = clearInactivePstoWaitingStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoRequestDate: '2026-06-30',
@@ -75,7 +75,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('fills active PSTO result with waiting request status when request is missing', () => {
-    const row = withPendingPstoResultStatus({
+    const row = withPendingPstoResultStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: null,
       pstoResult: null,
@@ -85,7 +85,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('fills active PSTO result with waiting status when request exists', () => {
-    const row = withPendingPstoResultStatus({
+    const row = withPendingPstoResultStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoResult: null,
@@ -95,7 +95,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('normalizes stale waiting request status when request exists', () => {
-    const row = withPendingPstoResultStatus({
+    const row = withPendingPstoResultStatus({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoResult: 'ожидает заявку',
@@ -105,7 +105,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('restores cancelled conducted result when PSTO becomes active again', () => {
-    const row = restoreActivePstoCancelledResult({
+    const row = restoreActivePstoCancelledResult({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoResult: 'проведено (отменен)',
     } as WeldRow)
@@ -114,7 +114,7 @@ describe('clearInactivePstoWaitingStatus', () => {
   })
 
   it('clears cancelled PSTO result when PSTO becomes active again', () => {
-    const row = restoreActivePstoCancelledResult({
+    const row = restoreActivePstoCancelledResult({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoResult: 'отменен',
     } as WeldRow)

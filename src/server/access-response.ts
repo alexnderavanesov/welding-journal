@@ -8,6 +8,8 @@ import { projectControlWorkflowAccess } from './control-workflow-access'
 // projection; applying weld rules again would erase authorized registry history.
 const ownDomainResults = new Set([
   'document-connections.ts#getDocumentConnections',
+  // The collector checks documents and each requested work area itself.
+  'document-participants-api.ts#getDocumentTemplateParticipants',
   'document-save-recovery-api.ts#checkDocumentSave',
   // Registry IDs and configuration keys may also be called id, connectionType
   // or pstoRequest. They are not restricted weld facts; their operation policy

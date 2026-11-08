@@ -1,3 +1,4 @@
+import type { CustomDocumentType } from '@/lib/custom-document-types'
 import type { WorkflowAvailability } from '@/components/workflow-action-menu-item'
 import { HeatTreatmentHeaderActions, LnkHeaderActions, WeldingJournalHeaderActions } from '@/components/report-header-action-groups'
 import { WorkflowActionScope } from '@/components/workflow-action-menu-item'
@@ -18,6 +19,7 @@ export type ReportHeaderActionsProps = {
   onGenerateWeldingJournalDocument: () => void
   onGenerateChecklistDocument: () => void
   onGenerateZniDocument: () => void
+  onGenerateCustomDocument?: (type: CustomDocumentType) => void
   onOpenWeldingJournalCurrentReport: () => void
   onOpenWeldingJournalWaitingWeldReport: () => void
   onOpenWeldingJournalWaitingRequestReport: () => void
@@ -88,6 +90,7 @@ export function ReportHeaderActions({
   onGenerateWeldingJournalDocument,
   onGenerateChecklistDocument,
   onGenerateZniDocument,
+  onGenerateCustomDocument,
   onOpenWeldingJournalCurrentReport,
   onOpenWeldingJournalWaitingWeldReport,
   onOpenWeldingJournalWaitingRequestReport,
@@ -217,6 +220,7 @@ export function ReportHeaderActions({
           onGenerateWeldingJournalDocument={onGenerateWeldingJournalDocument}
           onGenerateChecklistDocument={onGenerateChecklistDocument}
           onGenerateZniDocument={onGenerateZniDocument}
+          onGenerateCustomDocument={onGenerateCustomDocument}
           currentReportDisabled={currentReportDisabled}
           onOpenCurrentReport={onOpenWeldingJournalCurrentReport}
           onOpenWaitingWeldReport={onOpenWeldingJournalWaitingWeldReport}

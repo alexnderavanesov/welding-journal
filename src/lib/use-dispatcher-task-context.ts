@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { RepeatedJointTask, WeldRow } from './dispatcher-types'
-import { getDispatcherTaskContext, type DispatcherTaskContextResult } from '@/server/dispatcher-task-context'
+import { loadDispatcherTaskContext } from './dispatcher-task-context-loader'
 
 const EMPTY_TASKS: RepeatedJointTask[] = []
 
@@ -11,39 +11,7 @@ export function useDispatcherTaskContext(rows: readonly WeldRow[], revision: num
   const query = useQuery({
     queryKey: ['dispatcher-task-context', revision, ids],
     enabled: needed && revision !== null && ids.length > 0,
-    queryFn: async ({ signal }) => {
-      const tasks = new Map<string, RepeatedJointTask>()
-      const missing = new Set(ids)
-      const reuse = (covered: readonly number[], cached: readonly RepeatedJointTask[] | undefined) => {
-        if (!cached || !covered.some(id => missing.has(id))) return
-        for (const id of covered) missing.delete(id)
-        for (const task of cached) tasks.set(task.key, task)
-      }
-      // Server order is not ID order. Appending a page can interleave IDs with
-      // every previous portion; reuse covered IDs rather than re-slicing and
-      // downloading the old rows again. Query GC bounds inactive cache lifetime.
-      for (const [key, cached] of client.getQueriesData<RepeatedJointTask[]>({ queryKey: ['dispatcher-task-context', revision] })) {
-        reuse(key[2] as number[], cached)
-      }
-      for (const [key, cached] of client.getQueriesData<DispatcherTaskContextResult>({ queryKey: ['dispatcher-task-context-portion', revision] })) {
-        reuse(key[2] as number[], cached?.tasks)
-      }
-      const remaining = [...missing]
-      // No row-level requests or unbounded fan-out. Obsolete queries stop before
-      // starting another portion; cells stay explicitly pending until completion.
-      for (let offset = 0; offset < remaining.length; offset += 500) {
-        signal.throwIfAborted()
-        const rowIds = remaining.slice(offset, offset + 500)
-        const result = await client.fetchQuery({
-          queryKey: ['dispatcher-task-context-portion', revision, rowIds],
-          queryFn: () => getDispatcherTaskContext({ data: { rowIds, computedRevision: revision!, mode: 'rows' } }),
-          staleTime: Infinity, gcTime: 60_000, retry: false,
-        })
-        for (const task of result.tasks) tasks.set(task.key, task)
-      }
-      signal.throwIfAborted()
-      return [...tasks.values()]
-    },
+    queryFn: ({ signal }) => loadDispatcherTaskContext(client, ids, revision!, signal),
     staleTime: Infinity, gcTime: 60_000, retry: false,
     refetchOnWindowFocus: false, refetchOnReconnect: false,
   })

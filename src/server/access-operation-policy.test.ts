@@ -9,6 +9,15 @@ import { redactWeldData } from '@/lib/weld-field-access'
 import { packProgramRows, unpackProgramRows } from '@/lib/line-program-row-payload'
 const engineer: AccessIdentity = { id: 'engineer', name: 'Имя', email: '', title: 'Директор', role: 'user', permissions: ['welding.view', 'welding.edit', 'templates.view', 'templates.edit'], revision: 1 }
 describe('server operation access boundary', () => {
+  it('requires separate warning-settings rights, available to administrators by default', () => {
+    const required = getOperationPermissions('@settingEdit', { key: 'assignment-warnings' })
+    expect(required).toEqual(['assignmentWarnings.edit'])
+    const checksEditor: AccessIdentity = { ...engineer, permissions: ['checks.view', 'checks.edit'] }
+    expect(() => required.forEach(permission => assertPermission(checksEditor, permission))).toThrow()
+    const warningsEditor: AccessIdentity = { ...engineer, permissions: ['assignmentWarnings.view', 'assignmentWarnings.edit'] }
+    expect(() => required.forEach(permission => assertPermission(warningsEditor, permission))).not.toThrow()
+    expect(() => required.forEach(permission => assertPermission({ ...engineer, role: 'admin', permissions: [] }, permission))).not.toThrow()
+  })
   it('registers every current RPC export and rejects new/unknown operations', () => {
     const directory = resolve('src/server')
     let checked = 0

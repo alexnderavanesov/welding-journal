@@ -19,18 +19,21 @@ import type {
 } from '@/server/weld-contracts'
 
 export const SYSTEM_FIELD_KEYS = new Set([
+  'revisionActuality',
   'id',
   'dispatcherTasks',
   'jsrDocument',
   'checklistDocument',
   'zniDocument',
+  'custom1Document',
+  'custom2Document',
   'rkExposureScheme',
   'pstoRequired',
   'pstoControlBasis',
   'pstoExceptionBasis',
   'pstoCancellationDate',
   'preHeatTreatmentLnkExempt',
-  'preHeatTreatmentLnkEnabled',
+  'preHeatTreatmentMode', 'preHeatTreatmentRequired',
   'lineProgramId',
   'pvkControlPercent',
   'layeredControlAssigned',

@@ -50,7 +50,7 @@ describe('PSTO line assignment payload', () => {
         return { returning: async () => rows }
       },
     }) }) }
-    const rows = Array.from({ length: 201 }, (_, index) => ({ id: index + 1, joint: `F${index + 1}`, pstoRequired: 'да' })) as WeldRow[]
+    const rows = Array.from({ length: 201 }, (_, index) => ({ preHeatTreatmentMode: 'allPsto' as const, id: index + 1, joint: `F${index + 1}`, pstoRequired: 'да' })) as WeldRow[]
     const corrected = new Set(rows.slice(0, 101).map(row => row.id))
     await persistPstoLineAssignmentRows(tx as never, rows, new Date(), corrected)
     expect(writes.map(write => write.ids.length)).toEqual([100, 100, 1])
@@ -88,7 +88,7 @@ describe('PSTO line assignment payload', () => {
       batches.push(rows.length)
       return { onConflictDoUpdate: () => ({ returning: async () => rows }) }
     } }) }
-    const rows = Array.from({ length: 501 }, (_, index) => ({
+    const rows = Array.from({ length: 501 }, (_, index) => ({ preHeatTreatmentMode: 'allPsto' as const,
       id: index + 1, joint: `F${index + 1}`, pstoRequired: 'да',
       preHeatTreatmentControls: [{ id: index + 1000, weldJointId: index + 1 }],
     })) as WeldRow[]
@@ -120,13 +120,13 @@ describe('PSTO line assignment payload', () => {
       },
     }
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         joint: 'J-1',
         pstoRequired: 'да',
         preHeatTreatmentControls: [{ id: 11, weldJointId: 1 }],
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         joint: 'J-2',
         pstoRequired: 'да',

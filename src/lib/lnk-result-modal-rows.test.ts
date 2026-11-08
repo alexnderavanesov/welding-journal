@@ -32,7 +32,7 @@ describe('filterLnkResultRows', () => {
   })
 
   it('keeps a staged row searchable while bulk selection stays strict', () => {
-    const staged = createRow(3, 'TARGET', {
+    const staged = createRow(3, 'TARGET', { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Заявка-3',
@@ -41,10 +41,10 @@ describe('filterLnkResultRows', () => {
     })
 
     expect(filterLnkResultRows([staged], 'target', 'vikRequest')).toEqual([staged])
-    expect(canSelectLnkResultRow(staged, 'Заявка-3', 'vikRequest', '2026-08-10')).toBe(false)
+    expect(canSelectLnkResultRow(staged, 'Заявка-3', 'vikRequest', '2026-08-10')).toBe(true)
     expect(canSelectLnkResultRow(staged, 'Заявка-3', 'vikRequest', '2026-08-10', {
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+      preHeatTreatmentMode: 'allPsto' as const,
+
     })).toBe(true)
     expect(getSelectableVisibleLnkResultRows(
       [staged],
@@ -55,7 +55,7 @@ describe('filterLnkResultRows', () => {
   })
 
   it('allows a staged row through a manual context-menu selection in permissive mode', () => {
-    const staged = createRow(3, 'TARGET', {
+    const staged = createRow(3, 'TARGET', { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Заявка-3',
@@ -74,8 +74,8 @@ describe('filterLnkResultRows', () => {
     const actions = useLnkResultActions({
       controlProcessSettings: {
         pvkGoodOnly: false,
-        preHeatTreatmentLnkEnabled: true,
-        allowPrimaryLnkBeforePreviousStagesComplete: true,
+        preHeatTreatmentMode: 'allPsto' as const,
+
       },
       filteredRows: [staged],
       lnkRows: [staged],

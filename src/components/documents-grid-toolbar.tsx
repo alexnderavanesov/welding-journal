@@ -3,7 +3,7 @@ import { Bookmark, Check, ChevronDown, Columns3, Filter, Palette, RotateCcw, Sea
 import type { DocumentGridAppearance, DocumentGridView, DocumentGridColumnDefinition } from '@/lib/document-history-grid-state'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { isModalDialogOpen } from '@/lib/modal-layer'
-import { GridAppearanceSwitch, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
+import { GridAppearanceSwitch, GridColumnVisibilityActions, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
 import './welding-journal-grid.css'
 
 export type DocumentsGridToolbarProps = {
@@ -102,7 +102,7 @@ export function DocumentsGridToolbar(props: DocumentsGridToolbarProps) {
           {tab === 'columns' ? <>
             <div className="journal-settings-tools">
               <div className="journal-search"><Search size={14} /><input className="journal-input" placeholder="Найти столбец…" aria-label="Найти столбец" value={columnSearch} onChange={event => setColumnSearch(event.target.value)} /></div>
-              <div className="document-grid-column-tools"><span>Столбцы этого реестра</span><button type="button" className="journal-text-button" onClick={visibleCount === props.columns.length ? props.onHideAllColumns : props.onShowAllColumns}>{visibleCount === props.columns.length ? 'Скрыть все' : 'Показать все'}</button></div>
+              <div className="document-grid-column-tools flex-wrap gap-2"><span>Столбцы этого реестра</span><GridColumnVisibilityActions onChange={visible => visible ? props.onShowAllColumns() : props.onHideAllColumns()} /></div>
             </div>
             {matchingColumns.map(column => <label key={column.key} className="journal-column-option"><input type="checkbox" aria-label={column.label} disabled={column.required} checked={Boolean(column.required || props.visibleColumnKeys.has(column.key))} onChange={event => props.onColumnVisibilityChange(column.key, event.target.checked)} /><span>{column.label}</span>{props.filteredColumnKeys?.has(column.key) ? <span className="document-grid-column-filter" aria-label={`Активный фильтр: ${column.label}`} title="Фильтр действует и для скрытого столбца"><Filter size={13} /></span> : null}{column.required ? <span className="document-grid-required-column">всегда виден</span> : null}</label>)}
             {!matchingColumns.length ? <p className="journal-panel-note" role="status">Столбцы не найдены</p> : null}

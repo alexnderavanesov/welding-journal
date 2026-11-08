@@ -56,7 +56,7 @@ export function isEveryFilteredLnkRequestRowSelected(selectedIds: ReadonlySet<nu
 export function countLnkRequestTargets(
   rows: WeldInput[],
   methodKeys: WeldFieldKey[],
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   if (rows.length === 0 || methodKeys.length === 0) return 0
   return rows.reduce((total, row) => {

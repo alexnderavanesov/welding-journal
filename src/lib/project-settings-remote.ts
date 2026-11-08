@@ -1,4 +1,6 @@
 export const PROJECT_SETTING_KEYS = {
+  customDocumentNames: 'custom-document-names',
+  assignmentWarnings: 'assignment-warnings',
   controlProcesses: 'control-processes',
   dataList: 'data-list',
   dispatcher: 'dispatcher',

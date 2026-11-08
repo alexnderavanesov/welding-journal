@@ -34,7 +34,7 @@ export function buildLnkRequestRows({
   methodKeys: WeldFieldKey[]
   requestName: string
   requestDate: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
 }) {
   if (!requestName.trim()) throw new Error('Укажите наименование заявки ЛНК')
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ЛНК')
@@ -62,7 +62,7 @@ export function buildLnkRequestDraftRows({
   methodKeys: WeldFieldKey[]
   requestName: string
   requestDate: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
 }) {
   const normalizedRequestDate = normalizeDateLikeForStorage(requestDate)
   return records.flatMap((record) => {

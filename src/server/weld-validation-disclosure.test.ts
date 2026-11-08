@@ -10,7 +10,7 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import { accessContext } from './access-store'
 import { validateServerWeldRecords, mergeWeldRecordsWithPrevious, type ServerWeldValidationContext } from './weld-save-validation'
 
-const context = { controlProcessSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: false },
+const context = { controlProcessSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'selected' as const },
   saveCheckSettings: { ...DEFAULT_SAVE_CHECK_SETTINGS, requiredRootStampWithWeldDate: false,
     requiredMaterialGroupWithWeldDate: false, requiredConnectionTypeWithWeldDate: false, requiredWeldingMethodWithWeldDate: false },
   dataListSettings: DEFAULT_DATA_LIST_SETTINGS, otherSettings: DEFAULT_OTHER_SETTINGS,
@@ -20,7 +20,7 @@ const context = { controlProcessSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS,
 for (const area of ['lnk', 'psto'] as const) describe(`${area} validation disclosure`, () => {
   for (const viewer of ['limited', 'all-facts', 'owner'] as const) it(`${viewer}: rejects invalid chronology without disclosing a hidden weld date`, () => {
     const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1',
-      preHeatTreatmentLnkEnabled: false, weldDate: '2026-10-11', hasVik: 'да', pstoRequired: area === 'psto' ? 'да' : 'нет',
+      preHeatTreatmentMode: 'selected' as const, weldDate: '2026-10-11', hasVik: 'да', pstoRequired: area === 'psto' ? 'да' : 'нет',
     } as unknown as WeldJoint
     const previousRows = new Map([[1, previous]])
     const patch = area === 'lnk' ? { id: 1, vikRequest: 'V-1', vikRequestDate: '2026-10-01', vikResult: 'ожидает НК' }
@@ -43,7 +43,7 @@ for (const area of ['lnk', 'psto'] as const) describe(`${area} validation disclo
 })
 
 for (const importMode of [false, true]) it(`welding-only ${importMode ? 'import' : 'save'} hides LNK dates after merging stored facts`, () => {
-  const previous = { id: 1, joint: 'F1', weldDate: '2026-10-01', hasVik: 'да', pstoRequired: 'нет',
+  const previous = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', weldDate: '2026-10-01', hasVik: 'да', pstoRequired: 'нет',
     projectTitle: 'P', subtitleCode: 'S', line: 'L', vikRequest: 'V-1', vikRequestDate: '2026-10-05',
   } as unknown as WeldJoint
   const previousRows = new Map([[1, previous]])

@@ -21,7 +21,7 @@ describe('unofficial LNK result correction', () => {
     expect(getUnofficialLnkResultIssues({ ...row, [method.resultKey]: 'годен' }, { ...row, [method.resultKey]: 'вырез' }).length).toBeGreaterThan(0)
   })
   it.each([true, false])('allows backfill using saved other-method pre-TO rejection with stage enabled=%s', enabled => {
-    const row = { ...previous, vikResult: null, uzkResult: null, preHeatTreatmentLnkEnabled: enabled,
+    const row = { ...previous, vikResult: null, uzkResult: null, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const,
       preHeatTreatmentControls: [{ id: 8, method: 'УЗК', result: 'ремонт' }] } as WeldRow
     expect(getUnofficialLnkResultIssues({ ...row, vikResult: 'годен' }, row)).toEqual([])
     expect(getUnofficialLnkResultIssues({ ...row, vikResult: 'годен', preHeatTreatmentControls: [] }, row).length).toBeGreaterThan(0)
@@ -62,7 +62,7 @@ describe('unofficial LNK result correction', () => {
     expect(getWeldFormSaveBlockReason({ ...legacy, officiality: null }, legacy, checksOff)).toBeNull()
   })
   it.each([true, false])('checks saved pre-TO facts independently of the stage toggle (%s)', enabled => {
-    const row = { ...previous, uzkResult: null, preHeatTreatmentLnkEnabled: enabled,
+    const row = { ...previous, uzkResult: null, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const,
       preHeatTreatmentControls: [{ id: 8, method: 'УЗК', result: 'ремонт' }] } as WeldRow
     expect(getUnofficialLastRejectionRemovalReason({ ...row, preHeatTreatmentControls: [] }, row)).toContain('последний негодный результат')
     expect(getUnofficialLastRejectionRemovalReason({ ...row, preHeatTreatmentControls: [], uzkResult: 'ремонт' }, row)).toBeNull()

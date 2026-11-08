@@ -15,14 +15,12 @@ let cachedControlProcessSettings: ControlProcessSettings | undefined
 
 export type ControlProcessSettings = {
   pvkGoodOnly: boolean
-  preHeatTreatmentLnkEnabled: boolean
-  allowPrimaryLnkBeforePreviousStagesComplete: boolean
+  preHeatTreatmentMode: import('./pre-heat-treatment-policy').PreHeatTreatmentMode
 }
 
 export const DEFAULT_CONTROL_PROCESS_SETTINGS: ControlProcessSettings = {
   pvkGoodOnly: false,
-  preHeatTreatmentLnkEnabled: true,
-  allowPrimaryLnkBeforePreviousStagesComplete: false,
+  preHeatTreatmentMode: 'selected',
 }
 
 export function useControlProcessSettings() {
@@ -86,14 +84,14 @@ export function applyRemoteControlProcessSettings(settings: unknown) {
 
 export function normalizeControlProcessSettings(value: unknown): ControlProcessSettings {
   const source = value && typeof value === 'object'
-    ? value as Partial<Record<keyof ControlProcessSettings, unknown>>
+    ? value as Record<string, unknown>
     : {}
-  const preHeatTreatmentLnkEnabled = source.preHeatTreatmentLnkEnabled !== false
+  const preHeatTreatmentMode = source.preHeatTreatmentMode === 'selected' || source.preHeatTreatmentMode === 'allPsto'
+    ? source.preHeatTreatmentMode
+    : value && typeof value === 'object' && source.preHeatTreatmentLnkEnabled !== false ? 'allPsto' : 'selected'
   return {
     pvkGoodOnly: source.pvkGoodOnly === true,
-    preHeatTreatmentLnkEnabled,
-    allowPrimaryLnkBeforePreviousStagesComplete:
-      preHeatTreatmentLnkEnabled && source.allowPrimaryLnkBeforePreviousStagesComplete === true,
+    preHeatTreatmentMode,
   }
 }
 

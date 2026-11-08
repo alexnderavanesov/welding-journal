@@ -74,7 +74,7 @@ describe('buildLnkOfficialityChainPlan', () => {
   it('rebuilds the continuation after a rejected pre-heat-treatment control', () => {
     const plan = buildLnkOfficialityChainPlan([
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
-      row({
+      row({ preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         joint: 'S1R1',
         pstoRequired: 'да',

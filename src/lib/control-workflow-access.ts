@@ -4,6 +4,7 @@ import type { PstoTvmtWorkflowState } from './tvmt-cycle'
 /** Availability context for fields hidden by access rights, never editable facts. */
 export type ControlWorkflowAccess = {
   welded?: boolean
+  preHeatTreatmentApplicable?: boolean
   heatTreatmentRequired?: boolean
   heatTreatmentState?: PstoTvmtWorkflowState
   pstoPrerequisites?: { rejected: string[]; missingRequests: string[]; pendingResults: string[] }

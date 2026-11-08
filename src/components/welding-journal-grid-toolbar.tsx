@@ -4,7 +4,7 @@ import { useWeldReportViewState } from '@/lib/use-weld-report-view-state'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import type { JournalAppearance } from '@/lib/welding-journal-grid-state'
-import { GridAppearanceSwitch, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
+import { GridAppearanceSwitch, GridColumnVisibilityActions, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
 
 type Props = {
   settingsLabel: string
@@ -32,7 +32,6 @@ export function JournalGridToolbar({ settingsLabel, summary, sections, extraSect
   const trigger = useRef<HTMLButtonElement>(null)
   const fields = useMemo(() => sections.flatMap(section => section.fields), [sections])
   const visibleCount = sections.reduce((count, section) => count + section.fields.filter(field => alwaysVisible.has(field.key) || (!view.collapsedSections.has(section.section) && !view.hiddenFieldKeys.has(field.key))).length, 0)
-  const allVisible = visibleCount === fields.length && extraSections.every(section => !view.collapsedSections.has(section))
   const positionPanel = () => {
     const rect = trigger.current?.getBoundingClientRect()
     if (!rect) return
@@ -74,17 +73,21 @@ export function JournalGridToolbar({ settingsLabel, summary, sections, extraSect
           {tab === 'columns' ? <>
             <div className="journal-settings-tools">
               <div className="journal-search"><Search size={14} /><input className="journal-input" placeholder="Найти столбец или раздел…" aria-label="Найти столбец или раздел" value={search} onChange={event => setSearch(event.target.value)} /></div>
-              <div className="flex items-center justify-between text-xs text-slate-500"><span>Раздел целиком или отдельные поля</span><button type="button" className="journal-text-button" onClick={() => view.setAllFieldsVisible(!allVisible)}>{allVisible ? 'Скрыть все' : 'Показать все'}</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>Раздел целиком или отдельные поля</span><GridColumnVisibilityActions onChange={view.setAllFieldsVisible} /></div>
             </div>
             {sections.map(section => {
               const matchesSection = section.section.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))
               const matchingFields = section.fields.filter(field => matchesSection || field.label.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru')))
               if (!matchingFields.length) return null
               const collapsed = view.collapsedSections.has(section.section)
-              const required = section.fields.every(field => alwaysVisible.has(field.key))
+              const optional = section.fields.filter(field => !alwaysVisible.has(field.key))
+              const required = optional.length === 0
+              const visible = collapsed ? 0 : optional.filter(field => !view.hiddenFieldKeys.has(field.key)).length
+              const checked = required || visible === optional.length
+              const partial = visible > 0 && visible < optional.length
               return <details key={section.section} className="journal-column-group" open={search ? true : undefined}>
-                <summary><label onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`Раздел: ${section.section}`} disabled={required} checked={required || !collapsed} onChange={() => view.toggleSection(section.section)} /><span>{section.section}</span></label><span className="journal-count">{section.fields.length}</span><ChevronDown size={14} /></summary>
-                {matchingFields.map(field => <label key={field.key} className="journal-column-option"><input type="checkbox" disabled={alwaysVisible.has(field.key)} checked={alwaysVisible.has(field.key) || (!collapsed && !view.hiddenFieldKeys.has(field.key))} onChange={() => { if (collapsed) view.toggleSection(section.section); if (!collapsed || view.hiddenFieldKeys.has(field.key)) view.toggleField(field.key) }} /><span>{field.label}</span>{alwaysVisible.has(field.key) ? <span className="text-[10px] text-slate-400">всегда виден</span> : null}</label>)}
+                <summary><label onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`Раздел: ${section.section}`} disabled={required} checked={checked} ref={input => { if (input) input.indeterminate = partial }} onChange={event => view.setSectionFieldsVisible(section.section, event.target.checked)} /><span>{section.section}</span></label><span className="journal-count">{section.fields.length}</span><ChevronDown size={14} /></summary>
+                {matchingFields.map(field => <label key={field.key} className="journal-column-option"><input type="checkbox" disabled={alwaysVisible.has(field.key)} checked={alwaysVisible.has(field.key) || (!collapsed && !view.hiddenFieldKeys.has(field.key))} onChange={event => view.setFieldVisible(field.key, event.target.checked)} /><span>{field.label}</span>{alwaysVisible.has(field.key) ? <span className="text-[10px] text-slate-400">всегда виден</span> : null}</label>)}
               </details>
             })}
             {extraSections.filter(section => section.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))).map(section => <label key={section} className="journal-column-option"><input type="checkbox" checked={!view.collapsedSections.has(section)} onChange={() => view.toggleSection(section)} /><span>{section}</span></label>)}

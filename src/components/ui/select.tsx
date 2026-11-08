@@ -5,8 +5,17 @@ import { cn } from '@/lib/utils'
 import { overflowTitle } from '@/lib/overflow-title'
 
 type Choice = { value: string; label: string; disabled: boolean; group: string; reason: string }
-type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; repositionOnScroll?: boolean }
-const ROW_HEIGHT = 36
+type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
+  searchable?: boolean
+  searchGroups?: boolean
+  popupSize?: 'default' | 'wide'
+  repositionOnScroll?: boolean
+}
+
+function matchesQuery(choice: Choice, query: string, searchGroups: boolean) {
+  const text = query.trim().toLocaleLowerCase()
+  return choice.label.toLocaleLowerCase().includes(text) || searchGroups && choice.group.toLocaleLowerCase().includes(text)
+}
 
 function readChoices(select: HTMLSelectElement): Choice[] {
   return Array.from(select.options, option => ({ value: option.value, label: option.label,
@@ -17,7 +26,10 @@ function readChoices(select: HTMLSelectElement): Choice[] {
 // The select retains form values, labels, validation and existing change handlers.
 // Its native popup is replaced by a styled, bounded listbox.
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, children, searchable = false, repositionOnScroll = false, onChange, onKeyDown, onMouseDown, onPointerDown, onClick, onBlur, ...props }, forwardedRef) => {
+  ({ className, children, searchable = false, searchGroups = false, popupSize = 'default', repositionOnScroll = false, onChange, onKeyDown, onMouseDown, onPointerDown, onClick, onBlur, ...props }, forwardedRef) => {
+    const wide = popupSize === 'wide'
+    const rowHeight = wide ? 52 : 36
+    const popupHeight = wide ? 440 : 320
     const trigger = React.useRef<HTMLSelectElement>(null)
     const popup = React.useRef<HTMLDivElement>(null)
     const list = React.useRef<HTMLDivElement>(null)
@@ -31,9 +43,9 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     const [position, setPosition] = React.useState({ left: 0, top: 0, width: 0, maxHeight: 320 })
     const typed = React.useRef({ text: '', time: 0 })
     const matching = React.useMemo(() => choices.flatMap((choice, index) =>
-      !searchable || choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ? [index] : []), [choices, query, searchable])
+      !searchable || matchesQuery(choice, query, searchGroups) ? [index] : []), [choices, query, searchable, searchGroups])
     const headerHeight = searchable ? 48 : 0
-    const listHeight = Math.max(ROW_HEIGHT, position.maxHeight - headerHeight)
+    const listHeight = Math.max(rowHeight, position.maxHeight - headerHeight)
     const show = () => {
       const select = trigger.current
       if (!select || select.matches(':disabled')) return
@@ -57,25 +69,25 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     const updatePosition = React.useCallback(() => {
       if (!open || !trigger.current) return
       const rect = trigger.current.getBoundingClientRect()
-      const width = Math.min(Math.max(rect.width, 180), window.innerWidth - 16)
+      const width = Math.min(Math.max(rect.width, wide ? 520 : 180), window.innerWidth - 16)
       const below = window.innerHeight - rect.bottom - 12, above = rect.top - 12
-      const contentHeight = Math.max(1, matching.length) * ROW_HEIGHT + 8 + headerHeight
-      const up = below < Math.min(320, contentHeight) && above > below
-      const maxHeight = Math.max(40 + headerHeight, Math.min(320, up ? above : below))
+      const contentHeight = Math.max(1, matching.length) * rowHeight + 8 + headerHeight
+      const up = below < Math.min(popupHeight, contentHeight) && above > below
+      const maxHeight = Math.max(40 + headerHeight, Math.min(popupHeight, up ? above : below))
       const height = Math.min(contentHeight, maxHeight)
       const next = { left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: up ? rect.top - height - 4 : rect.bottom + 4, width, maxHeight }
       setPosition(previous => Object.keys(next).every(key => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next)
-    }, [open, matching.length, headerHeight])
+    }, [open, matching.length, headerHeight, wide, rowHeight, popupHeight])
     React.useLayoutEffect(updatePosition, [updatePosition])
     React.useLayoutEffect(() => { if (open && searchable) search.current?.focus({ preventScroll: true }) }, [open, searchable])
     React.useLayoutEffect(() => {
       const element = list.current, index = matching.indexOf(active)
       if (!open || !element || index < 0) return
       const height = element.clientHeight || listHeight
-      if (index * ROW_HEIGHT < element.scrollTop) element.scrollTop = index * ROW_HEIGHT
-      else if ((index + 1) * ROW_HEIGHT > element.scrollTop + height - 8) element.scrollTop = (index + 1) * ROW_HEIGHT - height + 8
+      if (index * rowHeight < element.scrollTop) element.scrollTop = index * rowHeight
+      else if ((index + 1) * rowHeight > element.scrollTop + height - 8) element.scrollTop = (index + 1) * rowHeight - height + 8
       setScrollTop(element.scrollTop)
-    }, [open, active, listHeight, matching])
+    }, [open, active, listHeight, matching, rowHeight])
     React.useEffect(() => { setOpen(false) }, [props.disabled, props.value])
     React.useLayoutEffect(() => {
       if (!open || !trigger.current) return
@@ -116,7 +128,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     const filter = (text: string, items = choices) => {
       setQuery(text); setScrollTop(0)
       if (list.current) list.current.scrollTop = 0
-      setActive(items.findIndex(choice => !choice.disabled && choice.label.toLocaleLowerCase().includes(text.trim().toLocaleLowerCase())))
+      setActive(items.findIndex(choice => !choice.disabled && matchesQuery(choice, text, searchGroups)))
     }
     const navigate = (key: string) => {
       const direction = key === 'ArrowUp' || key === 'End' ? -1 : 1
@@ -124,13 +136,13 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       while (next >= 0 && next < matching.length && choices[matching[next]].disabled) next += direction
       if (next >= 0 && next < matching.length) setActive(matching[next])
     }
-    const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 3)
-    const end = Math.min(matching.length, start + Math.ceil(listHeight / ROW_HEIGHT) + 7)
+    const start = Math.max(0, Math.floor(scrollTop / rowHeight) - 3)
+    const end = Math.min(matching.length, start + Math.ceil(listHeight / rowHeight) + 7)
     // An explicit empty title suppresses the browser's selected-option tooltip.
     // Keep caller-provided reasons (for example, a blocked assignment).
     return <>
       <select {...props} title={props.title ?? ''} ref={element => { trigger.current = element; if (typeof forwardedRef === 'function') forwardedRef(element); else if (forwardedRef) forwardedRef.current = element }}
-        className={cn('flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm shadow-slate-200/40 outline-none hover:border-sky-300 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:opacity-70', props.value === '' ? 'text-slate-400' : 'text-slate-800', className)}
+        className={cn('flex h-10 w-full rounded-md border border-input bg-white pl-3 pr-8 py-2 text-sm shadow-sm shadow-slate-200/40 outline-none hover:border-sky-300 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:opacity-70', props.value === '' ? 'text-slate-400' : 'text-slate-800', className)}
         aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined} aria-activedescendant={open && active >= 0 ? `${id}-${active}` : undefined}
         onChange={event => { setOpen(false); onChange?.(event) }}
         onPointerDown={event => { onPointerDown?.(event); if (event.button !== 0 || event.defaultPrevented) return; event.preventDefault(); if (open) setOpen(false); else show() }}
@@ -168,7 +180,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
           <input ref={search} value={query} role="combobox" aria-label={`Поиск: ${props['aria-label'] ?? 'варианты'}`}
             aria-autocomplete="list" aria-expanded="true" aria-controls={id} aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
-            autoComplete="off" placeholder="Поиск…" className="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:ring-0"
+            autoComplete="off" placeholder={searchGroups ? 'Поиск по названию или группе…' : 'Поиск…'} className="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:ring-0"
             onChange={event => filter(event.target.value)}
             onBlur={event => { if (!popup.current?.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) setOpen(false) }}
             onKeyDown={event => {
@@ -181,13 +193,16 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         <div id={id} ref={list} role="listbox" aria-label={props['aria-label']} className="overflow-y-auto overscroll-contain p-1" style={{ maxHeight: listHeight }}
           onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
         {matching.length === 0 ? <div className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</div> : null}
-        <div style={{ height: matching.length * ROW_HEIGHT, position: 'relative' }}>
+        <div style={{ height: matching.length * rowHeight, position: 'relative' }}>
           {matching.slice(start, end).map((index, offset) => { const choice = choices[index]; return <div key={index} id={`${id}-${index}`} role="option" aria-label={choice.label} aria-selected={trigger.current?.value === choice.value} aria-disabled={choice.disabled} aria-posinset={start + offset + 1} aria-setsize={matching.length}
             title={choice.reason && choice.reason !== choice.label ? choice.reason : undefined}
             className={cn('absolute left-0 right-0 flex items-center gap-2 rounded-lg px-3 text-sm', choice.disabled ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer text-slate-700', index === active && !choice.disabled && 'bg-sky-50 text-sky-900')}
-            style={{ top: (start + offset) * ROW_HEIGHT, height: ROW_HEIGHT }} onMouseMove={() => { if (!choice.disabled) setActive(index) }} onClick={() => choose(index)}>
-            <span className="min-w-0 flex-1 truncate" {...overflowTitle([choice.label, choice.reason !== choice.label && choice.reason].filter(Boolean).join(' · '))}>{choice.label || '—'}</span>
-            {choice.group ? <span className="max-w-32 truncate text-[11px] text-slate-400" {...overflowTitle(choice.group)}>{choice.group}</span> : null}
+            style={{ top: (start + offset) * rowHeight, height: rowHeight }} onMouseMove={() => { if (!choice.disabled) setActive(index) }} onClick={() => choose(index)}>
+            <div className="min-w-0 flex-1">
+              <span className="block truncate" {...overflowTitle([choice.label, choice.reason !== choice.label && choice.reason].filter(Boolean).join(' · '))}>{choice.label || '—'}</span>
+              {wide && choice.group ? <span className="block truncate text-xs text-slate-500" {...overflowTitle(choice.group)}>{choice.group}</span> : null}
+            </div>
+            {!wide && choice.group ? <span className="max-w-32 truncate text-[11px] text-slate-400" {...overflowTitle(choice.group)}>{choice.group}</span> : null}
             {trigger.current?.value === choice.value ? <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-600" /> : null}
           </div> })}
         </div>

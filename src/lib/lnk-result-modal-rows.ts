@@ -162,7 +162,7 @@ export function canSelectLnkResultRow(
   requestName: string,
   methodKey: WeldFieldKey | '',
   requestDate?: string,
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   if (methodKey) {
     const method = getLnkMethodByRequestKey(methodKey)

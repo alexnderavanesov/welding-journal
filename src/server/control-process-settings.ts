@@ -1,8 +1,8 @@
-import { count, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
-import { requireDb } from '@/db'
 import {
   appSettings,
+  weldJoints,
   preHeatTreatmentControls,
 } from '@/db/schema'
 import {
@@ -15,11 +15,11 @@ import {
   lockControlProcessSettings,
 } from '@/server/control-process-settings-lock'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
-import { assertSecurityScope } from '@/server/security-functions'
-
-export type ControlProcessSettingsOverview = {
-  preHeatTreatmentBlockerCount: number
-}
+import { attachProgramChainStates } from './line-program-chain-state'
+import { buildChainActualityGroups } from '@/lib/chain-actuality'
+import { loadProgramSystemIndexSettings } from './line-program'
+import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { buildNumberArrayMatch } from './weld-request-utils'
 
 export async function loadControlProcessSettingsFromTransaction(
   tx: Pick<GeneratedDocumentsTransaction, 'execute' | 'select'>,
@@ -50,16 +50,8 @@ export async function prepareControlProcessSettingsChangeInTransaction({
   processLocksAlreadyHeld?: boolean
 }) {
   const current = normalizeControlProcessSettings(currentValue)
-  const requestedNext = normalizeControlProcessSettings(nextValue)
-  const next = requestedNext.preHeatTreatmentLnkEnabled
-    ? requestedNext
-    : {
-        ...requestedNext,
-        allowPrimaryLnkBeforePreviousStagesComplete: false,
-      }
-  const preHeatTreatmentChanged = (
-    current.preHeatTreatmentLnkEnabled !== next.preHeatTreatmentLnkEnabled
-  )
+  const next = normalizeControlProcessSettings(nextValue)
+  const preHeatTreatmentChanged = current.preHeatTreatmentMode !== next.preHeatTreatmentMode
   const pvkGoodOnlyChanged = current.pvkGoodOnly !== next.pvkGoodOnly
 
   // Keep this order aligned with weld mutations that can touch both processes.
@@ -70,44 +62,26 @@ export async function prepareControlProcessSettingsChangeInTransaction({
     await lockControlProcessSettings(tx, 'layeredControl', 'exclusive')
   }
 
-  if (current.preHeatTreatmentLnkEnabled && !next.preHeatTreatmentLnkEnabled) {
-    const blockerCount = await countPreHeatTreatmentDisableBlockers(tx)
-    if (blockerCount > 0) {
-      throw new Error(
-        `НК до ТО нельзя выключить: незавершенных заявок или негодных результатов — ${blockerCount}. ` +
-        'Сначала завершите или исправьте их в отчете ЛНК.',
-      )
+  if (current.preHeatTreatmentMode === 'allPsto' && next.preHeatTreatmentMode === 'selected') {
+    // Initialize only legacy undecided rows. Explicit selective choices survive
+    // subsequent mode changes; newly recorded history must never be hidden.
+    const rows = await attachProgramChainStates(await tx.select({ id: weldJoints.id, joint: weldJoints.joint,
+      projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode, line: weldJoints.line,
+      officiality: weldJoints.officiality, weldDate: weldJoints.weldDate, pstoRequired: weldJoints.pstoRequired,
+      preHeatTreatmentRequired: weldJoints.preHeatTreatmentRequired,
+    }).from(weldJoints), tx)
+    const history = new Set((await tx.selectDistinct({ id: preHeatTreatmentControls.weldJointId }).from(preHeatTreatmentControls)).map(row => row.id))
+    const settings = await loadProgramSystemIndexSettings(tx)
+    const ids = buildChainActualityGroups(rows, settings).groups.flatMap(group =>
+      group.rows.some(row => history.has(row.id) || row.preHeatTreatmentRequired === true ||
+        row.preHeatTreatmentRequired == null && isControlEnabledValue(row.pstoRequired))
+        ? group.rows.filter(row => row.preHeatTreatmentRequired !== true).map(row => row.id) : [])
+    for (let offset = 0; offset < ids.length; offset += 5000) {
+      await tx.update(weldJoints).set({ preHeatTreatmentRequired: true,
+        updatedAt: sql`greatest(clock_timestamp(), ${weldJoints.updatedAt} + interval '1 millisecond')`,
+      }).where(buildNumberArrayMatch(weldJoints.id, ids.slice(offset, offset + 5000)))
     }
   }
 
   return next
-}
-
-export async function countPreHeatTreatmentDisableBlockers(
-  tx: Pick<GeneratedDocumentsTransaction, 'select'>,
-) {
-  const [summary] = await tx
-    .select({ total: count() })
-    .from(preHeatTreatmentControls)
-    .where(sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) <> 'годен'`)
-  return Number(summary?.total ?? 0)
-}
-
-export async function getControlProcessSettingsOverview() {
-  await assertSecurityScope('entry')
-  const db = requireDb()
-  return {
-    preHeatTreatmentBlockerCount: await countPreHeatTreatmentDisableBlockers(db),
-  } satisfies ControlProcessSettingsOverview
-}
-
-export async function getPreHeatTreatmentDisableBlockerRowIds() {
-  await assertSecurityScope('entry')
-  const db = requireDb()
-  const blockerRows = await db
-    .selectDistinct({ id: preHeatTreatmentControls.weldJointId })
-    .from(preHeatTreatmentControls)
-    .where(sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) <> 'годен'`)
-    .orderBy(preHeatTreatmentControls.weldJointId)
-  return blockerRows.map((row) => Number(row.id)).filter(Number.isFinite)
 }

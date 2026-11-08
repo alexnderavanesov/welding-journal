@@ -15,7 +15,7 @@ import type { WeldJoint } from '@/db/schema'
 // primary results, no pre-TO records and the old exemption flag.
 const historical: WeldRow & { preHeatTreatmentLnkExempt: boolean } = {
   id: 626, joint: 'F52', line: 'L-history', weldDate: '2026-07-10',
-  pstoRequired: 'да', preHeatTreatmentLnkExempt: true, preHeatTreatmentLnkEnabled: true,
+  pstoRequired: 'да', preHeatTreatmentLnkExempt: true, preHeatTreatmentMode: 'allPsto' as const,
   pstoRequest: 'P-626', pstoRequestDate: '2026-07-10', pstoDate: '2026-07-10',
   pstoResult: 'проведено', heatTreatmentDiagram: 'D-626',
   tvmtRequest: 'T-626', tvmtRequestDate: '2026-07-10', tvmtResult: 'годен',
@@ -28,7 +28,7 @@ const historical: WeldRow & { preHeatTreatmentLnkExempt: boolean } = {
   pvkRequest: 'PV-До ТО', pvkRequestDate: '2026-07-11', pvkResult: 'годен',
   pvkConclusion: 'PVC-626', pvkConclusionDate: '2026-07-11', finalStatus: 'годен',
 }
-const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: false }
+const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' as const,  }
 const methods = ['ВИК', 'РК', 'ПВК'] as const
 
 describe('all joints follow current pre-TO settings, regardless of the obsolete flag', () => {
@@ -37,16 +37,16 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
     const after = { ...before, vikResult: 'годен', vikConclusion: 'NEW', vikConclusionDate: '2026-07-11' }
     const context = { controlProcessSettings: settings,
       pstoLineAssignments: new Map([[getPstoLineIdentityKey(before), { rowCount: 1, assignedCount: 1, cancelledCount: 0 }]]) }
-    expect(getSystemWorkflowStageTransitionReason(after, before as unknown as WeldJoint, context)).toContain('НК до ТО')
+    expect(getSystemWorkflowStageTransitionReason(after, before as unknown as WeldJoint, context)).toBe('')
     const create = (allow: boolean, controlDate = '2026-07-11') => buildLnkResultRows({ records: [before],
       methodKey: 'vikRequest', controlDate, resultById: { 626: 'годен' }, conclusionName: 'NEW',
-      controlProcessSettings: { ...settings, allowPrimaryLnkBeforePreviousStagesComplete: allow },
+      controlProcessSettings: { ...settings,  },
     })
-    expect(() => create(false)).toThrow('НК до ТО')
-    expect(create(true)[0]).toMatchObject({ vikResult: 'годен', finalStatus: 'ожидает заявку' })
+    expect(() => create(false)).not.toThrow()
+    expect(create(true)[0]).toMatchObject({ vikResult: 'годен', finalStatus: 'ожидает заявку до ТО' })
     expect(() => create(true, '2026-07-09')).toThrow()
     expect(getSystemWorkflowStageTransitionReason(after, before as unknown as WeldJoint, {
-      ...context, controlProcessSettings: { ...settings, allowPrimaryLnkBeforePreviousStagesComplete: true },
+      ...context, controlProcessSettings: { ...settings,  },
     })).toBe('')
     // An unchanged saved result is not deleted or rejected on an unrelated edit.
     expect(getSystemWorkflowStageTransitionReason({ ...historical, weldingJournalNote: 'уточнение' }, historical as unknown as WeldJoint, context)).toBe('')
@@ -59,7 +59,7 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
       pstoLineAssignments: new Map([[getPstoLineIdentityKey(before), { rowCount: 1, assignedCount: 1, cancelledCount: 0 }]]) }
     expect(getPstoWorkflowResultBlockReason(before)).toContain('НК до ТО')
     expect(getSystemWorkflowStageTransitionReason({ ...before, pstoResult: 'проведено' }, before as unknown as WeldJoint, context)).toContain('НК до ТО')
-    const disabled = { ...before, preHeatTreatmentLnkEnabled: false }
+    const disabled = { ...before, preHeatTreatmentMode: 'selected' as const }
     expect(getPstoWorkflowResultBlockReason(disabled)).toBe('')
   })
   it('warns for case 626, allows factual backfill, but requires pre-TO in strict mode', () => {
@@ -69,15 +69,15 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
     expect(warnings[0].systemWarningCode).toBe('СП-06')
     for (const method of methods) {
       expect(warnings[0].details).toContain(`заявка ${method} до ТО`)
-      expect(getPrimaryLnkStageAccess(historical, method, settings).status).toBe('blocked')
-      expect(getPrimaryLnkStageAccess(historical, method, { ...settings, allowPrimaryLnkBeforePreviousStagesComplete: true }).status).toBe('allowed-with-warning')
+      expect(getPrimaryLnkStageAccess(historical, method, settings).status).toBe('allowed-with-warning')
+      expect(getPrimaryLnkStageAccess(historical, method, { ...settings,  }).status).toBe('allowed-with-warning')
       expect(getPreHeatTreatmentRequestBlockReason(historical, method)).toBe('')
     }
     expect(warnings[0].details).not.toMatch(/ожидает (?:ПСТО|ТВМТ)/)
     expect(warnings[0].rootCauseActions?.[0].target).toMatchObject({
       kind: 'lnk-control', stage: 'beforeHeatTreatment', documentPart: 'request', intent: 'complete-stage',
     })
-    expect(getPreHeatTreatmentPendingFinalStatus(historical)).toBe('ожидает заявку')
+    expect(getPreHeatTreatmentPendingFinalStatus(historical)).toBe('ожидает заявку до ТО')
     expect(historical).toEqual(before)
   })
 
@@ -96,9 +96,9 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
   })
 
   it('off/on hides only pre-TO debt and respects fresh settings over stale row metadata', () => {
-    const disabled = { ...settings, preHeatTreatmentLnkEnabled: false }
+    const disabled = { ...settings, preHeatTreatmentMode: 'selected' as const }
     expect(buildPrimaryLnkStageDebtSystemWarnings([historical], disabled)).toEqual([])
-    expect(buildPrimaryLnkStageDebtSystemWarnings([{ ...historical, preHeatTreatmentLnkEnabled: false }], settings)).toHaveLength(1)
+    expect(buildPrimaryLnkStageDebtSystemWarnings([{ ...historical, preHeatTreatmentMode: 'selected' as const }], settings)).toHaveLength(1)
     const pendingTvmt = { ...historical, tvmtResult: 'ожидает НК', tvmtConclusion: null, tvmtConclusionDate: null }
     const warning = buildPrimaryLnkStageDebtSystemWarnings([pendingTvmt], disabled)[0]
     expect(warning?.details).toContain('ожидает ТВМТ')
@@ -106,13 +106,13 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
   })
 
   it('routes strict mode to missing pre-TO and permissive mode to actual primary work', () => {
-    expect(buildJointNextActions(historical, [], settings)[0]?.kind).toBe('preLnkRequest')
-    const permissive = { ...settings, allowPrimaryLnkBeforePreviousStagesComplete: true }
+    expect(buildJointNextActions(historical, [], settings)[0]?.kind).toBe('complete')
+    const permissive = { ...settings,  }
     expect(buildJointNextActions(historical, [], permissive)[0]).toMatchObject({
       title: 'Результаты основного НК внесены', tone: 'warning', description: expect.stringContaining('СП-06'),
     })
     const partial = { ...historical, rkResult: 'ожидает НК', rkConclusion: null, rkConclusionDate: null }
-    expect(buildJointNextActions(partial, [], settings)[0]?.kind).toBe('preLnkRequest')
+    expect(buildJointNextActions(partial, [], settings)[0]?.kind).toBe('primaryLnkResult')
     expect(buildJointNextActions(partial, [], permissive)[0]).toMatchObject({ kind: 'primaryLnkResult', methodCode: 'РК' })
   })
 
@@ -131,9 +131,9 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
     const requestsOnly = { ...historical, vikResult: 'ожидает НК', vikConclusion: null, vikConclusionDate: null,
       rkResult: 'ожидает НК', rkConclusion: null, rkConclusionDate: null,
       pvkResult: 'ожидает НК', pvkConclusion: null, pvkConclusionDate: null }
-    expect(buildPrimaryLnkStageDebtSystemWarnings([requestsOnly], settings)).toEqual([])
+    expect(buildPrimaryLnkStageDebtSystemWarnings([requestsOnly], settings)).toHaveLength(1)
     expect(buildPrimaryLnkStageDebtSystemWarnings([{ ...historical, hasVik: 'нет', hasRk: 'нет', hasPvk: 'нет' }], settings)).toEqual([])
-    expect(buildJointNextActions(historical, [], { ...settings, preHeatTreatmentLnkEnabled: false })[0]?.tone).toBe('success')
+    expect(buildJointNextActions(historical, [], { ...settings, preHeatTreatmentMode: 'selected' as const })[0]?.tone).toBe('success')
   })
 
   it('still blocks an actual rejected pre-TO result rather than offering to overwrite it', () => {

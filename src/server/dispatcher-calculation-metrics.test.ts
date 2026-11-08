@@ -133,3 +133,15 @@ it('publishes only aggregate fields, with no extra data or stage history shared 
     },
   ])
 })
+
+it('separates scoped attempts and reports a discarded result without marking it completed', () => {
+  const full = collectMetrics(), scoped: unknown[] = []
+  const target = channel('welding.dispatcher.scoped-calculation')
+  const listener = (value: unknown) => scoped.push(value)
+  target.subscribe(listener)
+  try {
+    startDispatcherCalculationMetrics('scoped')!.finish('discarded')
+    expect(full).toEqual([])
+    expect(scoped).toEqual([expect.objectContaining({ outcome: 'discarded' })])
+  } finally { target.unsubscribe(listener) }
+})

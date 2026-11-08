@@ -7,7 +7,7 @@ import type { GridApi } from 'ag-grid-community'
 import { ChevronDown, Columns3, Palette, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useProgramAppearance } from './line-program-appearance'
 import { DEFAULT_PROGRAM_APPEARANCE } from '@/lib/line-program-appearance'
-import { GridAppearanceSwitch, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
+import { GridAppearanceSwitch, GridColumnVisibilityActions, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
 import './welding-journal-grid.css'
 import './welding-journal-ui.css'
 
@@ -89,7 +89,7 @@ export function ProgramViewSettings({ api }: { api: GridApi | null }) {
         {tab === 'columns' ? <>
           <div className="journal-settings-tools">
             <label className="journal-search"><Search size={14} aria-hidden="true" /><input className="journal-input" aria-label="Найти столбец списка линий" placeholder="Найти столбец…" value={search} onChange={event => setSearch(event.target.value)} /></label>
-            <div className="flex items-center justify-between text-xs text-slate-500"><span>Список линий</span><button type="button" className="journal-text-button" disabled={!usable} onClick={() => visibility(columns.filter(column => !column.locked).map(column => column.id), !columns.every(column => column.visible))}>{columns.every(column => column.visible) ? 'Скрыть все' : 'Показать все'}</button></div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>Список линий</span><GridColumnVisibilityActions disabled={!usable} onChange={visible => visibility(columns.filter(column => !column.locked).map(column => column.id), visible)} /></div>
           </div>
           {found.map(column => <label key={column.id} className="journal-column-option"><input type="checkbox" checked={column.visible} disabled={column.locked || !usable} onChange={event => visibility([column.id], event.target.checked)} /><span>{column.label}</span>{column.locked ? <small className="text-[10px] text-slate-400">всегда виден</small> : null}</label>)}
           {!found.length ? <p className="journal-panel-note">Столбцы не найдены</p> : null}

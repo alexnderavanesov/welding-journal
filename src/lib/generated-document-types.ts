@@ -1,4 +1,6 @@
-export const MANUAL_GENERATED_DOCUMENT_TYPES = ['weldingJournal', 'checklist', 'zni'] as const
+import { CUSTOM_DOCUMENT_TYPES, DEFAULT_CUSTOM_DOCUMENT_NAMES, isCustomDocumentType, type CustomDocumentNames } from './custom-document-types'
+
+export const MANUAL_GENERATED_DOCUMENT_TYPES = ['weldingJournal', 'checklist', 'zni', ...CUSTOM_DOCUMENT_TYPES] as const
 
 export const LAYERED_CONTROL_DOCUMENT_TYPES = [
   'layeredVikEdges',
@@ -20,6 +22,8 @@ export type GeneratedDocumentFieldKey =
   | 'jsrDocument'
   | 'checklistDocument'
   | 'zniDocument'
+  | 'custom1Document'
+  | 'custom2Document'
   | 'layeredVikEdgesDocument'
   | 'layeredVikLayersDocument'
   | 'layeredPvkEdgesDocument'
@@ -29,6 +33,8 @@ export type GeneratedDocumentIdKey =
   | 'jsrDocumentId'
   | 'checklistDocumentId'
   | 'zniDocumentId'
+  | 'custom1DocumentId'
+  | 'custom2DocumentId'
   | 'layeredVikEdgesDocumentId'
   | 'layeredVikLayersDocumentId'
   | 'layeredPvkEdgesDocumentId'
@@ -38,6 +44,8 @@ export const GENERATED_DOCUMENT_FIELD_KEYS = [
   'jsrDocument',
   'checklistDocument',
   'zniDocument',
+  'custom1Document',
+  'custom2Document',
   'layeredVikEdgesDocument',
   'layeredVikLayersDocument',
   'layeredPvkEdgesDocument',
@@ -69,6 +77,20 @@ export const GENERATED_DOCUMENT_PROFILES = {
     fieldKey: 'zniDocument',
     idKey: 'zniDocumentId',
     sheetName: 'ЗНИ',
+  },
+  custom1: {
+    label: DEFAULT_CUSTOM_DOCUMENT_NAMES.custom1,
+    formationLabel: DEFAULT_CUSTOM_DOCUMENT_NAMES.custom1,
+    fieldKey: 'custom1Document',
+    idKey: 'custom1DocumentId',
+    sheetName: 'Пользовательский 1',
+  },
+  custom2: {
+    label: DEFAULT_CUSTOM_DOCUMENT_NAMES.custom2,
+    formationLabel: DEFAULT_CUSTOM_DOCUMENT_NAMES.custom2,
+    fieldKey: 'custom2Document',
+    idKey: 'custom2DocumentId',
+    sheetName: 'Пользовательский 2',
   },
   layeredVikEdges: {
     label: 'ВИК кромок',
@@ -121,6 +143,9 @@ export function isLayeredControlDocumentType(value: unknown): value is LayeredCo
   return LAYERED_CONTROL_DOCUMENT_TYPES.includes(value as LayeredControlDocumentType)
 }
 
-export function getGeneratedDocumentProfile(type: GeneratedDocumentType) {
-  return GENERATED_DOCUMENT_PROFILES[type]
+export function getGeneratedDocumentProfile(type: GeneratedDocumentType, names?: CustomDocumentNames) {
+  const profile = GENERATED_DOCUMENT_PROFILES[type]
+  return names && isCustomDocumentType(type)
+    ? { ...profile, label: names[type], formationLabel: names[type] }
+    : profile
 }

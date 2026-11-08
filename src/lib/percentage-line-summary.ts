@@ -145,8 +145,8 @@ function toSummary(
     const status = normalizeFinalStatus(calculateFinalStatus(rows.get(id)!))
     if (status === 'годен') counters.goodJoints++
     else if (status === 'не годен') counters.rejectedJoints++
-    else if (status === 'ожидает заявку') counters.waitingRequestJoints++
-    else if (status === 'ожидает НК') counters.waitingControlJoints++
+    else if ((status === 'ожидает заявку' || status === 'ожидает заявку до ТО')) counters.waitingRequestJoints++
+    else if ((status === 'ожидает НК' || status === 'ожидает НК до ТО')) counters.waitingControlJoints++
   }
   // Match the program's «Назначено»: active yes/additional only. Cancellation
   // can still cover quota, but is displayed separately rather than as an assignment.

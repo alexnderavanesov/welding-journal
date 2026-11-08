@@ -12,7 +12,7 @@ import { toDbInsert } from './weld-persistence'
 import { prepareServerWeldRecords, type ServerWeldValidationContext } from './weld-save-validation'
 
 function fixture(result: string | null) {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
     pstoRequired: 'да', vikRequest: 'MAIN-REQ', vikRequestDate: '2026-08-01',
     vikResult: 'годен', vikConclusionDate: '2026-08-02', vikConclusion: 'MAIN-CONCLUSION',
@@ -30,7 +30,7 @@ function fixture(result: string | null) {
 
 function context(record: WeldRow, target: string): ServerWeldValidationContext {
   return {
-    controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+    controlProcessSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
     saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS, dataListSettings: DEFAULT_DATA_LIST_SETTINGS,
     otherSettings: DEFAULT_OTHER_SETTINGS, systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
     welderStamps: [], welderStampSuspensions: [],
@@ -48,7 +48,7 @@ describe('line moves preserve recorded stages', () => {
     const validationContext = context(record, target)
     const prepared = await preparePstoLineMoveRecordInTransaction({
       tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
-      validationContext, processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      validationContext, processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
     })
     const before = structuredClone(prepared.record)
     expect(() => prepareServerWeldRecords({ records: [prepared.record],
@@ -76,7 +76,7 @@ describe('line moves preserve recorded stages', () => {
   async function toAssigned(previous = primaryMovable(), edits: Partial<WeldRow> = {}, target = 'assigned') {
     const record = { ...previous, line: 'target', ...edits }
     return preparePstoLineMoveRecordInTransaction({ tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
-      validationContext: context(record, target), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS, disposition: 'movePrimaryToPreHeatTreatment' })
+      validationContext: context(record, target), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' }, disposition: 'movePrimaryToPreHeatTreatment' })
   }
   it('moves the primary package onto an assigned line without inheriting other welds history', async () => {
     const next = await toAssigned()
@@ -98,7 +98,7 @@ describe('line moves preserve recorded stages', () => {
     await expect(toAssigned(primaryMovable(), { weldDate: '2026-07-10' })).rejects.toThrow()
   })
   function movable() {
-    return {
+    return { preHeatTreatmentMode: 'allPsto' as const,
       id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
       officiality: 'действующий', revisionActuality: 'актуальная', hasVik: 'да',
       weldDate: '2026-07-01', pstoRequired: 'да',
@@ -112,7 +112,7 @@ describe('line moves preserve recorded stages', () => {
     const record = { ...previous, line: 'target', ...edits }
     return preparePstoLineMoveRecordInTransaction({
       tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
-      validationContext: context(record, target), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      validationContext: context(record, target), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
       disposition: 'movePreHeatTreatmentToPrimary',
     })
   }
@@ -136,7 +136,7 @@ describe('line moves preserve recorded stages', () => {
     const record = { ...previous, line: 'target', weldDate: '2026-07-10', officiality: 'неофициальный' }
     const result = await preparePstoLineMoveRecordInTransaction({
       tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
-      validationContext: context(record, 'unassigned'), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      validationContext: context(record, 'unassigned'), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
       disposition: 'keepPrimary',
     })
     expect(result.validationPrevious.weldDate).toBe(previous.weldDate)
@@ -167,7 +167,7 @@ describe('line moves preserve recorded stages', () => {
     const record = { ...previous, line: 'target' }
     const prepared = await preparePstoLineMoveRecordInTransaction({
       tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
-      validationContext: context(record, target), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      validationContext: context(record, target), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
       disposition: 'keepPrimary',
     })
     expect(prepared.preserveRecordedControlHistory).toBe(true)
@@ -189,7 +189,7 @@ describe('line moves preserve recorded stages', () => {
     const previous = movable()
     const prepared = await preparePstoLineMoveRecordInTransaction({
       tx: {} as never, record: previous, previousStored: previous as unknown as WeldJoint,
-      validationContext: context(previous, 'assigned'), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      validationContext: context(previous, 'assigned'), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
     })
     expect(prepared.preserveRecordedControlHistory).toBe(false)
   })
@@ -213,7 +213,7 @@ describe('line moves preserve recorded stages', () => {
       const tx = { insert: query, update: query, delete: query, select: query, execute: query }
       const prepared = await preparePstoLineMoveRecordInTransaction({
         tx: tx as never, record, previousStored: previous as unknown as WeldJoint,
-        validationContext: context(record, target), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+        validationContext: context(record, target), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
       })
       for (const [key, value] of Object.entries(before)) {
         if (['line', 'pstoRequired'].includes(key)) continue
@@ -230,7 +230,7 @@ describe('line moves preserve recorded stages', () => {
     const record = { ...previous, line: 'target' }
     await expect(preparePstoLineMoveRecordInTransaction({
       tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
-      validationContext: context(record, 'assigned'), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      validationContext: context(record, 'assigned'), processSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' },
       disposition: disposition as never,
     })).rejects.toThrow('Смена этапа НК больше не поддерживается')
   })

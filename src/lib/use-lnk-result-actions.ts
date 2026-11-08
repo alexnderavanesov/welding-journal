@@ -15,6 +15,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
 
 export function useLnkResultActions({
   controlProcessSettings,
@@ -144,6 +145,8 @@ export function useLnkResultActions({
 
   function toggleAllLnkResultRows() {
     setDraft((current) => {
+      const method = getLnkMethodByRequestKey(current.methodKey)
+      if (!method) return current
       const filteredIds = new Set(
         filteredRows
           .filter((row) =>
@@ -152,7 +155,8 @@ export function useLnkResultActions({
               current.requestName,
               current.methodKey,
               current.requestDate,
-            ),
+              controlProcessSettings,
+            ) && isPrimaryLnkStageReady(row, method.code, controlProcessSettings),
           )
           .map((row) => row.id),
       )

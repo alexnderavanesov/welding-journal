@@ -49,7 +49,7 @@ describe('lnk request mutation updates', () => {
   })
 
   it('allows a scheduled request in both strict and permissive result modes', () => {
-    const records = [{
+    const records = [{ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F4',
       weldDate: '2026-08-01',
@@ -68,10 +68,7 @@ describe('lnk request mutation updates', () => {
       methodKeys: ['vikRequest'],
       requestName: 'Заявка-01',
       requestDate: '2026-08-02',
-      controlProcessSettings: {
-        preHeatTreatmentLnkEnabled: true,
-        allowPrimaryLnkBeforePreviousStagesComplete: true,
-      },
+      controlProcessSettings: { preHeatTreatmentMode: 'allPsto' },
     })[0]).toMatchObject({
       vikRequest: 'Заявка-01',
       vikResult: 'ожидает НК',

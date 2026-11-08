@@ -1,4 +1,8 @@
+import { Input } from '@/components/ui/input'
+import { CUSTOM_DOCUMENT_TYPES, isCustomDocumentType } from '@/lib/custom-document-types'
+import { useCustomDocumentNames, saveCustomDocumentNames } from '@/lib/custom-document-settings'
 import { overflowTitle } from '@/lib/overflow-title'
+import { AssignmentWarningSettingsPanel } from '@/components/assignment-warning-settings-panel'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { Permission } from '@/lib/access-permissions'
 import { Select } from '@/components/ui/select'
@@ -33,6 +37,8 @@ import { DialogHeader } from '@/components/dialog-header'
 import { buttonVariants } from '@/components/ui/button'
 import { AcceptedWarningsSettingsPanel } from '@/components/accepted-warnings-settings-panel'
 import { RuleSettingsTabs, RuleConnections } from '@/components/rule-settings-navigation'
+import { SettingsDirtyContext, SettingsDraftActions, useSettingsDirty, useSettingsDraft, persistSettingsDraft } from '@/components/settings-draft'
+import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { RULE_SETTINGS_TABS, getRuleSettingsTarget, getRuleSettingsTab, type RuleSettingsTab } from '@/lib/rule-settings-navigation'
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
@@ -85,6 +91,7 @@ import {
 import {
   REQUEST_NAMING_PATTERN_FIELDS,
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  REQUEST_CONCLUSION_NAMING_KINDS,
   buildSystemNameFromPattern,
   parseRequestNamingPattern,
   saveRequestConclusionSettings,
@@ -107,7 +114,6 @@ import {
   getDispatcherSettingCode,
   getDispatcherSettingTaskTypeLabel,
   isDispatcherReminderSettingId,
-  normalizeDispatcherReminderDays,
   saveDispatcherReminderSettings,
   saveDispatcherSettings,
   useDispatcherReminderSettings,
@@ -188,11 +194,6 @@ import {
   getDispatcherBackgroundStatus,
   refreshDispatcherBackgroundNow,
 } from '@/server/dispatcher-background-task-functions'
-import {
-  getControlProcessSettingsOverview,
-  getPreHeatTreatmentDisableBlockerRowIds,
-  type ControlProcessSettingsOverview,
-} from '@/server/control-process-settings-api'
 
 const SETTINGS_TABS = [
   {
@@ -241,7 +242,7 @@ const SETTINGS_TABS = [
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
 const TAB_AREA = { templates: 'templates', requests: 'numbering', data: 'data', indexes: 'indexes', other: 'wdi', processes: 'processes', rules: 'checks' } as const
-const RULE_AREA = { system: 'checks', input: 'checks', tasks: 'dispatcher', exceptions: 'exceptions', parameters: 'dispatcher' } as const
+const RULE_AREA = { system: 'checks', input: 'checks', tasks: 'dispatcher', warnings: 'assignmentWarnings', exceptions: 'exceptions', parameters: 'dispatcher' } as const
 type SettingsSearchEntry = {
   id: string
   tabId: SettingsTabId
@@ -302,6 +303,7 @@ function buildSettingsSearchEntries(): SettingsSearchEntry[] {
     searchText: `${rule.code} ${rule.code.replace('-', '')} ${rule.title} ${rule.condition} ${rule.correction} ${rule.examples.join(' ')} ${rule.aliases.join(' ')}`,
   }))
   const extra: SettingsSearchEntry[] = [
+    { id: 'assignment-warnings', tabId: 'rules', title: 'Предупреждения при назначении контроля', description: 'УЗК при малом Д мин и РК на угловом стыке.', targetId: 'rules-warnings', searchText: 'Предупреждения назначения УЗК РК С У Т Д мин диаметр порог текст подтверждение' },
     { id: 'accepted-exceptions', tabId: 'rules', title: 'Принятые исключения', description: 'Реестр принятых решений и согласований.', targetId: 'rules-accepted-exceptions', searchText: 'Принятые исключения согласования контроль досрочные катушки' },
     { id: 'dispatcher-background', tabId: 'rules', title: 'Параметры диспетчера', description: 'Фоновый расчет кодов.', targetId: 'rules-dispatcher-background', searchText: 'Параметры диспетчера фоновой пересчет обновление' },
     { id: 'dls-requirement', tabId: 'rules', title: 'Требовать ДЛС для официальных клейм', description: 'Применимость требования ДЛС в дополнение к НАКС.', targetId: 'rules-dls-requirement', searchText: 'ДЛС допуск требовать параметры СП-02' },
@@ -331,7 +333,10 @@ export function SettingsPage({
   const [activeTab, setActiveTab] = useState<SettingsTabId>(() => getInitialRuleTarget() && tabVisible('rules') ? 'rules' : visibleTabs[0]?.id ?? 'templates')
   const [ruleTab, setRuleTab] = useState<RuleSettingsTab>(() => { const requested = getRuleSettingsTab(getInitialRuleTarget()); return requested && ruleVisible(requested) ? requested : RULE_SETTINGS_TABS.find(tab => ruleVisible(tab.id))?.id ?? 'system' })
   const [visitedRuleTabs, setVisitedRuleTabs] = useState<Set<RuleSettingsTab>>(() => new Set([getRuleSettingsTab(getInitialRuleTarget()) ?? 'system']))
-  const [dirtyTabs, setDirtyTabs] = useState<Set<SettingsTabId>>(() => new Set())
+  const [busySources, setBusySources] = useState<Set<string>>(() => new Set())
+  const [dirtySources, setDirtySources] = useState<Set<string>>(() => new Set())
+  const dirtyTabs = useMemo(() => new Set([...dirtySources].map(source => source.split('.')[0] as SettingsTabId)), [dirtySources])
+  const dirtyRuleTabs = useMemo(() => new Set([...dirtySources].filter(source => source.startsWith('rules.')).map(source => source.split('.')[1] as RuleSettingsTab)), [dirtySources])
   const [pendingNavigation, setPendingNavigation] = useState<{ tabId: SettingsTabId; targetId?: string } | null>(null)
   const [settingsSearch, setSettingsSearch] = useState('')
   const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(() => {
@@ -362,8 +367,15 @@ export function SettingsPage({
     [requireSettingsChangePassword, activeTab, ruleTab, can],
   )
 
-  const updateTabDirty = useCallback((tabId: SettingsTabId, dirty: boolean) => {
-    setDirtyTabs((current) => {
+  const updateTabDirty = useCallback((tabId: string, dirty: boolean, busy = false) => {
+    setBusySources(current => {
+      if (current.has(tabId) === busy) return current
+      const next = new Set(current)
+      if (busy) next.add(tabId); else next.delete(tabId)
+      return next
+    })
+    setDirtySources((current) => {
+      if (current.has(tabId) === dirty) return current
       const next = new Set(current)
       if (dirty) next.add(tabId)
       else next.delete(tabId)
@@ -373,8 +385,10 @@ export function SettingsPage({
   const handleIndexesDirtyChange = useCallback((dirty: boolean) => updateTabDirty('indexes', dirty), [updateTabDirty])
   const handleRequestsDirtyChange = useCallback((dirty: boolean) => updateTabDirty('requests', dirty), [updateTabDirty])
   const handleOtherDirtyChange = useCallback((dirty: boolean) => updateTabDirty('other', dirty), [updateTabDirty])
+  const handleWarningsDirtyChange = useCallback((dirty: boolean) => updateTabDirty('rules.warnings', dirty), [updateTabDirty])
 
   const navigateToSettings = useCallback((tabId: SettingsTabId, targetId?: string) => {
+    if (busySources.size) return
     if (tabId !== activeTab && dirtyTabs.has(activeTab)) {
       setPendingNavigation({ tabId, targetId })
       return
@@ -387,7 +401,7 @@ export function SettingsPage({
     }
     setPendingScrollTarget(targetId ?? null)
     setSettingsSearch('')
-  }, [activeTab, dirtyTabs])
+  }, [activeTab, dirtyTabs, busySources])
 
   useEffect(() => {
     const openRule = () => {
@@ -426,9 +440,9 @@ export function SettingsPage({
   }, [dirtyTabs])
 
   return (
-    <div className="space-y-5">
+    <SettingsDirtyContext.Provider value={updateTabDirty}><div className="space-y-5">
       <section className="rounded-xl border border-slate-200 bg-white">
-        <div data-settings-navigation className="sticky top-0 z-30 rounded-t-xl border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
+        <fieldset disabled={busySources.size > 0} data-settings-navigation className="min-w-0 sticky top-0 z-30 rounded-t-xl border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
           <div className="relative mb-2.5 max-w-xl">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -463,6 +477,7 @@ export function SettingsPage({
                 <button
                   key={tab.id}
                   type="button"
+                  aria-label={tab.label}
                   onClick={() => navigateToSettings(tab.id)}
                   className={`flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] font-medium transition-colors ${
                     isActive
@@ -472,13 +487,13 @@ export function SettingsPage({
                 >
                   <Icon className="h-4 w-4" strokeWidth={1.5} />
                   {tab.label}
-                  {dirtyTabs.has(tab.id) ? <span className="h-2 w-2 rounded-full bg-amber-400" title="Есть несохраненные изменения" /> : null}
+                  {dirtyTabs.has(tab.id) ? <span className="h-2 w-2 rounded-full bg-amber-400" title="Есть несохраненные изменения" aria-label="Есть несохранённые изменения" /> : null}
                 </button>
               )
             })}
           </div>
-          {activeTab === 'rules' ? <RuleSettingsTabs allowed={RULE_SETTINGS_TABS.filter(tab => ruleVisible(tab.id)).map(tab => tab.id)} value={ruleTab} onChange={tab => navigateToSettings('rules', `rules-${tab}`)} /> : null}
-        </div>
+          {activeTab === 'rules' ? <RuleSettingsTabs dirtyTabs={dirtyRuleTabs} allowed={RULE_SETTINGS_TABS.filter(tab => ruleVisible(tab.id)).map(tab => tab.id)} value={ruleTab} onChange={tab => navigateToSettings('rules', `rules-${tab}`)} /> : null}
+        </fieldset>
 
         {pendingNavigation ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-950">
@@ -539,6 +554,7 @@ export function SettingsPage({
               {(visitedRuleTabs.has(tab.id) || ruleTab === tab.id) ? tab.id === 'system' ? <SystemRulesSettingsPanel focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} />
                 : tab.id === 'input' ? <SaveChecksSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} />
                 : tab.id === 'tasks' ? <DispatcherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} />
+                : tab.id === 'warnings' ? <AssignmentWarningSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onDirtyChange={handleWarningsDirtyChange} />
                 : tab.id === 'exceptions' ? <div id="rules-accepted-exceptions" className="scroll-mt-48"><AcceptedWarningsSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onCancelEarlyCoil={onCancelEarlyCoil} /></div>
                 : <div className="space-y-4">{can('checks.view') ? <fieldset disabled={!can('checks.edit')}><DlsRequirementSettingsPanel runProtectedSettingsChange={async action => { if (!can('checks.edit')) return false; await action(); return true }} /></fieldset> : null}{can('dispatcher.view') ? <div id="rules-dispatcher-background" className="scroll-mt-48"><DispatcherSettingsPanel backgroundOnly runProtectedSettingsChange={runProtectedSettingsChange} focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} /></div> : null}</div>
                 : null}
@@ -555,22 +571,26 @@ export function SettingsPage({
           )}
         </fieldset>
       </section>
-    </div>
+    </div></SettingsDirtyContext.Provider>
   )
 }
 
 function DlsRequirementSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
-  const settings = useSaveCheckSettings()
+  const saved = useSaveCheckSettings()
+  const draft = useSettingsDraft('rules.parameters.dls', saved, runProtectedSettingsChange,
+    value => persistSettingsDraft(PROJECT_SETTING_KEYS.saveCheck, value, saveSaveCheckSettings))
+  const settings = draft.value
   return <section id="rules-dls-requirement" className="scroll-mt-48 rounded-lg border border-slate-200 bg-white p-4">
     <label className="flex cursor-pointer items-start gap-3">
       <Checkbox className="mt-1" checked={settings.officialDls}
         aria-label="Требовать ДЛС для официальных клейм"
-        onChange={event => { const enabled = event.currentTarget.checked; void runProtectedSettingsChange(() => saveSaveCheckSettings({ ...settings, officialDls: enabled })) }} />
+        disabled={draft.busy} onChange={event => draft.change({ ...settings, officialDls: event.currentTarget.checked })} />
       <span><span className="block text-sm font-semibold text-slate-900">Требовать ДЛС для официальных клейм</span>
         <span className="mt-1 block text-sm text-slate-600">При включении СП-02 проверяет и НАКС, и ДЛС на дату сварки. При выключении ДЛС не требуется; НАКС, материалы, способы, размеры и отстранения по-прежнему проверяются.</span>
         <span className="mt-2 block text-xs text-slate-500">Общее требование журнала. Переключение не изменяет стыки и допуски; задачи СП-02 пересчитываются. Напоминание о сроке ДЛС настраивается отдельно в ДЗ-05.</span>
       </span>
     </label>
+    <div className="mt-3"><SettingsDraftActions draft={draft} /></div>
   </section>
 }
 
@@ -651,35 +671,34 @@ function OtherSettingsPanel({
   runProtectedSettingsChange: ProtectedSettingsChange
   onDirtyChange: (dirty: boolean) => void
 }) {
-  const settings = useOtherSettings()
+  const saved = useOtherSettings()
+  const editor = useSettingsDraft('other.settings', saved, runProtectedSettingsChange, value => saveOtherSettingsAndWait(value))
+  const settings = editor.value
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
   const [isWdiEditorOpen, setIsWdiEditorOpen] = useState(false)
   const [isWdiRulesExpanded, setIsWdiRulesExpanded] = useState(false)
-  const [wdiRulesDraft, setWdiRulesDraft] = useState<WdiCalculationRules>(settings.wdiCalculationRules)
-  const [wdiRulesMessage, setWdiRulesMessage] = useState<string | null>(null)
+  const wdiRulesDraft = settings.wdiCalculationRules
+  const setWdiRulesDraft = (next: WdiCalculationRules | ((current: WdiCalculationRules) => WdiCalculationRules)) => editor.change(current => ({
+    ...current, wdiCalculationRules: typeof next === 'function' ? next(current.wdiCalculationRules) : next,
+  }))
+  const [recalculationMessage, setRecalculationMessage] = useState('')
   const [wdiPreview, setWdiPreview] = useState<WdiRecalculationPreview | null>(null)
   const [wdiPreviewError, setWdiPreviewError] = useState<string | null>(null)
   const [isLoadingWdiPreview, setIsLoadingWdiPreview] = useState(false)
   const [isRecalculatingWdi, setIsRecalculatingWdi] = useState(false)
-  const savedWdiRulesKey = JSON.stringify(settings.wdiCalculationRules)
   const savedWdiCalculationKey = JSON.stringify({
     mode: settings.wdiCalculationMode,
     rules: settings.wdiCalculationRules,
     table: settings.wdiTable,
   })
-  const draftWdiRulesKey = JSON.stringify(wdiRulesDraft)
-  const wdiRulesDirty = savedWdiRulesKey !== draftWdiRulesKey
+  const wdiRulesDirty = editor.dirty
 
   useEffect(() => {
     onDirtyChange(wdiRulesDirty)
     return () => onDirtyChange(false)
   }, [onDirtyChange, wdiRulesDirty])
 
-  useEffect(() => {
-    setWdiRulesDraft(settings.wdiCalculationRules)
-    setWdiRulesMessage(null)
-  }, [savedWdiRulesKey])
 
   useEffect(() => {
     setWdiPreview(null)
@@ -687,20 +706,13 @@ function OtherSettingsPanel({
   }, [savedWdiCalculationKey])
 
   function updateWdiCalculationMode(mode: WdiCalculationMode) {
-    setWdiRulesMessage(null)
-    void runProtectedSettingsChange(() =>
-      saveOtherSettingsAndWait({ ...settings, wdiCalculationMode: mode }),
-    ).catch((error) => {
-      setWdiRulesMessage(getErrorMessage(error, 'Не удалось сохранить режим расчета WDI.'))
-    })
+    editor.change({ ...settings, wdiCalculationMode: mode })
   }
 
-  const saveWdiTable = useCallback(
-    (table: NonNullable<typeof settings.wdiTable>) => runProtectedSettingsChange(() =>
-      saveOtherSettingsAndWait({ ...settings, wdiCalculationMode: 'table', wdiTable: table }),
-    ),
-    [runProtectedSettingsChange, settings],
-  )
+  const saveWdiTable = async (table: NonNullable<typeof settings.wdiTable>) => {
+    editor.change({ ...settings, wdiCalculationMode: 'table', wdiTable: table })
+    return true
+  }
 
   function updateWdiRule(
     group: keyof WdiCalculationRules,
@@ -714,22 +726,10 @@ function OtherSettingsPanel({
         [field]: value,
       },
     }))
-    setWdiRulesMessage(null)
     setWdiPreview(null)
     setIsWdiRulesExpanded(true)
   }
 
-  async function saveWdiRules() {
-    setWdiRulesMessage(null)
-    try {
-      const saved = await runProtectedSettingsChange(() =>
-        saveOtherSettingsAndWait({ ...settings, wdiCalculationRules: wdiRulesDraft }),
-      )
-      if (saved) setWdiRulesMessage('Правило расчета WDI сохранено для проекта.')
-    } catch (error) {
-      setWdiRulesMessage(getErrorMessage(error, 'Не удалось сохранить правило расчета WDI.'))
-    }
-  }
 
   async function openWdiRecalculationPreview() {
     setWdiPreviewError(null)
@@ -769,7 +769,7 @@ function OtherSettingsPanel({
       if (!saved) return
       scheduleWeldDataRefresh(queryClient)
       window.dispatchEvent(new Event(GENERATED_DOCUMENT_STORAGE_EVENT))
-      setWdiRulesMessage(`WDI пересчитан. Обновлено стыков: ${wdiPreview.changed}.`)
+      setRecalculationMessage(`WDI пересчитан. Обновлено стыков: ${wdiPreview.changed}.`)
       setWdiPreview(await previewWdiRecalculation())
     } catch (error) {
       setWdiPreviewError(getErrorMessage(error, 'Не удалось пересчитать WDI.'))
@@ -779,7 +779,7 @@ function OtherSettingsPanel({
   }
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={editor.busy} className="min-w-0 space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-5 w-5 text-slate-500" />
@@ -947,39 +947,12 @@ function OtherSettingsPanel({
                   <div className="mt-1"><span className="font-semibold text-slate-800">Другие типы:</span> {formatWdiRuleSummary(wdiRulesDraft.other)}</div>
                 </div>
 
-                <div className="sticky bottom-0 z-10 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
-                  <div className={`text-sm ${wdiRulesMessage?.startsWith('Не удалось') ? 'text-rose-700' : 'text-slate-500'}`}>
-                    {wdiRulesDirty ? 'Есть несохраненные изменения правила.' : wdiRulesMessage ?? 'Правило сохранено и используется системой.'}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {wdiRulesDirty ? (
-                      <button
-                        type="button"
-                        onClick={() => setWdiRulesDraft(cloneWdiRules(settings.wdiCalculationRules))}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        Отменить изменения
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={!wdiRulesDirty}
-                      onClick={() => void saveWdiRules()}
-                      className={buttonVariants({ className: 'px-3' })}
-                    >
-                      <Save className="h-4 w-4" />
-                      Сохранить правило
-                    </button>
-                  </div>
-                </div>
-
                 <div className="mt-4 border-t border-amber-200 pt-4">
                   <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50/70 p-3 md:flex-row md:items-center md:justify-between">
                     <div className="max-w-3xl">
                       <div className="text-sm font-semibold text-slate-900">Сохраненные значения WDI</div>
                       {wdiRulesDirty ? (
-                        <p className="mt-1 text-xs font-semibold text-amber-800">Сначала сохраните изменения правила выбора D/T.</p>
+                        <p className="mt-1 text-xs font-semibold text-amber-800">Сначала сохраните изменения настроек WDI.</p>
                       ) : settings.wdiCalculationMode === 'manual' ? (
                         <p className="mt-1 text-xs font-semibold text-slate-500">Пересчет доступен только в системном режиме.</p>
                       ) : (
@@ -1007,7 +980,7 @@ function OtherSettingsPanel({
       </section>
 
       {isWdiEditorOpen ? (
-        <WdiTableEditorDialog table={settings.wdiTable} onClose={() => setIsWdiEditorOpen(false)} onSave={saveWdiTable} />
+        <WdiTableEditorDialog table={settings.wdiTable} onClose={() => setIsWdiEditorOpen(false)} onSave={saveWdiTable} saveLabel="Применить к настройкам" />
       ) : null}
       {wdiPreview ? (
         <WdiRecalculationPreviewDialog
@@ -1020,7 +993,9 @@ function OtherSettingsPanel({
           onRecalculate={() => void confirmWdiRecalculation()}
         />
       ) : null}
-    </div>
+      {recalculationMessage ? <p role="status" className="text-sm text-slate-700">{recalculationMessage}</p> : null}
+      <SettingsDraftActions draft={editor} label="Сохранить настройки WDI" />
+    </fieldset>
   )
 }
 
@@ -1035,102 +1010,36 @@ function ControlProcessesSettingsPanel({
     message?: string,
   ) => void
 }) {
-  const settings = useControlProcessSettings()
-  const otherSettings = useOtherSettings()
+  const saved = useControlProcessSettings()
+  const savedOther = useOtherSettings()
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
-  const [savingKey, setSavingKey] = useState<keyof ControlProcessSettings | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [openingPreHeatTreatmentBlockers, setOpeningPreHeatTreatmentBlockers] = useState(false)
-  const [isRkExposureEditorOpen, setIsRkExposureEditorOpen] = useState(false)
-  const overviewQuery = useQuery({
-    queryKey: ['control-process-settings-overview'],
-    queryFn: () => getControlProcessSettingsOverview(),
-    staleTime: 10_000,
+  const editor = useSettingsDraft('processes.switches', saved, runProtectedSettingsChange, async (value, assertCurrent) => {
+    for (const key of Object.keys(value) as (keyof ControlProcessSettings)[]) {
+      if (value[key] === saved[key]) continue
+      const confirmation = getControlProcessSettingConfirmation(key, value[key])
+      if (!await confirmAction({ ...confirmation, tone: 'warning' })) return false
+    }
+    assertCurrent()
+    await saveControlProcessSettingsAndWait(value)
+    await queryClient.invalidateQueries({ queryKey: ['control-process-settings-overview'] })
   })
-  const overview: ControlProcessSettingsOverview = overviewQuery.data ?? {
-    preHeatTreatmentBlockerCount: 0,
-  }
+  const rkEditor = useSettingsDraft('processes.rk', savedOther, runProtectedSettingsChange, value => saveOtherSettingsAndWait(value))
+  const settings = editor.value, otherSettings = rkEditor.value
+  const [message, setMessage] = useState<string | null>(null)
+  const [isRkExposureEditorOpen, setIsRkExposureEditorOpen] = useState(false)
 
-  const openPreHeatTreatmentBlockers = async () => {
-    if (!onOpenReportRowIds || openingPreHeatTreatmentBlockers) return
-    setOpeningPreHeatTreatmentBlockers(true)
+  const saveRkExposureTable = async (table: NonNullable<typeof otherSettings.rkExposureTable>) => {
+    rkEditor.change({ ...otherSettings, rkExposureTable: table })
+    return true
+  }
+  function changeProcessSetting(key: keyof ControlProcessSettings, enabled: boolean) {
     setMessage(null)
-    try {
-      const rowIds = await getPreHeatTreatmentDisableBlockerRowIds()
-      if (rowIds.length === 0) {
-        await queryClient.invalidateQueries({ queryKey: ['control-process-settings-overview'] })
-        setMessage('Незавершенных заявок или негодных результатов НК до ТО больше нет.')
-        return
-      }
-      onOpenReportRowIds(
-        rowIds,
-        'lnk',
-        `Показаны стыки, из-за которых нельзя выключить НК до ТО: ${rowIds.length}.`,
-      )
-    } catch (error) {
-      setMessage(getErrorMessage(error, 'Не удалось открыть стыки в отчете ЛНК.'))
-    } finally {
-      setOpeningPreHeatTreatmentBlockers(false)
-    }
+    editor.change({ ...settings, [key]: enabled })
   }
-
-  const saveRkExposureTable = useCallback(
-    (table: NonNullable<typeof otherSettings.rkExposureTable>) => runProtectedSettingsChange(() =>
-      saveOtherSettingsAndWait({ ...otherSettings, rkExposureTable: table }),
-    ),
-    [otherSettings, runProtectedSettingsChange],
-  )
-
-  async function changeProcessSetting(
-    key: keyof ControlProcessSettings,
-    enabled: boolean,
-  ) {
-    if (settings[key] === enabled || savingKey) return
-    setMessage(null)
-
-    const confirmation = getControlProcessSettingConfirmation(key, enabled)
-    const confirmed = await confirmAction({
-      title: confirmation.title,
-      itemName: confirmation.itemName,
-      description: confirmation.description,
-      warning: confirmation.warning,
-      confirmLabel: confirmation.confirmLabel,
-      tone: 'warning',
-    })
-    if (!confirmed) return
-
-    setSavingKey(key)
-    try {
-      const saved = await runProtectedSettingsChange(() =>
-        saveControlProcessSettingsAndWait({ ...settings, [key]: enabled }),
-      )
-      if (!saved) return
-      await queryClient.invalidateQueries({ queryKey: ['control-process-settings-overview'] })
-      const settingLabel = key === 'pvkGoodOnly'
-        ? 'ПВК — только годен'
-        : key === 'preHeatTreatmentLnkEnabled'
-          ? 'НК до ТО'
-          : 'Разрешение основного НК до завершения предыдущих этапов'
-      const stateLabel = key === 'allowPrimaryLnkBeforePreviousStagesComplete'
-        ? enabled ? 'включено' : 'выключено'
-        : enabled ? 'включен' : 'выключен'
-      setMessage(`${settingLabel} ${stateLabel} для проекта.`)
-    } catch (error) {
-      setMessage(getErrorMessage(error, 'Не удалось изменить процесс контроля.'))
-    } finally {
-      setSavingKey(null)
-    }
-  }
-
-  const preHeatTreatmentDisableReason = settings.preHeatTreatmentLnkEnabled && overview.preHeatTreatmentBlockerCount > 0
-    ? `Нельзя выключить: незавершенных заявок или негодных результатов — ${overview.preHeatTreatmentBlockerCount}.`
-    : overviewQuery.isPending
-      ? 'Проверяем незавершенные заявки и результаты...'
-      : null
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={editor.busy || rkEditor.busy} className="min-w-0 space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex items-center gap-2">
           <Layers3 className="h-5 w-5 text-slate-500" />
@@ -1151,47 +1060,21 @@ function ControlProcessesSettingsPanel({
             description="Разрешать только годный результат нашего ПВК на основном этапе и до ТО."
             detail="Дубль-контроль этим переключателем не ограничивается. Сохранённые негодные результаты остаются в истории. При послойном назначении действуют отдельные ограничения всех четырёх методов, включая дубли."
             checked={settings.pvkGoodOnly}
-            disabled={savingKey !== null}
-            busy={savingKey === 'pvkGoodOnly'}
+            disabled={editor.busy}
+            busy={editor.busy}
             onChange={(enabled) => void changeProcessSetting('pvkGoodOnly', enabled)}
           />
-          <ControlProcessToggle
-            title="НК до ТО"
-            description="Отдельные заявки и результаты ЛНК до начала ПСТО. Послойный контроль от этой настройки не зависит."
-            detail={preHeatTreatmentDisableReason ?? (settings.preHeatTreatmentLnkEnabled
-              ? 'ПСТО начинается только после годных результатов назначенных видов НК до ТО.'
-              : 'Новые заявки и результаты недоступны. История сохранена; основной ЛНК открывается после завершения ПСТО и ТВМТ.')}
-            checked={settings.preHeatTreatmentLnkEnabled}
-            disabled={savingKey !== null || Boolean(preHeatTreatmentDisableReason)}
-            busy={savingKey === 'preHeatTreatmentLnkEnabled'}
-            warning={Boolean(preHeatTreatmentDisableReason)}
-            actionLabel={overview.preHeatTreatmentBlockerCount > 0
-              ? openingPreHeatTreatmentBlockers ? 'Открываем...' : 'Показать стыки в ЛНК'
-              : undefined}
-            onAction={overview.preHeatTreatmentBlockerCount > 0 && onOpenReportRowIds
-              ? () => void openPreHeatTreatmentBlockers()
-              : undefined}
-            onChange={(enabled) => void changeProcessSetting('preHeatTreatmentLnkEnabled', enabled)}
-          />
-          <ControlProcessToggle
-            title="Разрешать основной НК до завершения предыдущих этапов"
-            description="Позволяет вручную внести результаты основного НК до завершения предыдущих этапов. Заявки можно подавать заранее в обоих режимах, начиная с даты сварки."
-            detail={settings.preHeatTreatmentLnkEnabled
-              ? settings.allowPrimaryLnkBeforePreviousStagesComplete
-                ? 'Система предупредит перед сохранением и создаст обязательное СП-06 до восстановления последовательности. Реальные противоречия дат и негодный НК до ТО по-прежнему блокируют действие.'
-                : 'Строгий режим: результаты основного НК доступны после завершения обязательных предыдущих этапов. Ранняя заявка не считается выполненным контролем.'
-              : 'Недоступно, пока процесс «НК до ТО» выключен.'}
-            checked={settings.preHeatTreatmentLnkEnabled && settings.allowPrimaryLnkBeforePreviousStagesComplete}
-            disabled={savingKey !== null || !settings.preHeatTreatmentLnkEnabled}
-            busy={savingKey === 'allowPrimaryLnkBeforePreviousStagesComplete'}
-            onChange={(enabled) => void changeProcessSetting('allowPrimaryLnkBeforePreviousStagesComplete', enabled)}
-          />
-        </div>
-        {overviewQuery.error ? (
-          <div className="border-t border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            Не удалось заранее проверить незавершенный НК до ТО. Сервер все равно выполнит обязательную проверку при сохранении.
+          <div className="space-y-2 px-4 py-4">
+            <label htmlFor="pre-heat-treatment-mode" className="text-sm font-semibold text-slate-900">НК до ТО</label>
+            <Select id="pre-heat-treatment-mode" aria-label="Режим НК до ТО" value={settings.preHeatTreatmentMode}
+              onChange={event => editor.change({ ...settings, preHeatTreatmentMode: event.target.value as ControlProcessSettings['preHeatTreatmentMode'] })}>
+              <option value="selected">На выбранных стыках</option>
+              <option value="allPsto">На всех стыках с ПСТО</option>
+            </Select>
+            <p className="text-sm text-slate-600">В выборочном режиме отметка «Требуется НК до ТО» меняется в карточке исходного стыка для всей цепочки. Катушки начинают отдельные цепочки.</p>
+            <p className="text-xs text-slate-500">Основной НК можно внести до завершения предыдущих этапов с предупреждением СП-06. Проверки дат и негодного предварительного контроля сохраняются.</p>
           </div>
-        ) : null}
+        </div>
         {message ? (
           <div className={`border-t px-4 py-3 text-sm ${message.startsWith('Не удалось') || message.includes('нельзя')
             ? 'border-rose-200 bg-rose-50 text-rose-700'
@@ -1248,12 +1131,15 @@ function ControlProcessesSettingsPanel({
 
       {isRkExposureEditorOpen ? (
         <RkExposureTableEditorDialog
+          saveLabel="Применить к настройкам"
           table={otherSettings.rkExposureTable}
           onClose={() => setIsRkExposureEditorOpen(false)}
           onSave={saveRkExposureTable}
         />
       ) : null}
-    </div>
+      <SettingsDraftActions draft={editor} label="Сохранить процессы контроля" />
+      <SettingsDraftActions draft={rkEditor} label="Сохранить справочник РК" />
+    </fieldset>
   )
 }
 
@@ -1328,7 +1214,7 @@ function ControlProcessToggle({
 
 function getControlProcessSettingConfirmation(
   key: keyof ControlProcessSettings,
-  enabled: boolean,
+  enabled: ControlProcessSettings[keyof ControlProcessSettings],
 ) {
   if (key === 'pvkGoodOnly') {
     return enabled
@@ -1348,39 +1234,15 @@ function getControlProcessSettingConfirmation(
         }
   }
 
-  if (key === 'allowPrimaryLnkBeforePreviousStagesComplete') {
-    return enabled
-      ? {
-          title: 'Разрешить основной НК раньше',
-          itemName: 'Нестрогая последовательность оформления',
-          description: 'В результатах основного ЛНК можно будет вручную выбрать стык до завершения НК до ТО, ПСТО или ТВМТ. На доступность ранних заявок этот режим не влияет.',
-          warning: 'Автоматические годные результаты и документы не создаются. До восстановления последовательности по стыку будет показываться обязательное СП-06.',
-          confirmLabel: 'Разрешить',
-        }
-      : {
-          title: 'Вернуть строгую последовательность',
-          itemName: 'Основной НК только после предыдущих этапов',
-          description: 'Новые ранние результаты основного ЛНК снова будут заблокированы. Заявки по-прежнему можно подавать заранее, начиная с даты сварки.',
-          warning: 'Уже существующие нарушения останутся видны как СП-06 до фактического завершения предыдущих этапов.',
-          confirmLabel: 'Вернуть строгий режим',
-        }
+  return {
+    title: 'Изменить режим НК до ТО',
+    itemName: enabled === 'allPsto' ? 'На всех стыках с ПСТО' : 'На выбранных стыках',
+    description: enabled === 'allPsto'
+      ? 'НК до ТО станет обязательным для всех стыков на линиях с ПСТО. Документы автоматически не создаются.'
+      : 'Отметки и история сохранятся. Ненужный этап можно явно отключить в исходной карточке с просмотром удаляемых данных.',
+    warning: 'Существующие документы и результаты не удаляются при смене режима.',
+    confirmLabel: 'Сохранить',
   }
-
-  return enabled
-    ? {
-        title: 'Включить НК до ТО',
-        itemName: 'Вернуть этап контроля перед ПСТО',
-        description: 'Требование действует для всех стыков на линиях с ПСТО по назначенным методам, в том числе для ранее созданных стыков и уже начатой ПСТО.',
-        warning: 'Существующие документы и результаты сохранятся. При недостающем НК до ТО общий статус может измениться; ранние результаты основного НК разрешает только отдельный переключатель. Довнесение проверяется по фактическим датам.',
-        confirmLabel: 'Включить',
-      }
-    : {
-        title: 'Выключить НК до ТО',
-        itemName: 'Исключить отдельный этап перед ПСТО',
-        description: 'Новые заявки и результаты до ТО станут недоступны. После ПСТО и ТВМТ стык перейдет к основному ЛНК.',
-        warning: 'Операция будет отклонена, если остались незавершенные заявки или негодные результаты. История сохранится.',
-        confirmLabel: 'Выключить',
-      }
 }
 
 function WdiRulePresetButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -1656,6 +1518,7 @@ function DataSettingsPanel({
 }) {
   const settings = useDataListSettings()
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [drafts, setDrafts] = useState<Record<DataListSettingsKey, string>>({
     weldingTypes: '',
     connectionTypes: '',
@@ -1663,6 +1526,24 @@ function DataSettingsPanel({
     testTypes: '',
   })
   const [message, setMessage] = useState<string | null>(null)
+  const pendingValues = Object.values(drafts).some(value => value.length > 0)
+  useSettingsDirty('data.values', pendingValues, saving)
+  const resetValues = () => { setDrafts({ weldingTypes: '', connectionTypes: '', materialGroups: '', testTypes: '' }); setMessage(null) }
+  const savePendingValues = async () => {
+    const next = { ...settings }
+    const errors: string[] = []
+    for (const config of DATA_LIST_CONFIGS) {
+      if (!drafts[config.key]) continue
+      const value = normalizeDataListOption(drafts[config.key])
+      const error = !value ? 'Введите значение.' : getDataListOptionInputError(config.key, value)
+      if (error) errors.push(`${config.title}: ${error}`)
+      else if (next[config.key].includes(value)) errors.push(`${config.title}: значение ${value} уже есть в списке.`)
+      else next[config.key] = [...next[config.key], value]
+    }
+    if (errors.length) { setMessage(errors.join(' ')); return false }
+    if (await saveListChange(next, 'Новые значения справочников сохранены.')) { resetValues(); return true }
+    return false
+  }
   const usageCountsByKey: Record<DataListSettingsKey, Map<string, number>> = {
     weldingTypes: new Map(usage.weldingTypes),
     connectionTypes: usage.connectionTypes.reduce((counts, [value, count]) => {
@@ -1675,7 +1556,8 @@ function DataSettingsPanel({
   }
 
   async function saveListChange(next: DataListSettings, success: string) {
-    if (saving) return false
+    if (savingRef.current) return false
+    savingRef.current = true
     setSaving(true)
     try {
       const saved = await runProtectedSettingsChange(() => saveDataListSettingsAndWait(next))
@@ -1684,7 +1566,7 @@ function DataSettingsPanel({
     } catch (error) {
       setMessage(getErrorMessage(error, 'Не удалось сохранить список. Повторите изменение.'))
       return false
-    } finally { setSaving(false) }
+    } finally { savingRef.current = false; setSaving(false) }
   }
 
   async function addListValue(config: DataListConfig) {
@@ -1843,6 +1725,7 @@ function DataSettingsPanel({
       })}
 
       {message ? <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">{message}</div> : null}
+      <SettingsDraftActions label="Сохранить новые значения" draft={{ dirty: pendingValues, stale: false, busy: saving, message: '', save: savePendingValues, reset: resetValues }} />
     </div>
   )
 }
@@ -1949,21 +1832,19 @@ function SystemIndexesSettingsPanel({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const settings = useSystemIndexSettings()
-  const [draft, setDraft] = useState<SystemIndexSettings>(settings)
+  const editor = useSettingsDraft('indexes.editor', settings, runProtectedSettingsChange,
+    value => persistSettingsDraft(PROJECT_SETTING_KEYS.systemIndex, value, saveSystemIndexSettings))
+  const draft = editor.value, setDraft = editor.change
   const canEditIndexLetters = rowsCount === 0
   const validationError = getSystemIndexValidationError(draft)
-  const hasChanges = JSON.stringify(draft) !== JSON.stringify(settings)
+  const hasChanges = editor.dirty
   const indexLettersChanged = SYSTEM_INDEX_ROWS.some((row) => draft[row.id] !== settings[row.id])
-  const canSave = hasChanges && !validationError && (canEditIndexLetters || !indexLettersChanged)
+  const canSave = hasChanges && !editor.stale && !editor.busy && !validationError && (canEditIndexLetters || !indexLettersChanged)
 
   useEffect(() => {
     onDirtyChange(hasChanges)
     return () => onDirtyChange(false)
   }, [hasChanges, onDirtyChange])
-
-  useEffect(() => {
-    setDraft(settings)
-  }, [settings])
 
   const updateDraft = (id: SystemIndexKey, value: string) => {
     setDraft((current) => ({
@@ -1972,18 +1853,18 @@ function SystemIndexesSettingsPanel({
     }))
   }
 
-  const resetDraft = () => runProtectedSettingsChange(() => setDraft((current) => ({
+  const resetDraft = () => setDraft((current) => ({
     ...DEFAULT_SYSTEM_INDEX_SETTINGS,
     allowLeadingLetterIndex: current.allowLeadingLetterIndex,
-  })))
+  }))
 
   const saveDraft = async () => {
     if (!canSave) return
-    await runProtectedSettingsChange(() => saveSystemIndexSettings(draft))
+    await editor.save()
   }
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={editor.busy} className="min-w-0 space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -2081,22 +1962,19 @@ function SystemIndexesSettingsPanel({
           {validationError}
         </div>
       ) : null}
-      {hasChanges ? (
-        <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-lg backdrop-blur">
-          <span className="text-sm font-semibold text-amber-900">Есть несохраненные изменения системных индексов.</span>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setDraft(settings)} className="rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Отменить</button>
-            <button type="button" disabled={!canSave} onClick={saveDraft} className={buttonVariants({ className: 'px-3' })}>Сохранить настройки</button>
-          </div>
-        </div>
-      ) : null}
-    </div>
+      <SettingsDraftActions draft={editor} canSave={!!canSave} label="Сохранить настройки" />
+    </fieldset>
   )
 }
 
 function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const { can } = useAccess()
   const [activeTemplateId, setActiveTemplateId] = useState<DocumentTemplateId>('weldingJournal')
+  const customNames = useCustomDocumentNames()
+  const nameEditor = useSettingsDraft('templates.names', customNames, runProtectedSettingsChange, saveCustomDocumentNames)
+  const templateTypes = DOCUMENT_TEMPLATE_TYPES.map(template => isCustomDocumentType(template.id) ? { ...template, label: customNames[template.id] } : template)
+  const templateGroup = (id: DocumentTemplateId) => isCustomDocumentType(id) ? 'custom' : isManualGeneratedDocumentType(id) ? 'general' : 'system'
+  const activeGroup = templateGroup(activeTemplateId)
   const [uploads, setUploads] = useState<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>({})
   const [missingUploads, setMissingUploads] = useState<Partial<Record<DocumentTemplateId, Omit<StoredDocumentTemplate, 'fileData'>>>>({})
   const [storageWarnings, setStorageWarnings] = useState<Partial<Record<DocumentTemplateId, string>>>({})
@@ -2111,19 +1989,43 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const [sequenceMenu, setSequenceMenu] = useState<ContextActionMenuState>(null)
   const [isResettingDocumentNumber, setIsResettingDocumentNumber] = useState(false)
   const [isUploadingTemplate, setIsUploadingTemplate] = useState(false)
+  const [optionDrafts, setOptionDrafts] = useState<Partial<Record<DocumentTemplateId, { value: WeldingJournalTemplateOptions; version: string }>>>({})
+  const [savingOptions, setSavingOptions] = useState(false)
+  const savingOptionsRef = useRef(false)
+  const [optionMessage, setOptionMessage] = useState('')
+  useSettingsDirty('templates.options', Object.keys(optionDrafts).length > 0, savingOptions)
   const [pendingTemplateReplacement, setPendingTemplateReplacement] =
     useState<PendingDocumentTemplateReplacement | null>(null)
   const templateFileInputRef = useRef<HTMLInputElement>(null)
   const templateFileMenuRef = useRef<HTMLDetailsElement>(null)
   const confirmAction = useConfirmAction()
-  const activeTemplate = DOCUMENT_TEMPLATE_TYPES.find((template) => template.id === activeTemplateId) ?? DOCUMENT_TEMPLATE_TYPES[0]
+  const activeTemplate = templateTypes.find((template) => template.id === activeTemplateId) ?? templateTypes[0]
   const activeUpload = uploads[activeTemplateId]
   const missingUpload = missingUploads[activeTemplateId]
-  const documentOptions = getWeldingJournalTemplateOptions(
+  const savedDocumentOptions = getWeldingJournalTemplateOptions(
     isManualGeneratedDocumentType(activeTemplateId)
       ? (activeUpload ?? missingUpload)?.options?.[activeTemplateId]
       : undefined,
   )
+  const activeOptionDraft = optionDrafts[activeTemplateId]
+  const documentOptions = activeOptionDraft?.value ?? savedDocumentOptions
+  const optionsStale = !!activeOptionDraft && activeOptionDraft.version !== String(activeUpload?.version ?? '')
+  const clearOptionDraft = (id: DocumentTemplateId) => setOptionDrafts(current => { const next = { ...current }; delete next[id]; return next })
+  const saveOptions = async () => {
+    if (!activeOptionDraft || optionsStale || savingOptionsRef.current) return false
+    savingOptionsRef.current = true; setSavingOptions(true); setOptionMessage('')
+    try {
+      const done = await runProtectedSettingsChange(async () => {
+        const savedTemplate = await updateDocumentTemplateOptions(activeTemplateId, { [activeTemplateId]: activeOptionDraft.value }, activeOptionDraft.version)
+        if (!savedTemplate) throw new Error('Шаблон больше не найден.')
+        setUploads(current => ({ ...current, [activeTemplateId]: savedTemplate }))
+      })
+      if (done) { clearOptionDraft(activeTemplateId); setOptionMessage('Параметры документа сохранены.') }
+      return done
+    } catch (error) { setOptionMessage(getErrorMessage(error, 'Не удалось сохранить параметры документа.')); return false }
+    finally { savingOptionsRef.current = false; setSavingOptions(false) }
+  }
+
 
   useEffect(() => {
     let isMounted = true
@@ -2316,26 +2218,12 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     if (confirmed) await savePendingTemplateReplacement(null)
   }
 
-  const handleDocumentOptionChange = async (
-    optionKey: keyof WeldingJournalTemplateOptions,
-    value: WeldingJournalTemplateOptions[keyof WeldingJournalTemplateOptions],
-  ) => {
-    if (!activeUpload || !isManualGeneratedDocumentType(activeTemplateId)) return
-
-    const nextOptions = {
-      ...documentOptions,
-      [optionKey]: value,
-    }
-    await runProtectedSettingsChange(async () => {
-      const savedTemplate = await updateDocumentTemplateOptions(activeTemplateId, {
-        [activeTemplateId]: nextOptions,
-      }, String(activeUpload.version ?? ''))
-      if (!savedTemplate) return
-      setUploads((currentUploads) => ({
-        ...currentUploads,
-        [activeTemplateId]: savedTemplate,
-      }))
-    })
+  const handleDocumentOptionChange = (optionKey: keyof WeldingJournalTemplateOptions, value: WeldingJournalTemplateOptions[keyof WeldingJournalTemplateOptions]) => {
+    if (!activeUpload || !isManualGeneratedDocumentType(activeTemplateId) || savingOptionsRef.current) return
+    setOptionMessage('')
+    const next = { ...documentOptions, [optionKey]: value }
+    if (JSON.stringify(next) === JSON.stringify(savedDocumentOptions)) clearOptionDraft(activeTemplateId)
+    else setOptionDrafts(current => ({ ...current, [activeTemplateId]: { value: next, version: current[activeTemplateId]?.version ?? String(activeUpload.version ?? '') } }))
   }
 
   const handleTemplateDownload = () => {
@@ -2451,9 +2339,17 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         error={templateLoadError}
         onRetry={() => setTemplateLoadAttempt((current) => current + 1)}
       >
+      <div className="flex gap-5 overflow-x-auto border-b border-slate-200 px-1" role="tablist" aria-label="Группы шаблонов документов">
+        {([{ id: 'general', label: 'Общие', first: 'weldingJournal' }, { id: 'custom', label: 'Пользовательские', first: 'custom1' }, { id: 'system', label: 'Системные', first: 'lnkRequest' }] as const).map(group => <button
+          key={group.id} type="button" role="tab" aria-label={group.label} aria-selected={activeGroup === group.id}
+          onClick={() => setActiveTemplateId(group.first)}
+          className={`flex shrink-0 items-center gap-2 border-b-2 py-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400 ${activeGroup === group.id ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900'}`}>
+          {group.label}{((group.id === 'custom' && nameEditor.dirty) || Object.keys(optionDrafts).some(id => templateGroup(id as DocumentTemplateId) === group.id)) ? <span className="h-2 w-2 rounded-full bg-amber-400" aria-label="Есть несохранённые изменения" /> : null}
+        </button>)}
+      </div>
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-        <div className="rounded-md border border-slate-300 bg-white p-2 shadow-sm shadow-slate-200/60">
-          {DOCUMENT_TEMPLATE_TYPES.map((templateType) => {
+        <div className="self-start rounded-md border border-slate-300 bg-white p-2 shadow-sm shadow-slate-200/60">
+          {templateTypes.filter(template => templateGroup(template.id) === activeGroup).map((templateType) => {
             if (
               isLayeredControlDocumentType(templateType.id) &&
               templateType.id !== LAYERED_CONTROL_DOCUMENT_TYPES[0]
@@ -2546,7 +2442,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 }`}
               >
                 <span>
-                  <span className="block text-sm font-semibold">{templateType.label}</span>
+                  <span className="flex items-center gap-2 break-words text-sm font-semibold">{templateType.label}{optionDrafts[templateType.id] ? <span className="h-2 w-2 rounded-full bg-amber-400" aria-label="Есть несохранённые изменения" /> : null}</span>
                   <span className={`mt-1 block text-xs ${isActive ? 'text-sky-700' : 'text-slate-500'}`}>{templateType.description}</span>
                 </span>
                 {hasUpload ? (
@@ -2628,11 +2524,24 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
             </div>
           ) : null}
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              {isCustomDocumentType(activeTemplateId) ? <label className="block max-w-xl space-y-1.5">
+                <span className="text-xs font-medium text-slate-500">Название документа</span>
+                <Input
+                  aria-label={`Название пользовательского документа ${CUSTOM_DOCUMENT_TYPES.indexOf(activeTemplateId) + 1}`}
+                  name={`document-template-title-${activeTemplateId}`}
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={100}
+                  disabled={!can('templates.edit') || nameEditor.busy}
+                  className="document-template-title-input rounded-lg border-slate-200 font-medium shadow-none focus-visible:border-sky-400 focus-visible:ring-sky-100"
+                  value={nameEditor.value[activeTemplateId]}
+                  onChange={event => nameEditor.change({ ...nameEditor.value, [activeTemplateId]: event.target.value })}
+                />
+              </label> : <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-slate-500" />
                 <h4 className="text-base font-semibold text-slate-900">{activeTemplate.label}</h4>
-              </div>
+              </div>}
               <p className="mt-1 text-sm text-slate-500">{activeTemplate.description}</p>
             </div>
             {activeUpload ? (
@@ -2787,12 +2696,14 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
             ) : null}
             {isManualGeneratedDocumentType(activeTemplateId) ? (
               <WeldingJournalTemplateOptionsPanel
-                disabled={!activeUpload || !can('templates.edit')}
+                disabled={!activeUpload || !can('templates.edit') || savingOptions}
                 documentLabel={activeTemplate.label}
                 options={documentOptions}
                 onChange={handleDocumentOptionChange}
               />
             ) : null}
+
+
 
             {missingUpload ? <div role="status" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
               <p className="flex items-center gap-2 font-semibold"><AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />Файл шаблона отсутствует</p>
@@ -2803,9 +2714,14 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
             ) : (
               <EmptyTemplateState />
             )}
+            {isManualGeneratedDocumentType(activeTemplateId) ? <div className="px-4 pb-4"><SettingsDraftActions label="Сохранить параметры документа" draft={{
+              dirty: !!activeOptionDraft, stale: optionsStale, busy: savingOptions, message: optionMessage,
+              save: saveOptions, reset: () => { clearOptionDraft(activeTemplateId); setOptionMessage('') },
+            }} /></div> : null}
           </div>
         </div>
       </div>
+      {activeGroup === 'custom' ? <SettingsDraftActions draft={nameEditor} canSave={can('templates.edit')} label="Сохранить названия документов" /> : null}
       </DocumentTemplateLoadBoundary>
       {builderTemplate ? (
         <DocumentTemplateBuilder
@@ -3313,6 +3229,10 @@ function createRequestNamingPatternDraftParts(pattern: string): RequestNamingPat
   }))
 }
 
+function requestPatternsSignature(value: Record<RequestConclusionNamingKind, RequestNamingPatternDraftPart[]>) {
+  return JSON.stringify(REQUEST_CONCLUSION_NAMING_KINDS.map(kind => value[kind].map(({ id: _id, ...part }) => part)))
+}
+
 function RequestConclusionSettingsPanel({
   runProtectedSettingsChange,
   onDirtyChange,
@@ -3321,39 +3241,22 @@ function RequestConclusionSettingsPanel({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const settings = useRequestConclusionSettings()
-  const [dirtyKinds, setDirtyKinds] = useState<Set<RequestConclusionNamingKind>>(() => new Set())
-
-  useEffect(() => {
-    onDirtyChange(dirtyKinds.size > 0)
-    return () => onDirtyChange(false)
-  }, [dirtyKinds, onDirtyChange])
-
-  const handleCardDirtyChange = useCallback((kind: RequestConclusionNamingKind, dirty: boolean) => {
-    setDirtyKinds((current) => {
-      const next = new Set(current)
-      if (dirty) next.add(kind)
-      else next.delete(kind)
-      return next
-    })
-  }, [])
-
-  const updateSettings = (
-    kind: RequestConclusionNamingKind,
-    patch: Partial<RequestConclusionSettings[RequestConclusionNamingKind]>,
-  ) => {
-    return runProtectedSettingsChange(() => saveRequestConclusionSettings({
-      ...settings,
-      [kind]: {
-        ...settings[kind],
-        ...patch,
-      },
-    }))
-  }
-
-  const resetSettings = () => runProtectedSettingsChange(() => saveRequestConclusionSettings({ ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: settings.splitModes }))
+  const savedParts = useMemo(() => Object.fromEntries(REQUEST_CONCLUSION_NAMING_KINDS.map(kind => [kind, createRequestNamingPatternDraftParts(settings[kind].systemPattern)])) as Record<RequestConclusionNamingKind, RequestNamingPatternDraftPart[]>, [settings])
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const editor = useSettingsDraft('requests.patterns', savedParts, runProtectedSettingsChange, async value => {
+    const next = { ...settingsRef.current }
+    for (const kind of REQUEST_CONCLUSION_NAMING_KINDS) {
+      if (!value[kind].some(part => part.type === 'field' && part.field === 'number')) throw new Error('Добавьте поле «Порядковый номер» во все правила имён.')
+      next[kind] = { ...next[kind], systemPattern: serializeRequestNamingPattern(value[kind]) }
+    }
+    await saveRequestConclusionSettings(next)
+  }, requestPatternsSignature)
+  useEffect(() => { onDirtyChange(editor.dirty); return () => onDirtyChange(false) }, [editor.dirty, onDirtyChange])
+  const resetSettings = () => editor.change(Object.fromEntries(REQUEST_CONCLUSION_NAMING_KINDS.map(kind => [kind, createRequestNamingPatternDraftParts(REQUEST_CONCLUSION_DEFAULT_SETTINGS[kind].systemPattern)])) as typeof savedParts)
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={editor.busy} className="min-w-0 space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -3404,9 +3307,8 @@ function RequestConclusionSettingsPanel({
                   {kinds.map((kind, index) => <RequestNamingSettingsCard key={kind} kind={kind}
                     title={staged ? index === 0 ? 'Основной этап' : 'До ТО' : 'Правило системного имени'}
                     placeholder={REQUEST_CONCLUSION_DEFAULT_SETTINGS[kind].systemPattern}
-                    settings={settings[kind]}
-                    onPatternSave={systemPattern => updateSettings(kind, { systemPattern })}
-                    onDirtyChange={handleCardDirtyChange} />)}
+                    parts={editor.value[kind]}
+                    setParts={next => editor.change(current => ({ ...current, [kind]: typeof next === 'function' ? next(current[kind]) : next }))} />)}
                 </div>
               })}
             </div>
@@ -3414,7 +3316,8 @@ function RequestConclusionSettingsPanel({
         ))}
       </section>
 
-    </div>
+      <SettingsDraftActions draft={editor} label="Сохранить правила имён" />
+    </fieldset>
   )
 }
 
@@ -3422,26 +3325,16 @@ function RequestNamingSettingsCard({
   kind,
   title,
   placeholder,
-  settings,
-  onPatternSave,
-  onDirtyChange,
+  parts,
+  setParts,
 }: {
   kind: RequestConclusionNamingKind
   title: string
   placeholder: string
-  settings: RequestConclusionSettings[RequestConclusionNamingKind]
-  onPatternSave: (pattern: string) => Promise<boolean>
-  onDirtyChange: (kind: RequestConclusionNamingKind, dirty: boolean) => void
+  parts: RequestNamingPatternDraftPart[]
+  setParts: (next: RequestNamingPatternDraftPart[] | ((current: RequestNamingPatternDraftPart[]) => RequestNamingPatternDraftPart[])) => void
 }) {
   const [isPatternExpanded, setIsPatternExpanded] = useState(false)
-  const [parts, setParts] = useState<RequestNamingPatternDraftPart[]>(() =>
-    createRequestNamingPatternDraftParts(settings.systemPattern),
-  )
-
-  useEffect(() => {
-    setParts(createRequestNamingPatternDraftParts(settings.systemPattern))
-  }, [settings.systemPattern])
-
   const supportsMethodField = kind === 'lnkConclusion' || kind === 'lnkConclusionBeforeHeatTreatment' || kind === 'tvmtConclusion'
   const availableFields = REQUEST_NAMING_PATTERN_FIELDS.filter(
     (field) => field.id !== 'method' || supportsMethodField,
@@ -3449,12 +3342,6 @@ function RequestNamingSettingsCard({
   const patternDraft = serializeRequestNamingPattern(parts)
   const hasPattern = patternDraft.trim().length > 0
   const hasNumberField = parts.some((part) => part.type === 'field' && part.field === 'number')
-  const hasChanges = patternDraft !== settings.systemPattern
-
-  useEffect(() => {
-    onDirtyChange(kind, hasChanges)
-    return () => onDirtyChange(kind, false)
-  }, [hasChanges, kind, onDirtyChange])
   const preview = buildSystemNameFromPattern(
     hasPattern ? patternDraft : placeholder,
     {
@@ -3548,7 +3435,7 @@ function RequestNamingSettingsCard({
                           : { type: 'text', value: '' },
                       )
                     }}
-                    className="w-auto h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    className="w-auto h-9 min-w-0 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
                     aria-label={`Тип части ${index + 1}`}
                   >
                     <option value="field">Поле</option>
@@ -3559,7 +3446,7 @@ function RequestNamingSettingsCard({
                       <Select
                         value={part.field}
                         onChange={(event) => updatePart(part.id, { field: event.target.value as RequestNamingPatternField })}
-                        className="w-auto h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                        className="w-auto h-9 min-w-0 rounded-md border border-slate-300 bg-white pl-2 pr-8 text-sm text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
                         aria-label={`Поле части ${index + 1}`}
                       >
                         {availableFields.map((field) => (
@@ -3638,26 +3525,7 @@ function RequestNamingSettingsCard({
                   Добавить текст
                 </button>
               </div>
-              <div className="flex items-center gap-2">
-                {hasChanges ? (
-                  <button
-                    type="button"
-                    onClick={() => setParts(createRequestNamingPatternDraftParts(settings.systemPattern))}
-                    className="h-9 rounded-md px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  >
-                    Отменить
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={!hasPattern || !hasNumberField || !hasChanges}
-                  onClick={() => void onPatternSave(patternDraft)}
-                  className={buttonVariants({ size: 'sm', className: 'h-9 text-xs gap-1.5' })}
-                >
-                  <Save className="h-4 w-4" />
-                  Сохранить правило
-                </button>
-              </div>
+
             </div>
             {!hasNumberField ? (
               <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
@@ -3683,16 +3551,27 @@ function DispatcherSettingsPanel({
   backgroundOnly?: boolean
   onNavigate: (target: string) => void
 }) {
-  const settings = useDispatcherSettings()
-  const reminderSettings = useDispatcherReminderSettings()
-  const backgroundSettings = useDispatcherBackgroundSettings()
+  const savedSettings = useDispatcherSettings()
+  const savedReminders = useDispatcherReminderSettings()
+  const savedBackground = useDispatcherBackgroundSettings()
+  const draft = useSettingsDraft(backgroundOnly ? null : 'rules.tasks.switches', savedSettings, runProtectedSettingsChange,
+    value => persistSettingsDraft(PROJECT_SETTING_KEYS.dispatcher, value, saveDispatcherSettings))
+  const reminderDraft = useSettingsDraft(backgroundOnly ? null : 'rules.tasks.reminders',
+    Object.fromEntries(Object.entries(savedReminders).map(([key, value]) => [key, String(value)])) as Record<DispatcherReminderSettingId, string>,
+    runProtectedSettingsChange, async values => {
+      const entries = Object.entries(values).map(([key, value]) => [key, Number(value)] as const)
+      if (entries.some(([, value]) => !Number.isInteger(value) || value < MIN_DISPATCHER_REMINDER_DAYS)) throw new Error(`Срок напоминания должен быть целым числом, не меньше ${MIN_DISPATCHER_REMINDER_DAYS} дней.`)
+      await persistSettingsDraft(PROJECT_SETTING_KEYS.dispatcherReminders, Object.fromEntries(entries) as DispatcherReminderSettings, saveDispatcherReminderSettings)
+    })
+  const backgroundDraft = useSettingsDraft(backgroundOnly ? 'rules.parameters.background' : null, savedBackground, runProtectedSettingsChange, value => saveDispatcherBackgroundSettings(value))
+  const settings = draft.value, reminderSettings = reminderDraft.value, backgroundSettings = backgroundDraft.value
   const disabledCount = OPTIONAL_DISPATCHER_SETTING_IDS.filter(id => !settings[id]).length
   const totalCount = OPTIONAL_DISPATCHER_SETTING_IDS.length
   const queryClient = useQueryClient()
   const backgroundStatusQuery = useQuery({
     queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
     queryFn: () => getDispatcherBackgroundStatus(),
-    enabled: backgroundOnly && DISPATCHER_BACKGROUND_REFRESH_ENABLED && backgroundSettings.enabled,
+    enabled: backgroundOnly && DISPATCHER_BACKGROUND_REFRESH_ENABLED && savedBackground.enabled,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -3708,16 +3587,15 @@ function DispatcherSettingsPanel({
     },
   })
   const updateSetting = (id: DispatcherSettingId, enabled: boolean) => {
-    runProtectedSettingsChange(() => saveDispatcherSettings({ ...settings, [id]: enabled }))
+    draft.change({ ...settings, [id]: enabled })
   }
 
-  const updateReminderDays = (id: DispatcherSettingId, value: number) => {
-    if (!isDispatcherReminderSettingId(id)) return Promise.resolve(false)
-    return runProtectedSettingsChange(() => saveDispatcherReminderSettings({ ...reminderSettings, [id]: value }))
+  const updateReminderDays = (id: DispatcherReminderSettingId, value: string) => {
+    reminderDraft.change({ ...reminderSettings, [id]: value })
   }
 
   const updateBackgroundSetting = (enabled: boolean) => {
-    runProtectedSettingsChange(() => saveDispatcherBackgroundSettings({ enabled }))
+    backgroundDraft.change({ enabled })
   }
 
   const refreshBackgroundTasks = () => {
@@ -3727,7 +3605,7 @@ function DispatcherSettingsPanel({
   }
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={draft.busy || reminderDraft.busy || backgroundDraft.busy} className="min-w-0 space-y-6">
       {!backgroundOnly ? <>
       <div className="px-1 py-1">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -3747,7 +3625,7 @@ function DispatcherSettingsPanel({
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-              onClick={() => runProtectedSettingsChange(() => saveDispatcherSettings(DEFAULT_DISPATCHER_SETTINGS))}
+              onClick={() => draft.change(DEFAULT_DISPATCHER_SETTINGS)}
             >
               Включить все ДЗ
             </button>
@@ -3756,7 +3634,7 @@ function DispatcherSettingsPanel({
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               onClick={() => {
                 const nextSettings = Object.fromEntries(Object.keys(DEFAULT_DISPATCHER_SETTINGS).map((id) => [id, false])) as DispatcherSettings
-                runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
+                draft.change(nextSettings)
               }}
             >
               Отключить все ДЗ
@@ -3807,6 +3685,7 @@ function DispatcherSettingsPanel({
             onClick={refreshBackgroundTasks}
             disabled={
               !DISPATCHER_BACKGROUND_REFRESH_ENABLED ||
+              backgroundDraft.dirty ||
               !backgroundSettings.enabled ||
               refreshBackgroundMutation.isPending ||
               backgroundStatusQuery.data?.status === 'running'
@@ -3848,7 +3727,8 @@ function DispatcherSettingsPanel({
         ) : null}
       </section> : null}
 
-    </div>
+      {backgroundOnly ? <SettingsDraftActions draft={backgroundDraft} /> : <><SettingsDraftActions draft={draft} label="Сохранить задачи" /><SettingsDraftActions draft={reminderDraft} label="Сохранить сроки напоминаний" /></>}
+    </fieldset>
   )
 }
 
@@ -3870,10 +3750,10 @@ function DispatcherSettingsGroupCard({
 }: {
   group: DispatcherSettingGroup
   settings: DispatcherSettings
-  reminderSettings: DispatcherReminderSettings
+  reminderSettings: Record<DispatcherReminderSettingId, string>
   focusTargetId: string | null
   onItemChange: (id: DispatcherSettingId, enabled: boolean) => void
-  onReminderDaysChange: (id: DispatcherReminderSettingId, value: number) => Promise<boolean>
+  onReminderDaysChange: (id: DispatcherReminderSettingId, value: string) => void
   onNavigate: (target: string) => void
 }) {
   const [expandedItemIds, setExpandedItemIds] = useState<Set<DispatcherSettingId>>(() => new Set())
@@ -3946,7 +3826,7 @@ function DispatcherSettingsGroupCard({
                   <DispatcherReminderDaysInput
                     id={item.id as DispatcherReminderSettingId}
                     value={reminderSettings[item.id as DispatcherReminderSettingId]}
-                    onSave={onReminderDaysChange}
+                    onChange={onReminderDaysChange}
                   />
                   <span>дней до окончания, минимум {MIN_DISPATCHER_REMINDER_DAYS} дней</span>
                 </div>
@@ -4002,36 +3882,19 @@ function DispatcherSettingsGroupCard({
 function DispatcherReminderDaysInput({
   id,
   value,
-  onSave,
+  onChange,
 }: {
   id: DispatcherReminderSettingId
-  value: number
-  onSave: (id: DispatcherReminderSettingId, value: number) => Promise<boolean>
+  value: string
+  onChange: (id: DispatcherReminderSettingId, value: string) => void
 }) {
-  const [draft, setDraft] = useState(() => String(value))
-
-  useEffect(() => {
-    setDraft(String(value))
-  }, [value])
-
-  const commit = async () => {
-    const normalizedValue = normalizeDispatcherReminderDays(draft, value)
-    setDraft(String(normalizedValue))
-    if (normalizedValue === value) return
-
-    const saved = await onSave(id, normalizedValue)
-    if (!saved) setDraft(String(value))
-  }
-
   return (
     <input
       type="number"
       min={MIN_DISPATCHER_REMINDER_DAYS}
-      value={draft}
-      onChange={(event) => setDraft(event.currentTarget.value)}
-      onBlur={() => {
-        void commit()
-      }}
+      aria-label={`Срок напоминания ${getDispatcherSettingCode(id)}, дней`}
+      value={value}
+      onChange={(event) => onChange(id, event.currentTarget.value)}
       onKeyDown={(event) => {
         if (event.key === 'Enter') {
           event.currentTarget.blur()
@@ -4051,8 +3914,16 @@ function SaveChecksSettingsPanel({
   focusTargetId: string | null
   onNavigate: (target: string) => void
 }) {
-  const settings = useSaveCheckSettings()
+  const saved = useSaveCheckSettings()
   const confirmAction = useConfirmAction()
+  const draft = useSettingsDraft('rules.input', saved, runProtectedSettingsChange, async (value, assertCurrent) => {
+    for (const id of DANGEROUS_SAVE_CHECK_SETTING_IDS) {
+      if (saved[id] !== value[id] && !await confirmDangerousSaveChecksChange(value[id])) return false
+    }
+    assertCurrent()
+    await persistSettingsDraft(PROJECT_SETTING_KEYS.saveCheck, value, saveSaveCheckSettings)
+  })
+  const settings = draft.value
   const [expandedItemIds, setExpandedItemIds] = useState<Set<SaveCheckSettingId>>(() => new Set())
   const visibleIds = SAVE_CHECK_SETTING_GROUPS.flatMap(group => group.items.map(item => item.id))
   const enabledCount = visibleIds.filter(id => settings[id]).length
@@ -4082,28 +3953,15 @@ function SaveChecksSettingsPanel({
     })
   }
 
-  async function updateSetting(id: SaveCheckSettingId, enabled: boolean) {
+  function updateSetting(id: SaveCheckSettingId, enabled: boolean) {
     if (isRequiredSaveCheckSetting(id)) return
-    if (DANGEROUS_SAVE_CHECK_SETTING_IDS.has(id)) {
-      const confirmed = await confirmDangerousSaveChecksChange(enabled)
-      if (!confirmed) return
-    }
-
-    await runProtectedSettingsChange(() => saveSaveCheckSettings({ ...settings, [id]: enabled }))
+    draft.change({ ...settings, [id]: enabled })
   }
 
-  async function updateAllSettings(enabled: boolean) {
-    const changesDangerousCheck = [...DANGEROUS_SAVE_CHECK_SETTING_IDS].some((id) => settings[id] !== enabled)
-    if (changesDangerousCheck) {
-      const confirmed = await confirmDangerousSaveChecksChange(enabled)
-      if (!confirmed) return
-    }
-
-    await runProtectedSettingsChange(() =>
-      saveSaveCheckSettings(Object.fromEntries(
-        Object.keys(settings).map((id) => [id, visibleIds.includes(id as SaveCheckSettingId) ? enabled : settings[id as SaveCheckSettingId]]),
-      ) as SaveCheckSettings),
-    )
+  function updateAllSettings(enabled: boolean) {
+    draft.change(Object.fromEntries(Object.keys(settings).map(id => [id,
+      visibleIds.includes(id as SaveCheckSettingId) && !isRequiredSaveCheckSetting(id as SaveCheckSettingId) ? enabled : settings[id as SaveCheckSettingId],
+    ])) as SaveCheckSettings)
   }
 
   function toggleDetails(id: SaveCheckSettingId) {
@@ -4116,7 +3974,7 @@ function SaveChecksSettingsPanel({
   }
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={draft.busy} className="min-w-0 space-y-6">
       <div className="px-1 py-1">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
@@ -4243,6 +4101,7 @@ function SaveChecksSettingsPanel({
           </section>
         )
       })}
-    </div>
+      <SettingsDraftActions draft={draft} />
+    </fieldset>
   )
 }

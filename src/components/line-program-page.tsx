@@ -95,7 +95,11 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
     queryFn: () => getLineProgramPage({ data: { tab, search: needle, page } }),
     enabled: searchReady && !hasCachedSection && cachedPage?.status !== 'error', ...lineProgramQueryPolicy, retry: false, retryOnMount: false })
   const query = useQuery({ queryKey: sectionKey, queryFn: () => getLineProgramSection({ data: { tab, search: needle } }),
-    enabled: searchReady && cachedSection?.status !== 'error' && (hasCachedSection || pageQuery.isSuccess && !pageQuery.isFetching), ...lineProgramQueryPolicy, retry: false, retryOnMount: false })
+    enabled: searchReady && cachedSection?.status !== 'error' && (hasCachedSection || pageQuery.isSuccess && !pageQuery.isFetching), ...lineProgramQueryPolicy,
+    // A new visit must see other users' saves even inside the 30-second cache
+    // window. Keep cached rows while reading one fresh section; no extra page
+    // request, polling or focus/reconnect refresh is needed for this return.
+    refetchOnMount: 'always', retry: false, retryOnMount: false })
   // Never let a late response or debounce placeholder become a different search.
   // The full snapshot alone feeds derived filters, section totals and exports.
   const summaryReady = searchReady && hasCachedSection && !query.error

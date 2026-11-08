@@ -8,7 +8,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 
 describe('getWeldingJournalDisplayValue', () => {
   it('shows no need for pending controls when another LNK method rejected the joint', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       hasVik: 'да',
       vikResult: 'ожидает НК',
       hasRk: 'да',
@@ -24,7 +24,7 @@ describe('getWeldingJournalDisplayValue', () => {
   })
 
   it('shows no need in heat treatment report when joint is already rejected', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoResult: 'ожидает заявку',
@@ -35,7 +35,7 @@ describe('getWeldingJournalDisplayValue', () => {
   })
 
   it('shows no need for the whole pending PSTO cycle after rejected pre-TO control', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoResult: 'ожидает заявку',
       hasVik: 'да',
@@ -58,7 +58,7 @@ describe('getWeldingJournalDisplayValue', () => {
   })
 
   it('restores the normal PSTO sequence after the rejected pre-TO result is corrected', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoResult: 'ожидает заявку',
       hasVik: 'да',
@@ -81,7 +81,7 @@ describe('getWeldingJournalDisplayValue', () => {
   })
 
   it('shows the latest repeat PSTO and TVMT cycle instead of the primary cycle', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО основная',
       pstoResult: 'проведено',
@@ -111,7 +111,7 @@ describe('getWeldingJournalDisplayValue', () => {
 
 describe('getJointChainResultItems', () => {
   it('shows the current PSTO cycle before only the main LNK stage', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО 1',
       pstoResult: 'проведено',
@@ -148,7 +148,7 @@ describe('getJointChainResultItems', () => {
   })
 
   it('marks PSTO as completed only after a good TVMT result', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО 1',
       pstoResult: 'проведено',
@@ -163,7 +163,7 @@ describe('getJointChainResultItems', () => {
   })
 
   it('shows the failed TVMT and the required next PSTO cycle', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО 1',
       pstoResult: 'проведено',
@@ -178,7 +178,7 @@ describe('getJointChainResultItems', () => {
   })
 
   it('keeps an unfinished physical cycle visible after the PSTO line is cancelled', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: 'Заявка ПСТО 1',
       pstoDate: '2026-08-20',
@@ -192,7 +192,7 @@ describe('getJointChainResultItems', () => {
   })
 
   it('shows a failed final TVMT without claiming that cancelled PSTO was successful', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: 'Заявка ПСТО 1',
       pstoDate: '2026-08-20',

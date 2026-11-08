@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { canSelectLnkResultRow } from '@/lib/lnk-result-modal-rows'
-import { getLnkDisplayValue } from '@/lib/lnk-status'
+import { getLnkDisplayValue, getPstoDisplayValue, getWeldingJournalDisplayValue } from '@/lib/lnk-status'
 import { canSelectPstoResultRow } from '@/lib/psto-modal-rows'
 import {
   canCreateLnkRequest,
@@ -21,6 +21,15 @@ import {
 import type { WeldInput } from '@/lib/weld-fields'
 
 describe('cancelled report controls', () => {
+  it.each(['годен', 'ремонт', 'вырез'])('keeps %s unchanged when the whole chain is inactive', result => {
+    const row: WeldInput = { preHeatTreatmentMode: 'allPsto' as const, id: 1, revisionActuality: 'не актуален', hasRk: 'да', rkRequest: 'R', rkResult: result,
+      pstoRequired: 'да', pstoResult: 'проведено', tvmtResult: 'годен' }
+    expect(getLnkDisplayValue(row, 'rkResult')).toBe(result)
+    expect(getWeldingJournalDisplayValue(row, 'rkResult')).toBe(result)
+    expect(getPstoDisplayValue(row, 'pstoResult')).toBe('проведено')
+    expect(getPstoDisplayValue(row, 'tvmtResult')).toBe('годен')
+    expect(toControlCancellationReportRow(row)).toEqual(row)
+  })
   it('keeps TVMT cycle fields outside generated LNK result state', () => {
     expect(hasAnyLnkGeneratedData({ tvmtResult: 'годен', tvmtConclusion: 'ТВМТ-1' })).toBe(false)
     expect(hasAnyLnkGeneratedData({ vikResult: 'годен', vikConclusion: 'ВИК-1' })).toBe(true)
@@ -38,7 +47,7 @@ describe('cancelled report controls', () => {
   })
 
   it('keeps cancelled PSTO controls visible but unavailable for new actions', () => {
-    const row: WeldInput = {
+    const row: WeldInput = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: 'ПСТО-01',
     }
@@ -49,7 +58,7 @@ describe('cancelled report controls', () => {
   })
 
   it('keeps performed PSTO history visible after moving the joint to an unassigned line', () => {
-    const row: WeldInput = {
+    const row: WeldInput = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'ПСТО-01',
       pstoResult: 'проведено',
@@ -60,7 +69,7 @@ describe('cancelled report controls', () => {
   })
 
   it('explains that cancellation blocks another cycle after failed TVMT', () => {
-    const row: WeldInput = {
+    const row: WeldInput = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: 'ПСТО-01',
       pstoDate: '2026-08-05',
@@ -75,7 +84,7 @@ describe('cancelled report controls', () => {
   })
 
   it('blocks a primary PSTO request until assigned pre-TO controls are complete', () => {
-    const waitingRequest = {
+    const waitingRequest = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
     } as WeldInput
@@ -99,7 +108,7 @@ describe('cancelled report controls', () => {
   })
 
   it('keeps PSTO and its report cycle unavailable after rejected pre-TO control', () => {
-    const rejected = {
+    const rejected = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       pstoRequest: 'Старая заявка ПСТО',
@@ -123,7 +132,7 @@ describe('cancelled report controls', () => {
   })
 
   it('enables a PSTO result only for the current cycle with an existing request', () => {
-    const waitingResult = {
+    const waitingResult = { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-001',
       pstoRequestDate: '2026-08-28',
@@ -142,14 +151,14 @@ describe('cancelled report controls', () => {
   })
 
   it('offers a primary LNK request before the PSTO chain is complete', () => {
-    expect(canCreateLnkRequest({
+    expect(canCreateLnkRequest({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
     })).toBe(true)
   })
 
   it('exposes the current repeat-cycle state as a filterable report value', () => {
-    const row = toHeatTreatmentReportRow({
+    const row = toHeatTreatmentReportRow({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-1',
@@ -168,7 +177,7 @@ describe('cancelled report controls', () => {
   })
 
   it('shows cancelled controls in result columns without clearing stored history', () => {
-    const row = toControlCancellationReportRow({
+    const row = toControlCancellationReportRow({ preHeatTreatmentMode: 'allPsto' as const,
       hasVik: 'отменен',
       vikRequest: 'Заявка-01',
       vikResult: 'ожидает НК',
@@ -184,7 +193,7 @@ describe('cancelled report controls', () => {
   })
 
   it('shows positive cancelled LNK and PSTO results as chargeable cancelled statuses', () => {
-    const row = toControlCancellationReportRow({
+    const row = toControlCancellationReportRow({ preHeatTreatmentMode: 'allPsto' as const,
       hasVik: 'отменен',
       vikRequest: 'Заявка-01',
       vikResult: 'годен',

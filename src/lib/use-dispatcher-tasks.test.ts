@@ -45,7 +45,7 @@ describe('buildVisibleDispatcherTasks', () => {
   })
 
   it('keeps SP-01 visible despite disabled DZ settings and saved hide or accept keys', () => {
-    const rows = [row({
+    const rows = [row({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       hasVik: 'да',
@@ -68,7 +68,7 @@ describe('buildVisibleDispatcherTasks', () => {
 
   it('does not calculate SP-01 for an early request alone with pre-TO disabled', () => {
     const tasks = buildTasks(disabledSettings(), {
-      rows: [row({
+      rows: [row({ preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         pstoRequired: 'да',
         hasVik: 'да',
@@ -76,8 +76,8 @@ describe('buildVisibleDispatcherTasks', () => {
       })],
       controlProcessSettings: {
         pvkGoodOnly: false,
-        preHeatTreatmentLnkEnabled: false,
-        allowPrimaryLnkBeforePreviousStagesComplete: false,
+        preHeatTreatmentMode: 'selected' as const,
+
       },
     })
 
@@ -130,8 +130,8 @@ describe('buildVisibleDispatcherTasks', () => {
       },
       {
         rows: [
-          row({ id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '25', pstoRequired: 'да' }),
-          row({ id: 2, line: 'LIN-1', joint: 'F2', weldControlPercent: '25', pstoRequired: '' }),
+          row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '25', pstoRequired: 'да' }),
+          row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, line: 'LIN-1', joint: 'F2', weldControlPercent: '25', pstoRequired: '' }),
         ],
       },
     )
@@ -149,8 +149,8 @@ describe('buildVisibleDispatcherTasks', () => {
       },
       {
         rows: [
-          row({ id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '25', pstoRequired: 'да' }),
-          row({ id: 2, line: 'LIN-1', joint: 'F2', weldControlPercent: '25', pstoRequired: '' }),
+          row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '25', pstoRequired: 'да' }),
+          row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, line: 'LIN-1', joint: 'F2', weldControlPercent: '25', pstoRequired: '' }),
         ],
       },
     )

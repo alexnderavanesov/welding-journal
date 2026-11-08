@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { DISPATCHER_WELD_READ_BATCH_SIZE, DISPATCHER_WELD_WORKING_SET_SIZE, getDispatcherScopeKey, planDispatcherWeldBatches, visitDispatcherWeldRows } from './dispatcher-weld-rows'
 import { prepareReportRowsInPlace } from '@/lib/use-report-rows'
 
@@ -70,4 +71,16 @@ it('includes whitespace-equivalent final-status neighbours across batch boundari
   expect(new Set(published).size).toBe(DISPATCHER_WELD_WORKING_SET_SIZE + 1)
   expect(select).toHaveBeenCalledTimes(1)
   expect(readBatch).toHaveBeenCalledTimes(10) // five 5k hydration reads per complete context
+})
+
+it('applies the selected complete-line predicate to the narrow plan before any wide hydration', async () => {
+  const condition = sql`line = 'complete-selected-context'`
+  const where = vi.fn(() => ({ orderBy: async () => [{ id: 7, line: 'selected' }] }))
+  const select = vi.fn(() => ({ from: () => ({ where }) }))
+  const readBatch = vi.fn(async (ids: number[]) => ids.map(id => ({ id, line: 'selected' })))
+  const visited: number[] = []
+  await visitDispatcherWeldRows({ select, readBatch } as never, async rows => { visited.push(...rows.map(row => row.id)) }, undefined, condition)
+  expect(where).toHaveBeenCalledExactlyOnceWith(condition)
+  expect(readBatch).toHaveBeenCalledExactlyOnceWith([7])
+  expect(visited).toEqual([7])
 })

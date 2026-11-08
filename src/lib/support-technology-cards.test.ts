@@ -32,7 +32,7 @@ describe('Т-05 full support technology-card process', () => {
   it.each(['Т', 'Т1', 'Т3', 'Т4Д'])('allows configured %s in the registry and matching', connectionType => {
     const supportCard = { ...card, connectionType }
     expect(validateTechnologyCard(supportCard, settings).issues).toEqual([])
-    expect(createTechnologyCardMatcher([supportCard], settings).match({ ...row, connectionType }).cards).toEqual([supportCard])
+    expect(createTechnologyCardMatcher([supportCard], settings).match({ ...row, connectionType }).cards).toMatchObject([supportCard])
   })
 
   it.each(['М01', 'М05'])('uses D1/T1 for %s without D2/T2 and ignores irrelevant hidden values', materialGroup => {

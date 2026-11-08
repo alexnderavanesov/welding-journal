@@ -4,6 +4,7 @@ export type ConnectionRuleColumn = 'parameter' | 'c' | 'u' | 't'
 export type ConnectionRule = {
   id: string; section: string; parameter: string; c: string; u: string; t: string
   checkParametersLink?: boolean
+  assignmentWarningColumns?: readonly ('c' | 'u' | 't')[]
 }
 // The comparison describes the implemented rules, including T/OP.
 export const SUPPORT_CONNECTION_RULES_PENDING = false
@@ -359,16 +360,18 @@ export const CONNECTION_RULES: ConnectionRule[] = [
     "section": "Контроль и ремонты",
     "parameter": "РК",
     "c": "Разрешён по назначению",
-    "u": "Разрешён по назначению",
-    "t": "Запрещён, включая дубли и смешанные заявки"
+    "u": "Разрешён по назначению, с предупреждением при включённой проверке",
+    "t": "Запрещён, включая дубли и смешанные заявки",
+    "assignmentWarningColumns": ["u"]
   },
   {
     "id": "connection-rule-45",
     "section": "Контроль и ремонты",
     "parameter": "УЗК",
-    "c": "Разрешён по назначению",
-    "u": "Разрешён по назначению",
-    "t": "Применяется по отдельной норме Т"
+    "c": "Разрешён по назначению; с предупреждением, если проверка включена и Д мин ≤ заданного порога для этого типа",
+    "u": "Разрешён по назначению; с предупреждением, если проверка включена и Д мин ≤ заданного порога для этого типа",
+    "t": "Применяется по отдельной норме Т; с предупреждением, если проверка включена и Д мин ≤ заданного порога для Т",
+    "assignmentWarningColumns": ["c", "u", "t"]
   },
   {
     "id": "connection-rule-46",

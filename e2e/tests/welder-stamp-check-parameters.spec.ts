@@ -114,7 +114,23 @@ test('параметры проверки: обычная прокрутка с�
     if (width === 390) {
       await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
       await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-      expect(await tabs.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      // The added third tab may scroll horizontally on a narrow screen, but
+      // keyboard navigation must bring the selected label fully into view.
+      const checksTab = tabs.getByRole('tab', { name: 'Параметры проверки', exact: true })
+      const assignmentsTab = tabs.getByRole('tab', { name: 'Назначения и расчёты', exact: true })
+      await checksTab.focus()
+      await checksTab.press('End')
+      await expect(assignmentsTab).toHaveAttribute('aria-selected', 'true')
+      // Native scrolling rounds fractional CSS pixels at the container edge.
+      await expect(assignmentsTab).toBeInViewport({ ratio: 0.99 })
+      await assignmentsTab.press('ArrowLeft')
+      await expect(checksTab).toHaveAttribute('aria-selected', 'true')
+      await expect(checksTab).toBeInViewport({ ratio: 0.99 })
+      await page.goBack()
+      await expect(assignmentsTab).toHaveAttribute('aria-selected', 'true')
+      await page.goForward()
+      await expect(checksTab).toHaveAttribute('aria-selected', 'true')
+      await expect(checksTab).toBeInViewport({ ratio: 0.99 })
     }
     await expect(region).toBeVisible()
     expect((await region.boundingBox())!.width).toBeLessThanOrEqual(width)

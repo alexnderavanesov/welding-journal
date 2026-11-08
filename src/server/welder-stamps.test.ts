@@ -111,15 +111,17 @@ describe('registry save invalidation', () => {
     expect(query.params).not.toContain(true)
   })
 
-  it.each([1, 5001, 200000])('selects a bounded mode for %i complete-context joints', async joints => {
+  it.each([1, 5001, 200000])('retains known affected lines for %i complete-context joints, including staged large-line calculation', async joints => {
     const scope = { projectTitle: 'P', subtitleCode: 'S', line: 'L' }
     const db = registryDatabase({ scopes: [scope], joints }), snapshot = await loadWelderStampRegistrySnapshot()
     await saveWelderStampRecords({ data: { records: db.records.map(record => ({ ...record,
       naksPermits: record.naksPermits.map(permit => ({ ...permit, diameterTo: '100' })),
     })), expectedRevision: snapshot.revision } })
     const query = db.execute.mock.calls.map(([statement]) => new PgDialect().sqlToQuery(statement)).find(query => query.sql.includes('derived_state'))!
-    expect(query.params.includes(true)).toBe(joints > 5000)
-    expect(query.params).toContain(JSON.stringify(joints > 5000 ? [] : [scope]))
+    // The 5000 bound now selects the locked vs staged calculation path; it
+    // must not discard a known line and invalidate the entire database.
+    expect(query.params).not.toContain(true)
+    expect(query.params).toContain(JSON.stringify([scope]))
     expect(db.events).toEqual(['profiles', 'qualification-scopes', 'upsert', 'invalidate'])
   })
 

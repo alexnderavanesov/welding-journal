@@ -11,7 +11,7 @@ import {
 } from './psto-contextual-stage-correction'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from './system-index-settings'
 
-const settings = DEFAULT_CONTROL_PROCESS_SETTINGS
+const settings = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' as const }
 const indices = DEFAULT_SYSTEM_INDEX_SETTINGS
 const directions = ['beforeHeatTreatment', 'primary'] as const
 
@@ -43,10 +43,10 @@ function candidate(target: LnkControlStage, overrides: Partial<WeldRow> = {}): W
     id: 7, joint: 'F7', projectTitle: 'Проект', subtitleCode: 'Шифр', line: 'Целевая линия',
     weldDate: '2026-08-01', d1: 219.1, connectionType: 'С17', officiality: 'действующий',
     hasVik: 'да', hasRk: 'да', hasUzk: 'да', hasPvk: 'да',
-    preHeatTreatmentLnkEnabled: true, pstoRepeatCycles: [], duplicateControls: [],
+    pstoRepeatCycles: [], duplicateControls: [],
     ...(target === 'beforeHeatTreatment'
-      ? { ...primary, pstoRequired: 'да', preHeatTreatmentControls: [] }
-      : { pstoRequired: null, preHeatTreatmentControls: pre.map(control => ({ ...control })) }),
+      ? { preHeatTreatmentMode: 'allPsto' as const, ...primary, pstoRequired: 'да', preHeatTreatmentControls: [] }
+      : { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: null, preHeatTreatmentControls: pre.map(control => ({ ...control })) }),
     ...overrides,
   }
 }
@@ -94,7 +94,7 @@ describe('contextual PSTO stage correction', () => {
   })
 
   it('promotes the complete package, removes stale virtual facts, and keeps cancellation metadata', () => {
-    const row = freeze(candidate('primary', {
+    const row = freeze(candidate('primary', { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен', pstoCancellationDate: '2026-08-08', pstoControlBasis: 'ТР-1',
       preVikResult: 'вырез', finalStatus: 'не годен',
     }))
@@ -143,15 +143,16 @@ describe('contextual PSTO stage correction', () => {
   describe.each(directions)('%s safeguards', target => {
     it.each(dependencies)('blocks %s even with the permissive primary setting', (_label, fields) => {
       const row = freeze(candidate(target, fields))
-      const allowedEarly = { ...settings, allowPrimaryLnkBeforePreviousStagesComplete: true }
+      const allowedEarly = { ...settings,  }
       expect(() => build(row, target, allowedEarly, indices)).toThrow('сохранены заявка или история ПСТО/ТВМТ')
       expect(reason(row, target, allowedEarly, indices)).toContain('сохранены заявка или история ПСТО/ТВМТ')
     })
 
     it('uses the explicit process settings over a stale row flag', () => {
-      expect(() => build(candidate(target), target, { ...settings, preHeatTreatmentLnkEnabled: false }, indices))
-        .toThrow('выключен')
-      expect(reason(candidate(target, { preHeatTreatmentLnkEnabled: false }), target, settings, indices)).toBeNull()
+      const transfer = () => build(candidate(target), target, { ...settings, preHeatTreatmentMode: 'selected' as const }, indices)
+      if (target === 'beforeHeatTreatment') expect(transfer).toThrow('не предусмотрен')
+      else expect(transfer).not.toThrow()
+      expect(reason(candidate(target, { preHeatTreatmentMode: 'selected' as const }), target, settings, indices)).toBeNull()
     })
 
     it('requires officiality before introducing good results in another stage', () => {
@@ -285,7 +286,7 @@ describe('contextual PSTO stage correction', () => {
   })
 
   it('checks pre-TO availability using the already-applied target assignment', () => {
-    expect(() => build(candidate('beforeHeatTreatment', { pstoRequired: null }), 'beforeHeatTreatment', settings, indices))
+    expect(() => build(candidate('beforeHeatTreatment', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: null }), 'beforeHeatTreatment', settings, indices))
       .toThrow('не предусмотрен')
   })
 
@@ -332,7 +333,7 @@ describe('contextual PSTO stage correction', () => {
   })
 
   it('rejects an empty source consisting only of waiting labels', () => {
-    expect(() => build({ id: 7, pstoRequired: 'да', vikResult: 'ожидает заявку' }, 'beforeHeatTreatment', settings, indices))
+    expect(() => build({ preHeatTreatmentMode: 'allPsto' as const, id: 7, pstoRequired: 'да', vikResult: 'ожидает заявку' }, 'beforeHeatTreatment', settings, indices))
       .toThrow('Нет основного комплекта')
     expect(() => build(candidate('primary', { preHeatTreatmentControls: [{ id: 101, weldJointId: 7, method: 'ВИК', result: 'ожидает НК' }] }),
       'primary', settings, indices)).toThrow('Нет комплекта НК до ТО')

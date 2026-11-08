@@ -1,4 +1,6 @@
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start'
+import { normalizeOtherSettings } from '@/lib/other-settings'
+import { normalizeSaveCheckSettings } from '@/lib/save-check-settings'
 import {
   projectSettingAffectsDerivedCalculations,
   projectSettingAffectsDispatcherIndex,
@@ -114,6 +116,14 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     assertAppSettingVersion(current?.updatedAt.toISOString() ?? null, expectedUpdatedAt)
     const nextUpdatedAt = current ? getNextTimestampVersion(current.updatedAt) : new Date()
     let preparedValue = value
+    if (normalizedKey === PROJECT_SETTING_KEYS.customDocumentNames) {
+      const { validateCustomDocumentNames } = await import('@/lib/custom-document-types')
+      preparedValue = prepareAppSettingValue(validateCustomDocumentNames(value))
+    }
+    if (normalizedKey === PROJECT_SETTING_KEYS.assignmentWarnings) {
+      const { validateAssignmentWarningSettings } = await import('@/lib/assignment-warnings')
+      preparedValue = prepareAppSettingValue(validateAssignmentWarningSettings(value))
+    }
     if (normalizedKey === PROJECT_SETTING_KEYS.requestConclusion) {
       const { normalizeRequestConclusionSettings } = await import('@/lib/request-conclusion-settings')
       const previous = normalizeRequestConclusionSettings(current ? parseStoredSetting(current.value) : undefined)
@@ -143,6 +153,18 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
         processLocksAlreadyHeld: true,
       }))
     }
+    // Legacy settings may still inherit officialDls from "other". Both keys
+    // are serialized by the validation-settings lock above, so this effective
+    // change cannot escape the dispatcher revision during staged calculation.
+    let legacyDlsChanged = false
+    if (normalizedKey === PROJECT_SETTING_KEYS.other) {
+      const [saveCheck] = await tx.select({ value: appSettings.value }).from(appSettings)
+        .where(eq(appSettings.key, PROJECT_SETTING_KEYS.saveCheck)).limit(1)
+      legacyDlsChanged = legacyDlsSettingChangeAffectsDispatcher(
+        current ? parseStoredSetting(current.value) : undefined, preparedValue,
+        saveCheck ? parseStoredSetting(saveCheck.value) : undefined,
+      )
+    }
     const [saved] = await tx
       .insert(appSettings)
       .values({
@@ -158,7 +180,7 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
         },
       })
       .returning({ updatedAt: appSettings.updatedAt })
-    if (projectSettingAffectsDispatcherIndex(normalizedKey)) {
+    if (projectSettingAffectsDispatcherIndex(normalizedKey) || legacyDlsChanged) {
       await markDispatcherTaskIndexDirty(tx)
     } else if (projectSettingAffectsDerivedCalculations(normalizedKey)) {
       await invalidateDerivedCalculationCache(tx)
@@ -205,4 +227,14 @@ export function assertAppSettingVersion(
   if (currentRevision !== expectedRevision) {
     throw new Error('Настройка уже изменена другим пользователем. Свежие данные загружены; повторите изменение.')
   }
+}
+
+/** An explicit boolean officialDls overrides the old fallback. WDI and other
+ * unrelated settings must not turn an ordinary save into a full calculation.
+ */
+export function legacyDlsSettingChangeAffectsDispatcher(before: unknown, after: unknown, saveCheck: unknown) {
+  const effective = (other: unknown) => normalizeSaveCheckSettings(saveCheck, {
+    officialDlsFallback: normalizeOtherSettings(other).requireDlsForOfficialStamps,
+  }).officialDls
+  return effective(before) !== effective(after)
 }

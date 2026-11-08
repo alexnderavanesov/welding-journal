@@ -26,7 +26,7 @@ export function getJointPstoAssignmentLabel(row: WeldInput): string | null {
 export function getJointPreHeatTreatmentLabel(row: WeldInput): string | null {
   const assignment = getJointPstoAssignmentLabel(row)
   if (assignment) return assignment
-  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО отключён в настройках'
+  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО для цепочки не требуется'
   if (getRejectedPreHeatTreatmentControls(row).length > 0) return null
   if (!PRE_HEAT_TREATMENT_LNK_METHODS.some(method => isControlEnabledValue(row[method.enabledKey]))) {
     return 'Методы НК до ТО не назначены'
@@ -35,8 +35,8 @@ export function getJointPreHeatTreatmentLabel(row: WeldInput): string | null {
     return getPreHeatTreatmentControls(row).length ? 'Дата сварки не указана' : 'Ожидает сварку'
   }
   const pending = getPreHeatTreatmentPendingFinalStatus(row)
-  if (pending === 'ожидает заявку') return 'Ожидает заявку НК до ТО'
-  if (pending === 'ожидает НК') return 'Ожидает результаты НК до ТО'
+  if (pending === 'ожидает заявку до ТО') return 'Ожидает заявку НК до ТО'
+  if (pending === 'ожидает НК до ТО') return 'Ожидает результаты НК до ТО'
   return null
 }
 
@@ -49,8 +49,8 @@ export function getJointPstoStartLabel(row: WeldInput): string {
   if (isPstoNoNeed(row)) return 'ПСТО не требуется: стык имеет негодный результат'
   if (!hasWeldDate(row)) return 'Ожидает сварку'
   const pending = getPreHeatTreatmentPendingFinalStatus(row)
-  if (pending === 'ожидает заявку') return 'Ожидает НК до ТО'
-  if (pending === 'ожидает НК') return 'Ожидает завершения НК до ТО'
+  if (pending === 'ожидает заявку до ТО') return 'Ожидает НК до ТО'
+  if (pending === 'ожидает НК до ТО') return 'Ожидает завершения НК до ТО'
   return 'Ожидает заявку ПСТО'
 }
 

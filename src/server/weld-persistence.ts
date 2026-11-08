@@ -139,6 +139,7 @@ export function toDbInsert(
   data.pstoCancellationDate = normalized.pstoCancellationDate ?? null
   data.lineProgramId = input.lineProgramId ?? null
   data.pvkControlPercent = input.pvkControlPercent ?? null
+  data.preHeatTreatmentRequired = input.preHeatTreatmentRequired ?? null
   data.hasVik = 'да'
   if (isCreate) {
     const now = new Date()

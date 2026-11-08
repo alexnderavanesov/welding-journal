@@ -24,10 +24,10 @@ describe('compact program: saved record status filters', () => {
   })
   it('does not label an assigned method, failed pre-TO control or incomplete PSTO as good', () => {
     expect(programRowStatus(row(1, { hasPvk: 'да' }))).toBe('incomplete')
-    expect(programRowStatus(row(2, { pstoRequired: 'да', preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+    expect(programRowStatus(row(2, { pstoRequired: 'да', preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [
       { id: 1, weldJointId: 2, method: 'ВИК', result: 'ремонт' },
     ] }))).toBe('rejected')
-    expect(programRowStatus(row(3, { pstoRequired: 'да' }))).toBe('incomplete')
+    expect(programRowStatus(row(3, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да' }))).toBe('incomplete')
   })
   it('keeps missing bounded by the existing demand and reuses filtered arrays', () => {
     const rows = [row(1, { hasRk: 'отменен', hasUzk: 'отменен' }), row(2)]

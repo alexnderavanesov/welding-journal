@@ -220,7 +220,7 @@ export function PreHeatTreatmentResultManagerDialog({
     ...getLnkResultRestrictionReasons(selectedEntry.row, selectedEntry.methodCode, result, {
       systemIndexSettings, pvkGoodOnly: processSettings.pvkGoodOnly,
     }),
-    readOnly ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.' : undefined,
+    readOnly ? 'История доступна только для просмотра.' : undefined,
     isPending ? 'Дождитесь сохранения изменений.' : undefined,
   ].filter(Boolean).join('\n') || undefined : undefined
 
@@ -253,7 +253,7 @@ export function PreHeatTreatmentResultManagerDialog({
     const documentName = text(managesResult ? entry.control.conclusionName : entry.control.requestName)
 
     const deleteReason = readOnly
-      ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.'
+      ? 'История доступна только для просмотра.'
       : managesResult
         ? getPreHeatTreatmentResultRemovalBlockReason(
             entry.row,
@@ -663,7 +663,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       variant="outline"
                       className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
                       disabled={isPending || readOnly || Boolean(requestDeleteReason)}
-                      title={readOnly ? 'НК до ТО выключен в настройках проекта.' : requestDeleteReason || undefined}
+                      title={readOnly ? 'История доступна только для просмотра.' : requestDeleteReason || undefined}
                       onClick={() => onDeleteRequest(selectedEntry.row, selectedEntry.control)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
@@ -773,7 +773,7 @@ export function PreHeatTreatmentResultManagerDialog({
                         variant="outline"
                         className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
                         disabled={isPending || readOnly || selectedPendingResult === null || Boolean(resultDeleteReason)}
-                        title={readOnly ? 'НК до ТО выключен в настройках проекта.' : resultDeleteReason || 'Удаление будет применено после сохранения и подтверждения.'}
+                        title={readOnly ? 'История доступна только для просмотра.' : resultDeleteReason || 'Удаление будет применено после сохранения и подтверждения.'}
                         onClick={() => onStageResultChange(selectedEntry.row, selectedEntry.control, null)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -810,7 +810,7 @@ export function PreHeatTreatmentResultManagerDialog({
       {registryMode === 'result' ? <LnkResultManagerFooter
         pendingEntriesCount={pendingResultCount}
         isResultReplacementPending={isPending}
-        saveDisabledReason={readOnly ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.' : undefined}
+        saveDisabledReason={readOnly ? 'История доступна только для просмотра.' : undefined}
         onResetPendingChanges={onResetChanges}
         onSaveChanges={onSaveChanges}
       /> : null}

@@ -111,6 +111,8 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-settings-panel input[type=checkbox]:not(.journal-switch) { appearance: none; width: 16px; height: 16px; flex-shrink: 0; border: 1px solid #cbd5e1; border-radius: 4px; background: white; position: relative; cursor: pointer; }
 .journal-settings-panel input[type=checkbox]:not(.journal-switch):checked { background: #0284c7; border-color: #0284c7; }
 .journal-settings-panel input[type=checkbox]:not(.journal-switch):checked::after { content: ''; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.journal-settings-panel input[type=checkbox]:not(.journal-switch):indeterminate { background: #0284c7; border-color: #0284c7; }
+.journal-settings-panel input[type=checkbox]:not(.journal-switch):indeterminate::after { content: ''; position: absolute; left: 3px; top: 6px; width: 8px; height: 2px; border: 0; background: white; transform: none; }
 .journal-settings-panel input[type=checkbox]:disabled { opacity: .45; cursor: default; }
 .journal-settings-panel input:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 

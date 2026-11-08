@@ -121,7 +121,7 @@ test.beforeEach(async () => {
   await withLineProgramFixture(async db => {
     storedSettings = (await db.query("select value,updated_at from app_settings where key='control-processes'")).rows[0]
     await db.query(`insert into app_settings(key,value) values ('control-processes',$1)
-      on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ preHeatTreatmentLnkEnabled: true })])
+      on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ preHeatTreatmentMode: 'allPsto' })])
   })
 })
 test.afterEach(async () => {

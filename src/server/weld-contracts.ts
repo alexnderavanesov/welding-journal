@@ -80,6 +80,7 @@ export function isPreHeatTreatmentRegistryScope(scope: LnkWorkflowRowScope) {
 }
 
 export type LnkWorkflowSummary = {
+  preHeatTreatmentApplicableRowCount: number
   pendingPrimaryResultRowCount: number
   primaryResultRowCount: number
   preHeatTreatmentRequestRowCount: number

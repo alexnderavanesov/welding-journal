@@ -3,10 +3,10 @@ import type { JointNextAction } from './joint-next-actions'
 import type { WeldRow, RepeatedJointTask } from './dispatcher-types'
 import type { ControlProcessSettings } from './control-process-settings'
 
-type Settings = Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+type Settings = Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
 const EMPTY_TASKS: readonly RepeatedJointTask[] = []
 const cache = new WeakMap<WeldRow, {
-  tasks: readonly RepeatedJointTask[]; preHeat: boolean | undefined; allowEarly: boolean | undefined
+  tasks: readonly RepeatedJointTask[]; preHeat: Settings['preHeatTreatmentMode'] | undefined
   action: JointNextAction | undefined
 }>()
 
@@ -15,10 +15,10 @@ const cache = new WeakMap<WeldRow, {
  * Weak keys release evicted blocks; each row retains only its latest variant. */
 export function journalNextAction(row: WeldRow, tasks: readonly RepeatedJointTask[], settings?: Settings) {
   const relevant = tasks.length ? tasks : EMPTY_TASKS
-  const preHeat = settings?.preHeatTreatmentLnkEnabled, allowEarly = settings?.allowPrimaryLnkBeforePreviousStagesComplete
+  const preHeat = settings?.preHeatTreatmentMode
   const previous = cache.get(row)
-  if (previous && previous.tasks === relevant && previous.preHeat === preHeat && previous.allowEarly === allowEarly) return previous.action
+  if (previous && previous.tasks === relevant && previous.preHeat === preHeat) return previous.action
   const action = buildJointNextActions(row, tasks, settings)[0]
-  cache.set(row, { tasks: relevant, preHeat, allowEarly, action })
+  cache.set(row, { tasks: relevant, preHeat, action })
   return action
 }

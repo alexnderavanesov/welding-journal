@@ -27,12 +27,21 @@ describe('final merged technology card writes', () => {
     expect(lockTechnologyCardRegistry).not.toHaveBeenCalled()
     expect(markTechnologyCardsUsed).not.toHaveBeenCalled()
   })
-  it('batches 200000 new dates with one matcher and usage operation; preserves materials', async () => {
-    const records: WeldInput[] = Array.from({ length: 200_000 }, (_, id) => ({ ...row, id }))
+  it('batches 200000 new dates with one matcher and usage operation; applies nonempty defaults and preserves empty ones', async () => {
+    const materials = { ...card, weldingElectrodes: 'Из ТК', fillerWire: '  ', shieldingGas: 'Аргон' }
+    vi.mocked(loadTechnologyCardMatcher).mockResolvedValue(createTechnologyCardMatcher([materials], DEFAULT_DATA_LIST_SETTINGS))
+    const records: WeldInput[] = Array.from({ length: 200_000 }, (_, id) => ({ ...row, id, fillerWire: 'Ручная проволока' }))
     await prepareTechnologyCardWeldWrites(tx, records, new Map())
     expect(loadTechnologyCardMatcher).toHaveBeenCalledOnce()
     expect(markTechnologyCardsUsed).toHaveBeenCalledOnce()
-    expect(records.every(item => item.technologyCardNumber === card.name && item.weldingElectrodes === row.weldingElectrodes)).toBe(true)
+    expect(records.every(item => item.technologyCardNumber === card.name && item.weldingElectrodes === 'Из ТК' && item.fillerWire === 'Ручная проволока' && item.shieldingGas === 'Аргон')).toBe(true)
+  })
+  it('validates a selected revision without overwriting manual corrections made after that choice', async () => {
+    vi.mocked(resolveTechnologyCardNames).mockResolvedValue(new Map([[card.name, { ...card, weldingElectrodes: 'Из ТК' }]]))
+    const records = [{ ...row, technologyCardNumber: card.name, technologyCardSelection: { id: card.id, revision: card.revision } }]
+    await prepareTechnologyCardWeldWrites(tx, records, new Map())
+    expect(records[0].weldingElectrodes).toBe('Сохранить')
+    expect(loadTechnologyCardMatcher).not.toHaveBeenCalled()
   })
   it('preserves unknown/mismatched text, older dates and missing dimensions', async () => {
     const records: WeldInput[] = [{ ...row, id: 1, technologyCardNumber: 'Неизвестная' }, { ...row, id: 2, d2: null }, { ...row, id: 3 }]

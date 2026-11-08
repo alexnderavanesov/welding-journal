@@ -9,14 +9,14 @@ import { getAvailableWeldTableSections } from '@/lib/weld-table-sections'
 import { LNK_HIDDEN_FIELD_KEYS } from '@/lib/welding-journal-report-config'
 
 describe('LNK visible field layout', () => {
-  it('keeps explicit layered control visible and can hide the disabled pre-heat stage', () => {
-    const withoutLayered = getLnkVisibleFieldSections({})
-    const withoutPreHeatTreatment = getLnkVisibleFieldSections({ preHeatTreatmentLnkEnabled: false })
+  it('keeps all stage columns available independently of the project mode', () => {
+    const withoutLayered = getLnkVisibleFieldSections()
+    const withoutPreHeatTreatment = getLnkVisibleFieldSections()
 
     expect(withoutLayered.some((section) => section.section === 'Послойный контроль')).toBe(true)
     expect(withoutLayered.some((section) => section.section === 'НК до ТО')).toBe(true)
     expect(withoutPreHeatTreatment.some((section) => section.section === 'Послойный контроль')).toBe(true)
-    expect(withoutPreHeatTreatment.some((section) => section.section === 'НК до ТО')).toBe(false)
+    expect(withoutPreHeatTreatment.some((section) => section.section === 'НК до ТО')).toBe(true)
   })
 
   it('uses one supported weld-joint control method set across the system', () => {

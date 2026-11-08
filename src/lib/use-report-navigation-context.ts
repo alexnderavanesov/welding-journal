@@ -6,6 +6,7 @@ import type { ActiveReport } from '@/lib/home-state'
 import { getPageScrollPosition, restorePageScrollPosition, type PageScrollPosition } from '@/lib/page-scroll-position'
 import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
 import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
+import { getRuleSettingsTarget } from '@/lib/rule-settings-navigation'
 import type { WeldFilters } from '@/server/weld-contracts'
 
 const REPORT_NAVIGATION_HISTORY_KEY = '__weldingReportContext'
@@ -123,7 +124,10 @@ export function useReportNavigationContext({
 
   useEffect(() => {
     const snapshot = readReportNavigationSnapshot()
-    if (!snapshot || snapshot.report !== activeReport) {
+    // A rule link owns its initial position; restoring the saved page offset
+    // afterward would cancel the panel's scrollIntoView animation.
+    if (!snapshot || snapshot.report !== activeReport ||
+        (activeReport === 'settings' && getRuleSettingsTarget(window.location.hash))) {
       isRestoringRef.current = false
       persistCurrentReportContext()
       return

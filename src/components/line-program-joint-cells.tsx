@@ -34,7 +34,7 @@ export function HistoryBadge({ row, stage, onClick }: { row: WeldRow; stage: 'pr
   const rejected = controls.filter(control => isRejectedLineProgramResult(control.result))
   if (!controls.length || stage === 'pre' && !rejected.length) return null
   const name = stage === 'pre' ? 'НК до ТО' : 'Дубли'
-  return <button type="button" data-control-stage={stage} className={`min-h-6 min-w-6 rounded px-1 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${rejected.length ? 'bg-rose-50 text-rose-700' : 'text-sky-700'}`} onClick={onClick}>{name}{stage === 'pre' && row.preHeatTreatmentLnkEnabled === false ? ' · история, не учитывается' : ''}{rejected.length ? `: ${rejected.map(control => `${control.method} ${control.result}`).join(', ')}` : ` · ${controls.length}`}</button>
+  return <button type="button" data-control-stage={stage} className={`min-h-6 min-w-6 rounded px-1 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${rejected.length ? 'bg-rose-50 text-rose-700' : 'text-sky-700'}`} onClick={onClick}>{name}{rejected.length ? `: ${rejected.map(control => `${control.method} ${control.result}`).join(', ')}` : ` · ${controls.length}`}</button>
 }
 
 export function programResultDisplay(row: WeldRow, method: ProgramMethod | 'ВИК') {

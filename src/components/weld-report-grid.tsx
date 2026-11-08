@@ -1,3 +1,4 @@
+import { useCustomDocumentNames } from '@/lib/custom-document-settings'
 import { useAccess } from '@/lib/security-context'
 import { formatSupportLengthDecimal } from '@/lib/support-length-value'
 import { useReportGroupSession } from '@/lib/report-group-session'
@@ -17,9 +18,11 @@ import { JournalCellTooltip } from './journal-cell-tooltip'
 import { useJournalGroupMotion } from './use-journal-group-motion'
 import { positionGridPopup } from './grid-popup-position'
 import { useGridResultMotion } from './use-grid-result-motion'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { type IRowNode, type ColDef, type ColGroupDef, type GridApi, type CellPosition, type GetColumnMenuItemsParams, type MenuItemDef, type DefaultMenuItem } from 'ag-grid-community'
-import { AgGridProvider, AgGridReact } from 'ag-grid-react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { type IRowNode, type ColDef, type ColGroupDef, type GridApi, type CellPosition, type GetColumnMenuItemsParams, type MenuItemDef, type DefaultMenuItem, type EditableCallbackParams } from 'ag-grid-community'
+import { AgGridProvider, AgGridReact, type CustomCellEditorProps } from 'ag-grid-react'
+import { useJournalInlineEdit } from '@/lib/use-journal-inline-edit'
+import { JOURNAL_INLINE_FIELDS } from '@/lib/journal-inline-edit'
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, Copy } from 'lucide-react'
 import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import { ContextActionMenu } from './context-action-menu'
@@ -27,7 +30,7 @@ import { JournalGridToolbar } from './welding-journal-grid-toolbar'
 import { JournalColumnHeading } from './welding-journal-column-heading'
 import { JournalGroupingControls, type JournalGrouping } from './welding-journal-grouping-controls'
 import { JournalGridContext, JournalFilterContext, JournalExtrasContext, useJournalCellContext } from './welding-journal-grid-context'
-import { MODULES, THEMES, LOCALE, groupRowClass, PLAIN_FIELDS, journalColumnWidth } from './welding-journal-grid-config'
+import { MODULES, JOURNAL_INLINE_MODULES, THEMES, LOCALE, groupRowClass, PLAIN_FIELDS, journalColumnWidth } from './welding-journal-grid-config'
 import { JournalGroupAnchor, JournalGroupCell, JournalServerGroupValue } from './welding-journal-group-summary'
 import { JournalPlainCell, JournalCell, JournalActions, JournalReportActions, JournalExtraCell } from './welding-journal-grid-cells'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
@@ -57,6 +60,10 @@ const NOOP = () => undefined
 const ALLOW = () => true
 const SERVER_ORDER = () => 0
 const CELL_SELECTION = { suppressMultiRanges: false }
+const InlineCellEditor = lazy(() => import('./journal-inline-cell-editor'))
+function JournalCellEditor(props: CustomCellEditorProps<WeldRow>) {
+  return <Suspense fallback={<span className="p-3 text-sm">Открываем поле…</span>}><InlineCellEditor {...props} /></Suspense>
+}
 type WeldReportGridProps = WeldTableProps & {
   report: AgGridWeldReport
   journalServer: NonNullable<WeldTableProps['journalServer']>
@@ -65,7 +72,7 @@ type WeldReportGridProps = WeldTableProps & {
 }
 
 export function WeldReportGrid(props: WeldReportGridProps) {
-  return <AgGridProvider modules={MODULES} licenseKey={import.meta.env.VITE_AG_GRID_LICENSE_KEY || undefined}>
+  return <AgGridProvider modules={props.report === 'weldingJournal' ? JOURNAL_INLINE_MODULES : MODULES} licenseKey={import.meta.env.VITE_AG_GRID_LICENSE_KEY || undefined}>
     <ReportGrid key={props.report} {...props} />
   </AgGridProvider>
 }
@@ -139,9 +146,10 @@ function ReportGrid(props: WeldReportGridProps) {
     setSettings(next)
     writeJournalGridStorage(next, profile.storageKey)
   }, [profile.storageKey])
+  const customNames = useCustomDocumentNames()
   const sections = useMemo(() => getAvailableWeldTableSections({
     hiddenFieldKeys: props.hiddenFieldKeys ?? EMPTY_FIELDS, mergePstoSections: props.mergePstoSections ?? false, sectionLayout: props.sectionLayout,
-  }).map(section => ({ ...section, fields: section.fields.filter(field => identity && canViewWeldField(identity, field.key)) })).filter(section => section.fields.length), [props.hiddenFieldKeys, props.mergePstoSections, props.sectionLayout, identity])
+  }).map(section => ({ ...section, fields: section.fields.filter(field => identity && canViewWeldField(identity, field.key)).map(field => field.key === 'custom1Document' || field.key === 'custom2Document' ? { ...field, label: customNames[field.key === 'custom1Document' ? 'custom1' : 'custom2'] } : field) })).filter(section => section.fields.length), [props.hiddenFieldKeys, props.mergePstoSections, props.sectionLayout, identity, customNames])
   const alwaysVisible = WELD_GRID_REQUIRED_FIELDS
   const extraSectionSignature = JSON.stringify([...new Set((props.extraColumns ?? []).filter(column => column.collapsible).map(column => column.section))])
   const extraSections = useMemo<string[]>(() => JSON.parse(extraSectionSignature), [extraSectionSignature])
@@ -156,6 +164,11 @@ function ReportGrid(props: WeldReportGridProps) {
     editableFieldKeys: props.editableFieldKeys ?? EMPTY_FIELDS, blockedFieldKeys: props.blockedFieldKeys ?? EMPTY_FIELDS,
     isCellEditable: props.isCellEditable ?? ALLOW,
   })
+  const inlineEnabled = report === 'weldingJournal' && !props.readOnly && can('welding.edit')
+  const inlineEdit = useJournalInlineEdit({ api, enabled: inlineEnabled,
+    availability: !rowsReady ? props.journalServer.error ? 'load-error' : 'updating'
+      : props.journalServer.revisionExpired ? 'expired' : 'ready',
+    canEditCell, canEditField, getEditRange: serverGrid.getEditRange, onError: props.onContextMenuError })
   const actionRows = useMemo(() => {
     const map = new Map((props.actionRows ?? props.duplicateRows ?? rows).map(row => [row.id, row]))
     for (const row of rows) {
@@ -262,8 +275,8 @@ function ReportGrid(props: WeldReportGridProps) {
       reportView.deleteSavedView(id)
     },
   }
-  const runtime = useRef({ props, getActionRow, canEditCell, canEditField, groupAnchor })
-  runtime.current = { props, getActionRow, canEditCell, canEditField, groupAnchor }
+  const runtime = useRef({ props, getActionRow, canEditCell, canEditField, groupAnchor, inlineEdit })
+  runtime.current = { props, getActionRow, canEditCell, canEditField, groupAnchor, inlineEdit }
   const previousGroupAnchor = useRef(groupAnchor)
   useEffect(() => {
     const previous = previousGroupAnchor.current
@@ -301,11 +314,15 @@ function ReportGrid(props: WeldReportGridProps) {
         sortable: !isVirtualWeldField(field), comparator: SERVER_ORDER,
         enableRowGroup: !isVirtualWeldField(field),
         filter: JOURNAL_SERVER_FILTER,
+        ...(report === 'weldingJournal' ? {
+          editable: ({ data, node }: EditableCallbackParams<WeldRow>) => !node.group && Boolean(runtime.current.inlineEdit.canEdit(data, field.key)),
+          cellEditor: JournalCellEditor, cellEditorPopup: true, cellEditorPopupPosition: 'under' as const,
+        } : {}),
         valueGetter: ({ data, node }) => node?.group ? data && journalGroup(data)?.key || '' : data ? (runtime.current.props.getDisplayValue ? runtime.current.props.getDisplayValue(data, field.key) : data[field.key]) : '',
         valueFormatter: ({ data, value }) => data ? journalClipboardValue(data, field.key, value) : String(value ?? ''),
         cellRendererSelector: ({ node }) => ({ component: node.group
           ? field.key !== runtime.current.groupAnchor ? JournalServerGroupValue : JournalGroupCell
-          : PLAIN_FIELDS.has(field.key) ? JournalPlainCell : JournalCell }),
+          : PLAIN_FIELDS.has(field.key) || report === 'weldingJournal' && JOURNAL_INLINE_FIELDS.has(field.key) ? JournalPlainCell : JournalCell }),
         cellClass: REPORT_LEFT_ALIGNED_FIELDS.has(field.key) ? 'journal-cell-text-left' : undefined,
         cellClassRules: { 'journal-cell-highlight': ({ data }) => Boolean(data && runtime.current.props.highlightedCellKeys?.has(getCellKey(data.id, field.key))) },
       })) })
@@ -333,7 +350,7 @@ function ReportGrid(props: WeldReportGridProps) {
     suppressMovable: false, lockPinned: true, wrapHeaderText: true, suppressHeaderMenuButton: true,
     headerComponentParams: { innerHeaderComponent: JournalColumnHeading },
     loadingCellRenderer: JournalLoadingCell,
-    suppressKeyboardEvent: ({ event }) => event.key === 'Escape',
+    suppressKeyboardEvent: ({ event, editing }) => !editing && event.key === 'Escape',
   }), [])
   const appearance = settings.appearance
   const rowHeight = appearance.density === 'compact' ? (appearance.wrapText ? 42 : 34) : appearance.density === 'spacious' ? (appearance.wrapText ? 68 : 58) : (appearance.wrapText ? 54 : 46)
@@ -450,6 +467,7 @@ function ReportGrid(props: WeldReportGridProps) {
           api?.setFocusedCell(node.rowIndex, id)
           openMenu(node.data, { x: event.clientX, y: event.clientY, anchorElement: cell }, FIELD_BY_KEY.has(id as WeldFieldKey) ? id as WeldFieldKey : undefined)
         }}
+        onPasteCapture={inlineEdit.paste}
         onPointerDownCapture={event => {
           if (event.button === 2 && event.target instanceof Element && event.target.closest('.ag-cell')) {
             // AG normally turns a right click outside a range into a new range.
@@ -470,6 +488,11 @@ function ReportGrid(props: WeldReportGridProps) {
         }}
         onKeyDownCapture={event => {
           setMenuInput(false)
+          if (event.target instanceof Element && event.target.closest('.journal-inline-editor')) return
+          if (inlineEnabled && ['Delete', 'Backspace'].includes(event.key) && event.target instanceof Element && event.target.closest('.ag-cell')
+            && !event.target.closest('input, textarea, select, [contenteditable], .ag-menu')) {
+            event.preventDefault(); event.stopPropagation(); inlineEdit.clear(); return
+          }
           if (api && gridHeaderKeyboard(event, api, {
             toggleSelection: props.selectable ? () => serverGrid.selectionContext?.toggle() : undefined,
             openFilter: id => { popupColumn.current = id },
@@ -565,6 +588,9 @@ function ReportGrid(props: WeldReportGridProps) {
               if (!rowsReady) return
               if (node.rowIndex != null) api?.setFocusedCell(node.rowIndex, colId)
               focus.remember()
+              if (!node.group && inlineEdit.canEdit(node.data, colId as WeldFieldKey) && node.rowIndex != null) {
+                api?.startEditingCell({ rowIndex: node.rowIndex, colKey: colId }); return
+              }
               const control = (event.target.closest('button, input[type=checkbox]') ?? cell.querySelector('[data-joint-next-action-cell] button:last-of-type:not(:disabled)') ?? cell.querySelector('button:not(:disabled), input[type=checkbox]:not(:disabled)')) as HTMLElement | null
               if (control && !control.matches(':disabled')) control.click()
               else if (node.data && FIELD_BY_KEY.has(colId as WeldFieldKey) && canEditCell(getActionRow(node.data), colId as WeldFieldKey)) props.onEdit?.(getActionRow(node.data), colId as WeldFieldKey)
@@ -583,6 +609,8 @@ function ReportGrid(props: WeldReportGridProps) {
           if (popupColumn.current) api?.setFocusedHeader(popupColumn.current)
         }}>
         <AgGridReact<WeldRow>
+          {...(report === 'weldingJournal' ? { readOnlyEdit: true, stopEditingWhenCellsLoseFocus: true, suppressStartEditOnTab: true,
+            onCellEditRequest: inlineEdit.edit, onCellEditingStarted: inlineEdit.dismiss } : {})}
           initialState={groupSession.initialState}
           onGridPreDestroyed={event => groupSession.capture(event.api)}
           postProcessPopup={positionGridPopup}
@@ -627,6 +655,7 @@ function ReportGrid(props: WeldReportGridProps) {
           onBodyScroll={() => { serverGrid.trimCache() }}
           onCellDoubleClicked={event => {
             const field = event.column.getColId() as WeldFieldKey
+            if (report === 'weldingJournal' && JOURNAL_INLINE_FIELDS.has(field)) return
             if (rowsReady && !event.node.group && event.data && FIELD_BY_KEY.has(field) && canEditCell(event.data, field) && !(event.event?.target as HTMLElement)?.closest('button')) props.onEdit?.(getActionRow(event.data), field)
           }}
           getRowClass={groupRowClass}
@@ -640,6 +669,10 @@ function ReportGrid(props: WeldReportGridProps) {
         </div> : null}
       </div>
       <div data-journal-footer className="journal-footer rounded-b-xl border border-t-0 border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">
+        {inlineEnabled && inlineEdit.status.message && <span role={inlineEdit.status.error ? 'alert' : 'status'} className={`flex min-w-0 items-center gap-2 ${inlineEdit.status.error ? 'text-red-700' : ''}`} data-testid="journal-inline-status">
+          <span className="truncate" title={inlineEdit.status.details ?? inlineEdit.status.message}>{inlineEdit.status.message}</span>
+          {inlineEdit.status.error && <><button type="button" className="shrink-0 underline" onClick={inlineEdit.showError}>Подробнее</button><button type="button" className="shrink-0 rounded px-1 hover:bg-slate-200" aria-label="Закрыть сообщение о вводе в таблицу" title="Закрыть сообщение" onClick={inlineEdit.dismiss}>×</button></>}
+        </span>}
         {props.journalServer.updatesAvailable ? <span className="journal-freshness-notice" role="status">
           <span>Есть обновления</span>
           <button type="button" onClick={props.journalServer.retry} disabled={!rowsReady}>Обновить таблицу</button>

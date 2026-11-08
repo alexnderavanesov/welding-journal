@@ -50,7 +50,7 @@ type JointChainDialogProps = {
   taskContextRevision?: number | null
   taskContextPending?: boolean
   taskContextError?: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
   errorMessage: string | null
   isLoading: boolean
   onClose: () => void
@@ -60,7 +60,6 @@ type JointChainDialogProps = {
   onOpenReport: (row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') => void
   onOpenLineInDispatcher: (row: WeldRow) => void
   onEditRow: (row: WeldRow) => void
-  onChangeChainActuality?: (row: WeldRow, active: boolean) => void
   onOpenCoilCorrection?: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
   onRunDispatcherTaskAction: JointDispatcherTaskActionHandler
@@ -98,7 +97,6 @@ export function JointChainDialog({
   onOpenReport,
   onOpenLineInDispatcher,
   onEditRow,
-  onChangeChainActuality,
   onOpenCoilCorrection,
   onRunNextAction,
   onRunDispatcherTaskAction,
@@ -255,12 +253,10 @@ export function JointChainDialog({
             <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
               <div>
                 <div className="mb-2 text-xs font-semibold uppercase text-slate-500">{branchRows.length === 1 ? 'Стык' : 'Цепочка ремонта и выреза'}</div>
-                {onChangeChainActuality && hasInactiveHistory ? <section aria-label="Актуальность по ИЗМу" className="mb-3 flex flex-col items-start gap-2">
-                  <p className="text-sm text-slate-600">{actualityGroup?.mixed
-                    ? 'Актуальность записей различается. Выберите единое состояние соединения.'
+                {hasInactiveHistory ? <section aria-label="Актуальность по ИЗМу" className="mb-3 text-sm text-slate-600">
+                  <p>{actualityGroup?.mixed
+                    ? 'Актуальность записей различается. Измените её в карточке стыка в сварочном журнале.'
                     : actualityGroup?.rows.length === 1 ? 'Стык неактуален по ИЗМу.' : 'Все записи цепочки неактуальны по ИЗМу.'}</p>
-                  {actualityGroup?.mixed ? <Button variant="outline" size="sm" onClick={() => onChangeChainActuality(selectedRow, false)}>Сделать цепочку неактуальной</Button> : null}
-                  <Button variant="outline" size="sm" onClick={() => onChangeChainActuality(selectedRow, true)}>{actualityGroup?.rows.length === 1 ? 'Вернуть актуальность стыку' : 'Вернуть актуальность цепочке'}</Button>
                 </section> : null}
                 {onOpenCoilCorrection && correctionRoot ? <Button className="mb-2" variant="outline" size="sm" onClick={() => onOpenCoilCorrection(correctionRoot)}>Исправить ошибочную катушку</Button> : null}
                 {physicalRoot.programChainState ? <CoilRestorationHistory key={physicalRoot.id} rootId={physicalRoot.id} /> : null}

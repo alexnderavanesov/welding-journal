@@ -105,8 +105,8 @@ function buildSupportWelderStatistics(rows: WeldRow[], from: string, to: string,
     const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, context))
     if (status === 'годен') item.good++
     if (status === 'не годен') item.rejected++
-    if (status === 'ожидает заявку') item.waitingRequest++
-    if (status?.toLocaleLowerCase('ru') === 'ожидает нк') item.waitingControl++
+    if ((status === 'ожидает заявку' || status === 'ожидает заявку до ТО')) item.waitingRequest++
+    if (['ожидает нк', 'ожидает нк до то'].includes(status?.toLocaleLowerCase('ru') ?? '')) item.waitingControl++
     stats.set(key, item)
   }
   return [...stats.values()].map(item => ({ ...item, defectPercent: item.good + item.rejected ? item.rejected / (item.good + item.rejected) * 100 : 0 }))

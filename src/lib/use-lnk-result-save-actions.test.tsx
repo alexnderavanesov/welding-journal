@@ -212,7 +212,7 @@ describe('useLnkResultSaveActions', () => {
   })
 
   it('clears an early primary result without asking to confirm chronology debt', async () => {
-    const earlyRow = {
+    const earlyRow = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       d1: 108,
       d2: 108,
@@ -227,7 +227,7 @@ describe('useLnkResultSaveActions', () => {
     const mutate = vi.fn<LnkResultMutate>()
     const permissiveSettings = {
       ...DEFAULT_CONTROL_PROCESS_SETTINGS,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+
     }
     const { result } = renderHook(() =>
       useHarness(draft, [earlyRow], {

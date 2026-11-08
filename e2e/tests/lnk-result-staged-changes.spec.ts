@@ -22,7 +22,7 @@ test.beforeEach(async () => withE2eDatabase(async db => {
   settings = (await db.query("select key,value,updated_at from app_settings where key in ('data-list','control-processes')")).rows
   for (const [key, value] of [
     ['data-list', { weldingTypes: ['РД'], connectionTypes: ['С17'], materialGroups: ['M01'] }],
-    ['control-processes', { preHeatTreatmentLnkEnabled: true }],
+    ['control-processes', { preHeatTreatmentMode: 'allPsto' }],
   ] as const) await db.query(`insert into app_settings(key,value) values ($1,$2)
     on conflict(key) do update set value=excluded.value,updated_at=now()`, [key, JSON.stringify(value)])
 }))

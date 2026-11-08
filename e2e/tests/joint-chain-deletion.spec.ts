@@ -29,7 +29,7 @@ async function seed(names = ['S1', 'S1R1', 'S1R2', 'F9']) {
       select $1,'DELETE','CHAIN-DELETE',name,
         case when n=2 then 'неофициальный' else 'действующий' end,
         case when n=3 then 'не актуален' else 'актуален' end,'да',
-        case when n in (2,3) then 'ожидает ремонт' else 'ожидает сварку' end
+        case when n=3 then 'неактуальный' when n=2 then 'ожидает ремонт' else 'ожидает сварку' end
       from unnest($2::text[]) with ordinality as t(name,n) returning id,xmin::text as version`, [project, names])
     return rows
   })

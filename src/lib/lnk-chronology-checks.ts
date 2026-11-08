@@ -276,7 +276,6 @@ function getRowPostHeatTreatmentDateOrderIssues(
         row,
         message: `Стык ${joint}: ${method.code} после ТО оформлен до завершения цикла ПСТО и ТВМТ.`,
       })
-      continue
     }
     for (const [kind, boundary, boundaryDate] of [
       ['post-before-psto', `даты ПСТО${cycle && cycle.sequence > 1 ? ` цикла #${cycle.sequence}` : ''}`, pstoDate],

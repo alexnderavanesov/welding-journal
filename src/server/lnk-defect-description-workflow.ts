@@ -29,9 +29,7 @@ export async function updateLnkDefectDescription({
   return db.transaction(async (tx) => {
     if (data.stage === 'beforeHeatTreatment') {
       const settings = await loadControlProcessSettingsFromTransaction(tx)
-      if (!settings.preHeatTreatmentLnkEnabled) {
-        throw new Error('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
-      }
+
     }
     const [storedRow] = await tx
       .select(WELD_TABLE_RETURNING)

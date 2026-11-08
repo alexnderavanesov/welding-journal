@@ -28,7 +28,7 @@ describe('assignment basis: latest user decision 04.11.2026', () => {
     expect(getControlAssignmentBasisIssues({ ...row, hasRk: 'да' }, row)).toEqual([])
   })
   it('reports independent methods together, without changing inherited PSTO/TVMT policies', () => {
-    expect(getControlAssignmentBasisIssues({ hasRk: 'отменен', hasUzk: 'дополнительный', hasTvmt: 'отменен', pstoRequired: 'отменен' })).toHaveLength(2)
+    expect(getControlAssignmentBasisIssues({ preHeatTreatmentMode: 'allPsto' as const, hasRk: 'отменен', hasUzk: 'дополнительный', hasTvmt: 'отменен', pstoRequired: 'отменен' })).toHaveLength(2)
   })
   it('allows an incomplete line-program draft but blocks its preview until the basis is supplied', () => {
     const row: WeldRow = { id: 1, joint: 'S1', connectionType: 'С17' }

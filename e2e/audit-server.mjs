@@ -68,6 +68,40 @@ if (jointFacetTrace) {
   facetTrace = { version: 'joint-facet-http-sql-v1', label: process.env.DEEP_JOINT_FACET_LABEL,
     clock: 'performance.now milliseconds in this server process', requests: [], statements: 0 }
 }
+// Independent of the historical 200k-only experiment. All existing runner and
+// database guards above still apply; no SQL text or bind values are retained.
+const scaleRows = process.env.AG_GRID_SCALE_ROWS
+let scaleFacetTrace, scaleFacetScope, scaleFacetRpcNames
+let scaleFacetDirty = false
+const flushScaleFacetTrace = () => {
+  if (!scaleFacetTrace || !scaleFacetDirty) return
+  const target = file.replace(/counts\.json$/, 'scale-facet-trace.json')
+  writeFileSync(target + '.tmp', JSON.stringify(scaleFacetTrace))
+  renameSync(target + '.tmp', target)
+  scaleFacetDirty = false
+}
+if (scaleRows !== undefined) {
+  assert(['50000', '250000'].includes(scaleRows), 'AG_GRID_SCALE_ROWS must be 50000 or 250000')
+  assert.equal(resourceContainer, false)
+  assert.equal(jointFacetTrace, false, 'Keep the historical joint-facet trace separate')
+  assert.notEqual(process.env.DEEP_FILTER_HTTP_GROUP_REPRO, '1')
+  assert.notEqual(process.env.DEEP_WIDE_DATE_CHOICE, '1')
+  const manifests = (await readdir(root)).filter(name => name.includes('tanstack-start-server-fn-resolver') && name.endsWith('.mjs'))
+  assert.equal(manifests.length, 1)
+  const manifest = await readFile(join(root, manifests[0]), 'utf8')
+  const names = new Set(['readJournalFilterPage', 'selectJournalFilterValues', 'listJournalFilterOptions',
+    'listWeldColumnFilterOptions', 'listSystemDocumentHistoryFilterOptions', 'listRemoteGeneratedDocumentHistoryFilterOptions',
+    'listPstoLineFilterOptions', 'listPstoExceptionFilterOptions'].map(name => `${name}_createServerFn_handler`))
+  scaleFacetRpcNames = new Map([...manifest.matchAll(/"([a-f0-9]{64})":\s*\{\s*functionName:\s*"([^"\n]+)"/g)]
+    .filter(match => names.has(match[2])).map(match => [match[1], match[2].replace(/_createServerFn_handler$/, '')]))
+  assert.equal(scaleFacetRpcNames.size, names.size, 'Expected all scale facet endpoints in the saved bundle')
+  scaleFacetScope = new AsyncLocalStorage()
+  scaleFacetTrace = { version: 'ag-grid-scale-facet-http-sql-v1', rows: Number(scaleRows),
+    clock: 'performance.now milliseconds in this server process',
+    parameterShapeSampling: 'first 32 parameters; first 8 array items; at most 3 array levels; lengths retained',
+    limits: { requests: 256, statements: 4096 }, requests: [], statements: 0, droppedRequests: 0, droppedStatements: 0 }
+  scaleFacetDirty = true
+}
 let facetCpuControl
 if (process.env.DEEP_JOINT_FACET_CPU === '1') {
   assert.equal(jointFacetTrace, true)
@@ -107,6 +141,26 @@ Server.prototype.emit = function (event, ...args) {
     response.once('close', () => end('close'))
     return rpcScope.run(rpc, () => facetScope.run(entry, () => emit.call(this, event, ...args)))
   }
+  if (scaleFacetTrace && rpc && scaleFacetRpcNames.has(rpc)) {
+    if (scaleFacetTrace.requests.length >= scaleFacetTrace.limits.requests) {
+      scaleFacetTrace.droppedRequests++; scaleFacetDirty = true
+    } else {
+      const entry = { id: `scale-facet-${scaleFacetTrace.requests.length}`, rpc, name: scaleFacetRpcNames.get(rpc),
+        start: performance.now(), sql: [] }
+      scaleFacetTrace.requests.push(entry); scaleFacetDirty = true
+      const response = args[1]
+      let completed = false
+      const end = completion => {
+        if (completed) return
+        completed = true
+        entry.end = performance.now(); entry.milliseconds = entry.end - entry.start
+        entry.completion = completion; entry.status = response.statusCode; scaleFacetDirty = true
+      }
+      response.once('finish', () => end('finish'))
+      response.once('close', () => end('close'))
+      return rpcScope.run(rpc, () => scaleFacetScope.run(entry, () => emit.call(this, event, ...args)))
+    }
+  }
   return rpc ? rpcScope.run(rpc, () => emit.call(this, event, ...args)) : emit.call(this, event, ...args)
 }
 const dispatcherCalculations = []
@@ -128,6 +182,10 @@ if (process.env.AUDIT_CPU_PROFILE === '1') {
   }
   channel('welding.dispatcher.full-calculation').subscribe(finish)
 }
+channel('welding.dispatcher.scoped-calculation').subscribe(metrics => {
+  dispatcherCalculations.push({ ...metrics, kind: 'scoped' })
+  if (dispatcherCalculations.length > 20) dispatcherCalculations.shift()
+})
 channel('welding.dispatcher.full-calculation').subscribe(metrics => {
   dispatcherCalculations.push(metrics)
   if (dispatcherCalculations.length > 20) dispatcherCalculations.shift()
@@ -175,17 +233,29 @@ if (resources && ['1', 'peak'].includes(process.env.AUDIT_HEAP_PROFILE)) {
 const original = pg.Client.prototype.query
 // Enabled only for the explicitly labelled synthetic HTTP requests above.
 // Keep the original pg promise/return value and callback receiver/arguments.
-function traceFacetQuery(client, args, sqlText, operation, request) {
-  assert(++facetTrace.statements <= 2048, 'Joint-facet diagnostic statement bound exceeded')
-  const shape = value => value === null ? 'null' : value === undefined ? 'undefined'
+function traceFacetQuery(client, args, sqlText, operation, request, trace = facetTrace) {
+  const scale = trace === scaleFacetTrace
+  if (scale && trace.statements >= trace.limits.statements) {
+    trace.droppedStatements++; scaleFacetDirty = true
+    return original.apply(client, args)
+  }
+  trace.statements++
+  if (scale) scaleFacetDirty = true
+  else assert(trace.statements <= 2048, 'Joint-facet diagnostic statement bound exceeded')
+  const shape = (value, depth = 0) => value === null ? 'null' : value === undefined ? 'undefined'
     : typeof value === 'string' ? { type: 'string', length: value.length }
-    : Array.isArray(value) ? { type: 'array', length: value.length, items: value.map(shape) }
+    : Array.isArray(value) ? { type: 'array', length: value.length,
+      items: (scale ? depth < 3 ? value.slice(0, 8) : [] : value).map(item => shape(item, depth + 1)) }
     : value instanceof Date ? 'date' : Buffer.isBuffer(value) ? { type: 'buffer', length: value.length }
     : typeof value
   const parameters = Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []
   const hash = value => createHash('sha256').update(value).digest('hex')
-  const entry = { sequence: facetTrace.statements, operation, start: performance.now(),
-    sqlShapeSha256: hash(sqlText ?? ''), parameterShapeSha256: hash(JSON.stringify(parameters.map(shape))) }
+  const parameterShape = scale ? { length: parameters.length, items: parameters.slice(0, 32).map(value => shape(value)) }
+    : parameters.map(value => shape(value))
+  const entry = { sequence: trace.statements, operation, start: performance.now(),
+    sqlShapeSha256: hash(sqlText ?? ''), parameterShapeSha256: hash(JSON.stringify(parameterShape)),
+    ...(scale ? { sqlFeatures: { distinct: /\bdistinct\b/i.test(sqlText ?? ''), groupBy: /\bgroup\s+by\b/i.test(sqlText ?? ''),
+      limit: /\blimit\b/i.test(sqlText ?? '') } } : {}) }
   request.sql.push(entry)
   let completed = false
   const end = (error, reply, completion) => {
@@ -194,7 +264,8 @@ function traceFacetQuery(client, args, sqlText, operation, request) {
     entry.end = performance.now(); entry.milliseconds = entry.end - entry.start; entry.completion = completion
     if (error) entry.error = { kind: 'query-error', ...(typeof error.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? { sqlState: error.code } : {}) }
     else if (reply) { entry.rows = reply.rowCount ?? null; entry.columns = reply.fields?.length ?? null }
-    if (request.end !== undefined) flushFacetTrace()
+    if (scale) scaleFacetDirty = true
+    else if (request.end !== undefined) flushFacetTrace()
   }
   const callback = typeof args.at(-1) === 'function' ? args.at(-1) : undefined
   const forwarded = callback ? [...args.slice(0, -1), function (...values) {
@@ -294,7 +365,9 @@ pg.Client.prototype.query = function (...args) {
     && sql.includes('"weld_joints".xmin::text as "row_version"') && sql.includes('union all')
     && (Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []).includes('%E2E-DEEP-POPUP%')
   const facetRequest = jointFacetTrace ? facetScope.getStore() : undefined
+  const scaleFacetRequest = scaleFacetTrace ? scaleFacetScope.getStore() : undefined
   const result = facetRequest ? traceFacetQuery(this, args, sql, operation, facetRequest)
+    : scaleFacetRequest ? traceFacetQuery(this, args, sql, operation, scaleFacetRequest, scaleFacetTrace)
     : captureWideDate ? captureWideDateLeaf(this, args, sql, rpc)
     : groupRepro && operation === 'SELECT' && sql.includes('"row_groupKey"') && sql.includes('"journal_root_state"')
     ? explainGroupRepro(this, args, sql) : original.apply(this, args)
@@ -335,10 +408,15 @@ const flush = () => {
   writeFileSync(file + '.tmp', JSON.stringify({ ...counts, dispatcherCalculations, ...(resources ? { resources } : {}) }))
   renameSync(file + '.tmp', file)
   if (jointFacetTrace) flushFacetTrace()
+  flushScaleFacetTrace()
 }
 flush()
 // Tests discover this process-owned path through its environment-free marker.
 console.log(`AUDIT_SQL_COUNTS=${file}`)
 setInterval(flush, 500).unref()
 process.on('exit', flush)
+if (process.env.DISPATCHER_LARGE_LINE_PROBE === '1') {
+  const { installDispatcherStagingProbe } = await import('./dispatcher-staging-probe.mjs')
+  installDispatcherStagingProbe(pg, file)
+}
 await import(pathToFileURL(join(root, 'index.mjs')).href)

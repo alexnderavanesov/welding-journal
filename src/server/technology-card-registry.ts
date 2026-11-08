@@ -34,6 +34,9 @@ export function toTechnologyCardRecord(card: TechnologyCard): TechnologyCardReco
     materialGroups: card.materialGroups, diameterFrom: card.diameterFrom, diameterTo: card.diameterTo,
     thicknessFrom: card.thicknessFrom, thicknessTo: card.thicknessTo, psto: card.psto,
     archived: card.archived, revision: card.revision,
+    weldingElectrodes: card.weldingElectrodes, weldingElectrodesCertificateNumber: card.weldingElectrodesCertificateNumber,
+    fillerWire: card.fillerWire, fillerWireCertificateNumber: card.fillerWireCertificateNumber,
+    shieldingGas: card.shieldingGas, shieldingGasCertificateNumber: card.shieldingGasCertificateNumber,
   }
 }
 

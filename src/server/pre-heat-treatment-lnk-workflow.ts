@@ -668,7 +668,7 @@ function normalizePositions(value: unknown): PreHeatTreatmentLnkPosition[] {
   return [...unique.values()]
 }
 
-function buildGroupWrites({
+export function buildGroupWrites({
   action,
   date,
   group,
@@ -724,9 +724,6 @@ function buildGroupWrites({
 
 async function assertPreHeatTreatmentLnkEnabled(tx: SystemDocumentSequenceTransaction) {
   const settings = await loadControlProcessSettingsFromTransaction(tx)
-  if (!settings.preHeatTreatmentLnkEnabled) {
-    throw new Error('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
-  }
   return settings
 }
 
@@ -854,7 +851,7 @@ function toControlInsert(write: PreHeatTreatmentControlWrite): NewPreHeatTreatme
   }
 }
 
-async function syncPreHeatTreatmentDocuments({
+export async function syncPreHeatTreatmentDocuments({
   tx,
   action,
   groups,
@@ -948,7 +945,9 @@ const PRE_HEAT_TREATMENT_WELD_UPDATE_FIELDS = [
 const PRE_HEAT_TREATMENT_WELD_UPDATE_SET = Object.fromEntries(
   PRE_HEAT_TREATMENT_WELD_UPDATE_FIELDS.map((field) => [
     field,
-    sql.raw(`excluded."${WELD_TABLE_COLUMNS[field].name}"`),
+    field === 'updatedAt'
+      ? sql`greatest(clock_timestamp(), ${weldJoints.updatedAt} + interval '1 millisecond')`
+      : sql.raw(`excluded."${WELD_TABLE_COLUMNS[field].name}"`),
   ]),
 ) as Partial<Record<keyof NewWeldJoint, SQL>>
 
@@ -986,6 +985,7 @@ export async function persistPreHeatTreatmentTouchedRows(
     if (!saved) throw new Error(`Стык #${row.id} больше не существует. Обновите отчет ЛНК.`)
     return {
       ...saved,
+      preHeatTreatmentMode: row.preHeatTreatmentMode,
       preHeatTreatmentControls: row.preHeatTreatmentControls ?? [],
       duplicateControls: row.duplicateControls ?? [],
       pstoRepeatCycles: row.pstoRepeatCycles ?? [],
@@ -1001,7 +1001,7 @@ function timestampOrNull(value: unknown) {
   return Number.isFinite(timestamp.getTime()) ? timestamp : null
 }
 
-function getSequenceRequest(
+export function getSequenceRequest(
   action: PreHeatTreatmentLnkWorkflowAction,
   date: string,
   provisionalName: string,

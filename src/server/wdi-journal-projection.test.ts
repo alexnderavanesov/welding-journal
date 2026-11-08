@@ -26,7 +26,7 @@ describe('WDI filtering without a compact/full-card read gap', () => {
     [{ weldDate: '' }, 'ожидает сварку'],
     [{ vikResult: '', vikRequest: '' }, 'ожидает заявку'],
     [{ vikResult: '', vikRequest: 'ВИК-1' }, 'ожидает НК'],
-    [{ pstoRequired: 'да', pstoRequest: '' }, 'ожидает заявку'],
+    [{ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', pstoRequest: '' }, 'ожидает заявку'],
   ])('retains independent status expectation %j → %s', (changes, expected) => {
     const row = { id: 1, joint: 'S1', weldDate: '2026-09-01', hasVik: 'да', vikResult: 'годен', ...changes } as WeldRow
     const compact = Object.fromEntries(Object.keys(WELD_TABLE_SELECT).map(key => [key, row[key as keyof WeldRow]]))

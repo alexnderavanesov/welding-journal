@@ -24,7 +24,7 @@ describe('historical chronology exceptions belong to one weld, not its displayed
   })
 
   it('rejects a shared TVMT date change that creates the same error on a different same-number weld', () => {
-    const common = {
+    const common = { preHeatTreatmentMode: 'allPsto' as const,
       joint: 'F1', weldDate: '2026-03-01', pstoRequired: 'да', hasVik: 'да',
       pstoRequest: 'П', pstoRequestDate: '2026-03-03', pstoDate: '2026-03-04', pstoResult: 'проведено',
       tvmtRequest: 'Т', tvmtRequestDate: '2026-03-04', tvmtConclusionDate: '2026-03-10', tvmtConclusion: 'Общее ТВМТ',

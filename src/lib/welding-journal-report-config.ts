@@ -98,12 +98,13 @@ export const REQUEST_AND_RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
+  'revisionActuality',
   ...REQUEST_AND_RESULT_FIELD_KEYS,
   'id',
   'dispatcherTasks',
   'jsrDocument',
   'checklistDocument',
-  'zniDocument',
+  'zniDocument', 'custom1Document', 'custom2Document',
   'officiality',
   'createdAt',
   'weldingUpdatedAt',
@@ -173,7 +174,7 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'weldingJournalNote',
   'jsrDocument',
   'checklistDocument',
-  'zniDocument',
+  'zniDocument', 'custom1Document', 'custom2Document',
   'boq',
   'testTypes',
   'testContour',

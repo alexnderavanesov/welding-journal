@@ -41,7 +41,7 @@ describe('inactive rejected branch: history is retained, continuation is not req
     expect(getDispatcherTaskCode(tasks[0])).toBe('СП-09')
     expect(buildDispatcherTaskCodeIndexRows(tasks, [source, repair]).map(entry => entry.rowId)).toEqual([1, 2])
     const actions = getDispatcherTaskActionSpecs(tasks[0])
-    expect(actions.map(action => action.id)).toEqual(['set-chain-inactive', 'set-chain-active'])
+    expect(actions.map(action => action.id)).toEqual(['edit-weld'])
     expect(buildJointNextActions(source, tasks)[0]).toMatchObject({ title: 'СП-09 · Проверить актуальность цепочки', kind: 'dispatcherTask' })
     for (const resolved of [[source, { ...repair, revisionActuality: null }], [{ ...source, revisionActuality: 'не актуален' }, repair]]) {
       expect(buildRepeatedJointTasks(resolved).some(task => task.kind === 'check' && task.reason === 'проверить актуальность цепочки')).toBe(false)

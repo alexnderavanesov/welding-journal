@@ -70,7 +70,7 @@ describe('shared LNK template fields follow the document stage', () => {
     const noPre = buildPreHeatTreatmentSystemDocumentRow(source, [])
     for (const row of [noMain, noPre]) expect(await values(await createWeldingJournalBlobFromTemplate(template('lnkConclusionVik'), [row]))).toEqual(['нет', 'нет', 'нет', 'нет'])
   })
-  it.each(['weldingJournal', 'checklist', 'zni'] as const)('keeps both stages independent in the general document %s', async id => {
+  it.each(['weldingJournal', 'checklist', 'zni', 'custom1', 'custom2'] as const)('keeps both stages independent in the general document %s', async id => {
     const book = template(id)
     expect(await values(await createWeldingJournalBlobFromTemplate(book, [source]))).toEqual(['Дефекты: до ТО ВИК.', 'Дефекты: до ТО РК.', 'Дефекты: до ТО УЗК.', 'Дефекты: до ТО ПВК.'])
     book.constructorConfig = { ...config, bindings: config.bindings.map((binding, i) => ({ ...binding, parts: [{ field: pairs[i][1] }] })) }

@@ -13,7 +13,7 @@ import {
 
 describe('system document virtual rows', () => {
   it('does not reuse current-cycle document IDs when selecting historical document fields', () => {
-    const source: WeldRow = {
+    const source: WeldRow = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1, pstoRequired: 'да', pstoRequest: 'Первичная', pstoRequestDate: '2026-10-01',
       tvmtRequest: 'Первичная ТВМТ', tvmtRequestDate: '2026-10-02',
       systemDocumentIds: { pstoRequest: 300, heatTreatmentDiagram: 301, tvmtRequest: 302, tvmtConclusion: 303 },

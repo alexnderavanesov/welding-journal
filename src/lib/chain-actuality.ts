@@ -4,6 +4,8 @@ import { programJointIdentity } from './line-program-topology'
 import { isRevisionNotActual } from './revision-actuality'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 
+export type ChainActualityConfirmation = { active: boolean; token: string; confirmed: true }
+
 /** One actuality decision belongs to one physical connection. Persisted IDs survive
  * renaming; same-name unofficial repeats share the decision. Y is a new root,
  * never an edge to its cut parent or to the other side of the coil. */

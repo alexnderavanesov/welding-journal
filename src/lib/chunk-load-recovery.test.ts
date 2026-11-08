@@ -10,6 +10,7 @@ describe('chunk load recovery', () => {
     'Importing a module script failed.',
     'Failed to fetch dynamically imported module: /assets/page.js',
     'Loading chunk 42 failed',
+    'Unable to preload CSS for /assets/line-program-page-123.css',
   ])('recognizes a recoverable module error: %s', (message) => {
     expect(isChunkLoadError(new Error(message))).toBe(true)
   })

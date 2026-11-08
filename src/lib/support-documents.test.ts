@@ -21,7 +21,7 @@ async function read(blob: Blob, rowCount: number) {
   return Array.from({ length: rowCount }, (_, r) => fields.map((_, c) => sheet[XLSX.utils.encode_cell({ r, c })]?.v ?? ''))
 }
 const repeat = { id: 21, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-09-03' }
-const root: WeldRow = { id: 1, joint: 'ОП44/3', connectionType: 'Т1', weldLength: '600.123456789123456789', pstoRequired: 'да',
+const root: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'ОП44/3', connectionType: 'Т1', weldLength: '600.123456789123456789', pstoRequired: 'да',
   pstoRequest: 'ПСТО-1', pstoDate: '2026-09-02', pstoResult: 'проведено', heatTreatmentDiagram: 'Д-1', tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-1', pstoRepeatCycles: [repeat] }
 
 describe('support length and cycle data in actual document workbooks', () => {

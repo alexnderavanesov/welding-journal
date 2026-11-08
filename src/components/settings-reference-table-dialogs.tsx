@@ -20,6 +20,7 @@ import {
   type EditableGrid,
 } from '@/lib/settings-reference-table-editor'
 import { calculateWdi } from '@/lib/wdi'
+import { useSettingsDirty } from './settings-draft'
 
 type SaveHandler<T> = (table: T) => Promise<boolean>
 
@@ -27,7 +28,9 @@ export function WdiTableEditorDialog({
   table,
   onClose,
   onSave,
+  saveLabel,
 }: {
+  saveLabel?: string
   table: WdiTableSettings | null
   onClose: () => void
   onSave: SaveHandler<WdiTableSettings>
@@ -40,6 +43,7 @@ export function WdiTableEditorDialog({
   const [testDiameter, setTestDiameter] = useState('')
   const [testThickness, setTestThickness] = useState('')
   const isDirty = JSON.stringify(grid) !== JSON.stringify(initialGrid)
+  useSettingsDirty('other.table-editor', isDirty)
   const columnCount = Math.max(2, ...grid.map((row) => row.length))
   const normalizedGrid = normalizeGridWidth(grid, columnCount)
 
@@ -236,7 +240,7 @@ export function WdiTableEditorDialog({
         error={error}
         isSaving={isSaving}
         onCancel={() => void requestClose()}
-        onSave={() => void save()}
+        onSave={() => void save()} saveLabel={saveLabel}
         startActions={(
           <>
             <Button type="button" variant="outline" onClick={addDiameterRow}><Plus className="mr-2 h-4 w-4" />Добавить диаметр</Button>
@@ -252,7 +256,9 @@ export function RkExposureTableEditorDialog({
   table,
   onClose,
   onSave,
+  saveLabel,
 }: {
+  saveLabel?: string
   table: RkExposureTableSettings | null
   onClose: () => void
   onSave: SaveHandler<RkExposureTableSettings>
@@ -267,6 +273,7 @@ export function RkExposureTableEditorDialog({
   const [scrollTargetDiameterKey, setScrollTargetDiameterKey] = useState<string | null>(null)
   const matrixViewportRef = useRef<HTMLDivElement>(null)
   const isDirty = JSON.stringify(grid) !== JSON.stringify(initialGrid)
+  useSettingsDirty('processes.rk-editor', isDirty)
   const normalizedGrid = useMemo(() => normalizeGridWidth(grid, 4), [grid])
   const diameterGroups = useMemo(() => buildRkExposureMatrix(normalizedGrid), [normalizedGrid])
   const matrixOptionCount = diameterGroups.reduce((sum, group) => sum + group.options.length, 0)
@@ -632,7 +639,7 @@ export function RkExposureTableEditorDialog({
         error={error}
         isSaving={isSaving}
         onCancel={() => void requestClose()}
-        onSave={() => void save()}
+        onSave={() => void save()} saveLabel={saveLabel}
         startActions={pendingDiameter === null ? (
           <Button type="button" variant="outline" onClick={() => { setPendingDiameter(''); setError(null) }}><Plus className="mr-2 h-4 w-4" />Добавить диаметр</Button>
         ) : (
@@ -741,7 +748,9 @@ function DialogFooter({
   onCancel,
   onSave,
   startActions,
+  saveLabel = 'Сохранить справочник',
 }: {
+  saveLabel?: string
   error: string | null
   isSaving: boolean
   onCancel: () => void
@@ -756,7 +765,7 @@ function DialogFooter({
         <Button type="button" variant="outline" onClick={onCancel}>Отмена</Button>
         <Button type="button" onClick={onSave} disabled={isSaving}>
           {isSaving ? null : <Save className="mr-2 h-4 w-4" />}
-          {isSaving ? 'Сохраняем...' : 'Сохранить справочник'}
+          {isSaving ? 'Сохраняем...' : saveLabel}
         </Button>
       </div>
     </div>

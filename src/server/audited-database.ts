@@ -51,7 +51,7 @@ function addChange(state: State, table: PgTable, before: Row | undefined, after:
   if (!row) return
   // Service counters/initialization are not user setting changes.
   if (table === schema.appSettings && !['control-processes', 'data-list', 'dispatcher', 'dispatcher-background',
-    'dispatcher-reminders', 'other', 'request-conclusion', 'save-check', 'system-index', 'specialist-defaults'].includes(row.key) && !/^reset.*Sequence$/.test(state.context.operation)) return
+    'dispatcher-reminders', 'other', 'request-conclusion', 'save-check', 'assignment-warnings', 'custom-document-names', 'system-index', 'specialist-defaults'].includes(row.key) && !/^reset.*Sequence$/.test(state.context.operation)) return
   const key = `${getTableName(table)}:${identity(table, row)}`
   const previous = state.changes.get(key)
   state.changes.set(key, { table, before: previous ? previous.before : before, after })

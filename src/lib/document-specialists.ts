@@ -14,7 +14,7 @@ export type SpecialistSnapshot = Pick<SpecialistRecord, 'id' | 'name' | 'certifi
 export type DocumentSpecialists = { first?: SpecialistSnapshot | null; second?: SpecialistSnapshot | null }
 export type SpecialistSelection = { first?: number | null; second?: number | null }
 export type SpecialistDraft = { common?: SpecialistSelection; documents?: Record<string, SpecialistSelection> }
-export type SpecialistCreationAssignment = { title: string; selection: SpecialistSelection }
+export type SpecialistCreationAssignment = { title: string; date?: string; selection: SpecialistSelection }
 export type SpecialistDocumentProfile = { kind: SpecialistKind; methods: readonly string[]; labels: readonly [string, string] }
 
 export function getSpecialistDocumentProfile(type: string, method?: string): SpecialistDocumentProfile | null {

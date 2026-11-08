@@ -9,7 +9,7 @@ const resultFor = (tab: StatisticsTab, rows: WeldRow[] = []) => buildStatisticsS
 
 describe('lossless statistics transport', () => {
   it.each<StatisticsTab>(['general', 'lnk', 'psto', 'supports', 'welders', 'lineSummary'])('round-trips every aggregate and drilldown on %s', tab => {
-    const rows = [1, 2, 7].map(id => ({ id, projectTitle: 'Проект', subtitleCode: 'Шифр', line: 'Линия',
+    const rows = [1, 2, 7].map(id => ({ preHeatTreatmentMode: 'allPsto' as const, id, projectTitle: 'Проект', subtitleCode: 'Шифр', line: 'Линия',
       joint: id === 7 ? 'ОП1' : `F${id}`, connectionType: id === 7 ? 'Т1' : 'С17', weldLength: '600.123456789',
       officiality: 'действующий', revisionActuality: 'актуальная', weldDate: '2026-10-01', stamp1KFact: 'A',
       hasVik: 'да', vikRequest: 'V', vikRequestDate: '2026-10-01', vikResult: 'годен', vikConclusion: 'C', vikConclusionDate: '2026-10-02',

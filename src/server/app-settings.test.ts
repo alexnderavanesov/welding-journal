@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { assertAppSettingVersion } from '@/server/app-settings'
+import { assertAppSettingVersion, legacyDlsSettingChangeAffectsDispatcher } from '@/server/app-settings'
 
 describe('app setting concurrency', () => {
   it('checks data-list changes and current usage under the validation lock before a direct settings write', () => {
@@ -38,5 +38,17 @@ describe('app setting concurrency', () => {
     expect(() => assertAppSettingVersion('current', 'stale')).toThrow(/изменена другим пользователем/i)
     expect(() => assertAppSettingVersion('current', undefined)).toThrow(/изменена другим пользователем/i)
     expect(() => assertAppSettingVersion(null, undefined)).toThrow(/изменена другим пользователем/i)
+  })
+})
+
+describe('legacy DLS dispatcher invalidation', () => {
+  it.each([undefined, null, {}, { officialDls: 'false' }, { officialDls: null }])('invalidates an effective fallback change with legacy %j', saveCheck => {
+    expect(legacyDlsSettingChangeAffectsDispatcher(undefined, { requireDlsForOfficialStamps: true }, saveCheck)).toBe(true)
+    expect(legacyDlsSettingChangeAffectsDispatcher({ requireDlsForOfficialStamps: true }, {}, saveCheck)).toBe(true)
+  })
+  it.each([false, true])('preserves an explicit officialDls=%s and ignores unrelated changes', officialDls => {
+    expect(legacyDlsSettingChangeAffectsDispatcher({}, { requireDlsForOfficialStamps: true }, { officialDls })).toBe(false)
+    expect(legacyDlsSettingChangeAffectsDispatcher({ requireDlsForOfficialStamps: true, wdi: 1 },
+      { requireDlsForOfficialStamps: true, wdi: 2 }, {})).toBe(false)
   })
 })

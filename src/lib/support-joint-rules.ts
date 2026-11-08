@@ -7,6 +7,7 @@ import { isSupportRepair, normalizeSupportWeldLength, SUPPORT_REPAIR_LENGTH_REAS
 import { getSupportWeldLengthError } from './support-length-value'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 import type { WeldFieldKey, WeldInput } from './weld-fields'
+import { shouldValidateOfficialStampCompatibilityForSave } from './welder-stamp-compatibility-validation'
 
 export const SUPPORT_JOINT_SAVE_RULE_CODE = 'СП-13'
 export type SupportJointRuleIssue = { fieldKeys: WeldFieldKey[]; message: string }
@@ -40,7 +41,14 @@ export function getSupportJointRuleIssues(
     }
   }
   if (!support) return issues
-  issues.push(...getSupportCompositionIssues(record))
+  // Existing composition remains a dispatcher warning. Unrelated corrections
+  // must not require rewriting old welding facts. New/copied joints and changes
+  // to identity, physical or qualification inputs still undergo the full check.
+  const unrelatedToStoredComposition = previous?.id != null && record.id === previous.id &&
+    !shouldValidateOfficialStampCompatibilityForSave(record, previous) &&
+    (['projectTitle', 'subtitleCode', 'line', 'joint', 'weldLength'] as const)
+      .every(key => text(record[key]) === text(previous[key]))
+  if (!unrelatedToStoredComposition) issues.push(...getSupportCompositionIssues(record))
   if (previous?.id && isSupportRepair(previous, settings) && normalizeSupportWeldLength(record.weldLength) !== normalizeSupportWeldLength(previous.weldLength)) {
     add(['weldLength'], SUPPORT_REPAIR_LENGTH_REASON)
   }

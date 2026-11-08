@@ -39,7 +39,11 @@ test('UI: диапазоны, сроки и архив допуска обнов
   settingsCaptured = true
   await page.goto('/settings#rules-dls-requirement')
   const toggle = page.getByRole('checkbox', { name: 'Требовать ДЛС для официальных клейм', exact: true })
-  if (!await toggle.isChecked()) await toggle.click()
+  if (!await toggle.isChecked()) {
+    await toggle.click()
+    await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+    await expect(page.getByRole('status')).toHaveText('Изменения сохранены.')
+  }
   await expect(toggle).toBeChecked()
   await expect.poll(() => withE2eDatabase(async db => JSON.parse((await db.query("select value from app_settings where key='save-check'")).rows[0]?.value ?? '{}').officialDls)).toBe(true)
   await page.goto('/welder-stamps')

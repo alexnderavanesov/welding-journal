@@ -1,5 +1,5 @@
 import { attachSupportProgramRates } from './support-program-context'
-import { and, asc, desc, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   appSettings,
@@ -95,7 +95,7 @@ import { persistCalculatedFinalStatuses } from '@/server/final-status-persistenc
 import { loadScopedAcceptedWarningKeys } from './accepted-warning-scope'
 import { getDispatcherScopeKey, visitDispatcherWeldRows } from './dispatcher-weld-rows'
 import { getFullRebuildCatchUpScopes } from './dispatcher-refresh-catchup'
-import { loadBoundedDispatcherDirtyScopes, MAX_SCOPED_REBUILD_SCOPES, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
+import { loadBoundedDispatcherDirtyScopes, loadDispatcherDirtyScopeSelection, MAX_SCOPED_REBUILD_ROWS, MAX_SCOPED_REBUILD_SCOPES, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
 import { loadDispatcherDateScopes } from './dispatcher-date-scopes'
 import { overlayPstoProgramPolicies } from './psto-chain-policy'
 import { readDispatcherTaskStateContext } from './dispatcher-task-state-context'
@@ -157,14 +157,15 @@ export { markDispatcherTaskIndexDirty }
 
 export async function ensureDispatcherTaskIndexFresh() {
   if (pendingDispatcherTaskIndexRefresh) return pendingDispatcherTaskIndexRefresh
-  const pending = ensureDispatcherTaskIndexFreshOnce()
+  const pending = ensureDispatcherTaskIndexFreshOnce().catch(error => {
+    // Report once per coalesced calculation, even if all HTTP callers left.
+    // All waiters receive the same readable message, not SQL/driver details.
+    console.error('Не удалось выполнить пересчет индекса диспетчера.', error)
+    throw new Error('Не удалось обновить расчёт. Повторите загрузку.', { cause: error })
+  })
   pendingDispatcherTaskIndexRefresh = pending
   try {
     return await pending
-  } catch (error) {
-    // Report once per coalesced calculation, even if all HTTP callers left.
-    console.error('Не удалось выполнить пересчет индекса диспетчера.', error)
-    throw error
   } finally {
     if (pendingDispatcherTaskIndexRefresh === pending) pendingDispatcherTaskIndexRefresh = null
   }
@@ -208,9 +209,13 @@ async function ensureDispatcherTaskIndexFreshOnce(
     if (!refreshState) throw new Error('Не удалось получить состояние расчета диспетчера.')
     if (isDispatcherTaskIndexFresh(refreshState)) return refreshState
 
-    const dirtyScopes = forceFullRebuild ? null : await getScopedDispatcherDirtyScopes(tx, refreshState)
-    const boundedScopes = dirtyScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, dirtyScopes)
-    if (boundedScopes !== null) {
+    const calculationStartedAt = new Date()
+    const dirtyScopes = forceFullRebuild ? null : await getScopedDispatcherDirtyScopes(tx, refreshState, calculationStartedAt)
+    const selection = dirtyScopes === null ? null : await loadDispatcherDirtyScopeSelection(tx, dirtyScopes)
+    if (selection && selection.rowCount > MAX_SCOPED_REBUILD_ROWS) {
+      return rebuildStagedScopedDispatcherTaskIndex(tx, refreshState, selection.scopes, calculationStartedAt)
+    }
+    if (selection !== null) {
       // Scoped rebuilds are bounded. Keep the established registry -> index
       // order while validating the state immediately before applying one.
       await lockWelderStampRegistry(tx)
@@ -225,15 +230,15 @@ async function ensureDispatcherTaskIndexFreshOnce(
       if (isDispatcherTaskIndexFresh(lockedState)) return lockedState
       const calculationStartedAt = new Date()
       const lockedDirtyScopes = await getScopedDispatcherDirtyScopes(tx, lockedState, calculationStartedAt)
-      const lockedBoundedScopes = lockedDirtyScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, lockedDirtyScopes)
+      const lockedSelection = lockedDirtyScopes === null ? null : await loadDispatcherDirtyScopeSelection(tx, lockedDirtyScopes)
       // A concurrent save widened the invalidation while the locks were being
-      // acquired. Leave it stale; the next coalesced refresh will do a full pass
-      // without holding the writer lock for that calculation.
-      if (lockedBoundedScopes === null) {
-        retryWithFullRebuild = true
+      // acquired. Release the writer locks and select the new strategy outside
+      // them: a large known line can still use the staged scoped calculation.
+      if (!lockedSelection || lockedSelection.rowCount > MAX_SCOPED_REBUILD_ROWS) {
+        retryWithFullRebuild = lockedSelection === null
         return lockedState
       }
-      return rebuildScopedDispatcherTaskIndex(tx, lockedState, lockedBoundedScopes, calculationStartedAt)
+      return rebuildScopedDispatcherTaskIndex(tx, lockedState, lockedSelection.scopes, calculationStartedAt)
     }
 
     return rebuildFullDispatcherTaskIndex(tx, refreshState)
@@ -477,9 +482,7 @@ async function rebuildMeasuredFullDispatcherTaskIndex(
   return updatedState
 }
 
-export async function calculateFullDispatcherTasks(
-  tx: DispatcherIndexTransaction,
-  options: {
+type DispatcherCalculationOptions = {
     dispatcherSettings?: (current: DispatcherSettings) => DispatcherSettings
     includeWelderStampExpiryTasks?: boolean
     onProgress?: (stage: string) => void
@@ -487,7 +490,16 @@ export async function calculateFullDispatcherTasks(
     onTaskPageRows?: (scopeKey: string, rows: RepeatedJointTask[]) => void | Promise<void>
     taskSnapshotLimit?: number
     metrics?: DispatcherCalculationMetrics
-  } = {},
+}
+
+export async function calculateFullDispatcherTasks(
+  tx: DispatcherIndexTransaction, options: DispatcherCalculationOptions = {},
+) {
+  return calculateDispatcherTasks(tx, options)
+}
+
+async function calculateDispatcherTasks(
+  tx: DispatcherIndexTransaction, options: DispatcherCalculationOptions, scopeWhere?: SQL,
 ) {
   const metrics = options.metrics
   metrics?.mark('supporting-data')
@@ -583,7 +595,7 @@ export async function calculateFullDispatcherTasks(
       }
     }
     options.onProgress?.('weld-batch-calculated')
-  }, metrics?.mark)
+  }, metrics?.mark, scopeWhere)
   metrics?.mark('registry-reminders')
   options.onProgress?.('chain-continuations-built')
   const welderStampExpiryTasks = options.includeWelderStampExpiryTasks === false
@@ -633,6 +645,74 @@ export async function lockWeldJointWritesForDispatcherReplacement(
   await tx.execute(sql`lock table ${weldJoints} in exclusive mode`)
 }
 
+function buildDispatcherScopeWhere(dirtyScopes: DispatcherDirtyScope[]) {
+  return or(...dirtyScopes.map((scope) => and(
+    normalizedTextEquals(weldJoints.projectTitle, scope.projectTitle),
+    normalizedTextEquals(weldJoints.subtitleCode, scope.subtitleCode),
+    normalizedTextEquals(weldJoints.line, scope.line),
+  ))) ?? sql`false`
+}
+
+/** Prepare complete affected lines while writers remain free. The source
+ * revision covers every calculation dependency; a changed revision discards
+ * this attempt before any persistent index/status replacement. READ COMMITTED
+ * lets the final check see writes committed during preparation.
+ */
+async function rebuildStagedScopedDispatcherTaskIndex(
+  tx: DispatcherIndexTransaction,
+  refreshState: typeof dispatcherTaskIndexState.$inferSelect,
+  dirtyScopes: DispatcherDirtyScope[],
+  calculationStartedAt: Date,
+) {
+  const metrics = startDispatcherCalculationMetrics('scoped')
+  let outcome: 'completed' | 'discarded' | 'failed' = 'failed'
+  try {
+    await createDispatcherTaskIndexStage(tx, 'active')
+    await createDispatcherTaskPageStage(tx)
+    const indexWriter = createDispatcherTaskIndexStageWriter(tx, 'active')
+    const pageWriter = createDispatcherTaskPageStageWriter(tx)
+    const calculation = await calculateDispatcherTasks(tx, {
+      metrics, taskSnapshotLimit: 0,
+      onTaskIndexRows: rows => indexWriter.append(rows),
+      onTaskPageRows: (key, rows) => pageWriter.append(key, rows),
+    }, buildDispatcherScopeWhere(dirtyScopes))
+    metrics?.mark('flush-stages')
+    await indexWriter.flush()
+    await pageWriter.flush()
+    const newPageTotals = pageWriter.getMetrics()
+    if (newPageTotals.taskCount !== calculation.repeatedJointTaskCount) {
+      throw new Error('Количество сохранённых карточек диспетчера не совпало с расчётом.')
+    }
+    metrics?.mark('duplicate-keys')
+    const duplicateKeys = await listScopedDuplicateWeldKeys(tx, refreshState.duplicateKeys, dirtyScopes)
+    metrics?.mark('publication-locks')
+    await lockWelderStampRegistry(tx)
+    await lockWeldJointWritesForDispatcherReplacement(tx)
+    await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_INDEX_LOCK_ID})`)
+    const [lockedState] = await tx.select().from(dispatcherTaskIndexState)
+      .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID)).limit(1)
+    if (!lockedState) throw new Error('Не удалось получить состояние расчета диспетчера.')
+    if (lockedState.sourceRevision !== refreshState.sourceRevision ||
+        lockedState.fullRebuild || !isDispatcherTaskIndexPayloadCurrent(lockedState.repeatedTasks) ||
+        isDispatcherTaskIndexFresh(lockedState)) {
+      outcome = 'discarded'
+      return lockedState
+    }
+    metrics?.mark('persist-final-statuses')
+    const changes = await persistCalculatedFinalStatuses(tx, calculation.sourceRows, calculation.preparedRows)
+    if (changes > 0) await invalidateDerivedCalculationCache(tx, { preserveLineOverviews: true })
+    metrics?.mark('publish-row-index')
+    await publishStagedDispatcherTaskIndexRows(tx, calculation.sourceRows.map(row => row.id!))
+    metrics?.mark('publish-pages-and-state')
+    const state = await publishScopedDispatcherTaskPages(tx, lockedState, dirtyScopes, newPageTotals,
+      calculation.chainContinuations, calculation.tasks.welderStampExpiryTasks, calculationStartedAt, duplicateKeys)
+    outcome = 'completed'
+    return state
+  } finally {
+    metrics?.finish(outcome)
+  }
+}
+
 async function rebuildScopedDispatcherTaskIndex(
   tx: DispatcherIndexTransaction,
   lockedState: typeof dispatcherTaskIndexState.$inferSelect,
@@ -640,11 +720,7 @@ async function rebuildScopedDispatcherTaskIndex(
   calculationStartedAt = new Date(),
 ) {
   if (!dirtyScopes.length) return rebuildDispatcherRegistryReminders(tx, lockedState, calculationStartedAt)
-  const scopeWhere = or(...dirtyScopes.map((scope) => and(
-    normalizedTextEquals(weldJoints.projectTitle, scope.projectTitle),
-    normalizedTextEquals(weldJoints.subtitleCode, scope.subtitleCode),
-    normalizedTextEquals(weldJoints.line, scope.line),
-  ))) ?? sql`false`
+  const scopeWhere = buildDispatcherScopeWhere(dirtyScopes)
   const rows = await tx
     .select()
     .from(weldJoints)
@@ -691,12 +767,6 @@ async function rebuildScopedDispatcherTaskIndex(
     welderStamps: stampRows.map(toWelderStampRecord),
     welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
   }
-  const dirtyScopeKeys = [...new Set(dirtyScopes.map(getDispatcherScopeKey))]
-  const oldPageTotals = await tx.execute<{ pageCount: number | string; taskCount: number | string }>(sql`
-    select count(*)::int as "pageCount", coalesce(sum("task_count"), 0)::int as "taskCount"
-    from ${dispatcherTaskPages}
-    where "scope_key" = any(${sql.param(dirtyScopeKeys)}::text[])
-  `)
   await createDispatcherTaskPageStage(tx)
   const taskPageWriter = createDispatcherTaskPageStageWriter(tx)
   const scopedChainContinuations: ReturnType<typeof buildJointChainContinuations> = []
@@ -722,7 +792,28 @@ async function rebuildScopedDispatcherTaskIndex(
     }
   }
   await taskPageWriter.flush()
-  const newPageTotals = taskPageWriter.getMetrics()
+  await replaceScopedDispatcherTaskIndexRows(tx, rowIds, taskIndexRows)
+  return publishScopedDispatcherTaskPages(tx, lockedState, dirtyScopes, taskPageWriter.getMetrics(),
+    scopedChainContinuations,
+    buildVisibleDispatcherTasks({ ...dispatcherTaskInput, rows: [], includeRepeatedJointTasks: false }).welderStampExpiryTasks,
+    calculationStartedAt)
+}
+
+/** Both strategies publish pages, totals, continuations and revision together,
+ * with the row index/statuses already replaced in the same locked transaction.
+ */
+async function publishScopedDispatcherTaskPages(
+  tx: DispatcherIndexTransaction, lockedState: typeof dispatcherTaskIndexState.$inferSelect,
+  dirtyScopes: DispatcherDirtyScope[], newPageTotals: { taskCount: number; pageCount: number },
+  scopedChainContinuations: ReturnType<typeof buildJointChainContinuations>,
+  welderStampExpiryTasks: WelderStampExpiryTask[], calculationStartedAt: Date, duplicateKeys?: string[],
+) {
+  const dirtyScopeKeys = [...new Set(dirtyScopes.map(getDispatcherScopeKey))]
+  const oldPageTotals = await tx.execute<{ pageCount: number | string; taskCount: number | string }>(sql`
+    select count(*)::int as "pageCount", coalesce(sum("task_count"), 0)::int as "taskCount"
+    from ${dispatcherTaskPages}
+    where "scope_key" = any(${sql.param(dirtyScopeKeys)}::text[])
+  `)
   await tx.delete(dispatcherTaskPages).where(sql`
     ${dispatcherTaskPages.scopeKey} = any(${sql.param(dirtyScopeKeys)}::text[])
   `)
@@ -750,7 +841,6 @@ async function rebuildScopedDispatcherTaskIndex(
     ),
     ...scopedChainContinuations,
   ]
-  await replaceScopedDispatcherTaskIndexRows(tx, rowIds, taskIndexRows)
 
   const publishedRevision = getDispatcherTaskPublicationRevision(lockedState)
   const [updatedState] = await tx
@@ -758,20 +848,22 @@ async function rebuildScopedDispatcherTaskIndex(
     .set({
       sourceRevision: publishedRevision,
       computedRevision: publishedRevision,
-      welderStampExpiryTasks: JSON.stringify(buildVisibleDispatcherTasks({ ...dispatcherTaskInput, rows: [], includeRepeatedJointTasks: false }).welderStampExpiryTasks),
+      welderStampExpiryTasks: JSON.stringify(welderStampExpiryTasks),
       repeatedTasks: serializeDispatcherTaskIndexPayload(repeatedTasks, chainContinuations, {
         totalTaskCount: repeatedJointTaskCount,
         totalPageCount: repeatedJointTaskPageCount,
         taskFilterOptions: await listActiveDispatcherTaskFilterOptions(tx),
       }),
-      duplicateKeys: JSON.stringify(await listScopedDuplicateWeldKeys(tx, lockedState.duplicateKeys, dirtyScopes)),
+      duplicateKeys: JSON.stringify(duplicateKeys ?? await listScopedDuplicateWeldKeys(tx, lockedState.duplicateKeys, dirtyScopes)),
       dirtyScopes: '[]',
       fullRebuild: false,
       computedAt: calculationStartedAt,
       updatedAt: new Date(),
     })
-    .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
+    .where(and(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID),
+      eq(dispatcherTaskIndexState.sourceRevision, lockedState.sourceRevision)))
     .returning()
+  if (!updatedState) throw new Error('Состояние расчета диспетчера изменилось во время сохранения индекса.')
   return updatedState
 }
 
@@ -846,6 +938,12 @@ export async function replaceScopedDispatcherTaskIndexRows(
   await writer.append(taskIndexRows)
   await writer.flush()
 
+  await publishStagedDispatcherTaskIndexRows(tx, rowIds)
+}
+
+async function publishStagedDispatcherTaskIndexRows(
+  tx: Pick<DispatcherIndexTransaction, 'delete' | 'execute'>, rowIds: readonly number[],
+) {
   if (rowIds.length > 0) {
     await tx
       .delete(dispatcherRowTasks)

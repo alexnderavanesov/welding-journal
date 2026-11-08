@@ -1056,7 +1056,7 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   tx: SystemDocumentSequenceTransaction,
   currentRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   previousRows: ReadonlyMap<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>,
-  options: { documentNamesOnly?: boolean } = {},
+  options: { documentNamesOnly?: boolean; journalFieldsOnly?: boolean } = {},
 ) {
   const rowIds = new Set<number>([
     ...currentRows.map((row) => Number(row.id)),
@@ -1064,6 +1064,14 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   ])
   if (rowIds.size === 0) return
 
+  // The journal whitelist contains only materials and annotations. None of
+  // those fields changes chain identities, control-document grouping or
+  // source positions. Do not reconcile old state/memberships/metadata (or
+  // read a whole shared document) merely because updatedAt has changed.
+  if (options.journalFieldsOnly) {
+    await syncLayeredControlDocumentsForWeldChangesInTransaction(tx, currentRows, previousRows, { refreshTitlesOnly: true })
+    return
+  }
   if (!options.documentNamesOnly) {
     await syncProgramChainStates(tx, currentRows, previousRows)
   }

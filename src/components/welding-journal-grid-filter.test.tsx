@@ -138,6 +138,32 @@ it('loads another page on the first More click and selects all remote matches, i
   await waitFor(() => expect(parseWeldColumnChoiceFilter(change.mock.lastCall?.[0].joint ?? '')?.values).toEqual(['J001', 'J002', 'J999']))
   expect(mocks.select.mock.lastCall![0].data).toMatchObject({ fieldKey: 'joint', revision: 7, match: '' })
 })
+it('keeps Escape in the popup while remote More loads and after its last page removes the button', async () => {
+  const options = Array.from({ length: 300 }, (_, index) => ({ value: `J${index}`, label: `J${index}`, count: 1 }))
+  let finish!: (value: unknown) => void
+  mocks.page.mockImplementation(({ data }) => data.start
+    ? new Promise(resolve => { finish = resolve })
+    : Promise.resolve({ options: options.slice(0, 150), total: 300, next: 150, revision: 7 }))
+  const change = setup('joint')
+  await screen.findByRole('checkbox', { name: /^J0/ })
+  const more = screen.getByRole('button', { name: /Ещё значения/ })
+  // fireEvent.click does not perform the browser's native pointer focus.
+  more.focus()
+  expect(more).toHaveFocus()
+  fireEvent.click(more)
+  expect(screen.getByRole('textbox')).toHaveFocus()
+  await waitFor(() => expect(more).toBeDisabled())
+  await waitFor(() => expect(mocks.page).toHaveBeenCalledTimes(2))
+  await act(async () => finish({ options: options.slice(150), total: 300, revision: 7 }))
+  await screen.findByRole('checkbox', { name: /^J299/ })
+  expect(screen.getAllByRole('checkbox')).toHaveLength(300)
+  expect(screen.queryByRole('button', { name: /Ещё значения/ })).not.toBeInTheDocument()
+  expect(screen.getByRole('textbox')).toHaveFocus()
+  expect(change).not.toHaveBeenCalled()
+  expect(mocks.close).not.toHaveBeenCalled()
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+  expect(mocks.close).toHaveBeenCalledOnce()
+})
 it('ignores a late Select Found result after the search changes', async () => {
   mocks.page.mockResolvedValue({ options: [{ value: 'J001', label: 'J001', count: 1 }], total: 1000, next: 1, revision: 7 })
   let finish!: (value: unknown) => void

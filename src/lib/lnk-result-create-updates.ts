@@ -40,7 +40,7 @@ export function buildLnkResultRows({
   conclusionName: string
   rkExposureTable?: RkExposureTableSettings | null
   saveCheckSettings?: SaveCheckSettings
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'> & Partial<Pick<ControlProcessSettings, 'pvkGoodOnly'>>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'> & Partial<Pick<ControlProcessSettings, 'pvkGoodOnly'>>
 }) {
   const rkExposureTable = suppliedRkExposureTable === undefined
     ? loadOtherSettings().rkExposureTable
@@ -109,10 +109,7 @@ export function buildLnkResultRows({
     proposedRecords,
     records,
     saveCheckSettings,
-    controlProcessSettings?.preHeatTreatmentLnkEnabled &&
-      controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete
-      ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
-      : undefined,
+    { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS },
   )
   return proposedRecords
 }

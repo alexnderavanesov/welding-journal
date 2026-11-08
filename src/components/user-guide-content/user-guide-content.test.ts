@@ -8,7 +8,7 @@ import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sectio
 describe('user guide content', () => {
   it('explains PSTO captions inside the picture sections without hiding historical documents', () => {
     const content = JSON.stringify(REFERENCE_GUIDE_SECTIONS_2)
-    for (const text of ['ПСТО не предусмотрено', 'ПСТО отменено', 'НК до ТО отключён в настройках',
+    for (const text of ['ПСТО не предусмотрено', 'ПСТО отменено', 'НК до ТО не требуется для этого стыка на текущей линии',
       'без отдельного блока сверху', 'Подписи не скрывают документы и историю']) expect(content).toContain(text)
   })
   it('teaches four contextual corrections and preserves dependency-protected cancellation', () => {
@@ -42,10 +42,10 @@ describe('user guide content', () => {
     const content = JSON.stringify(stamps)
     expect(content).toContain('Реестры справочников и параметры проверки')
     expect(content).toContain('В профиле → «Правила системы» → «Параметры проверки»')
-    expect(content).toContain('справочная таблица с условиями для С/У и четырьмя примерами Т')
+    expect(content).toContain('«Наглядный» со схемами и «Табличный»')
     expect(content).toContain('сохраняются поиск, фильтры и раскрытая карточка')
     expect(content).toContain('не меняет настройки или допуски')
-    expect(content).toContain('без внутреннего окна')
+    expect(content).toContain('Вертикальная прокрутка общая со страницей')
     expect(content).toContain('Разобрать свой пример проверки клейма')
     expect(content).toContain('не решение «допущен»')
     expect(content).toContain('Цветные примеры: у кого проверяется параметр')

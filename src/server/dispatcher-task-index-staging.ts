@@ -112,15 +112,14 @@ export function createDispatcherTaskPageStageWriter(executor: StageExecutor) {
     if (pendingPages.length === 0) return
     const pages = pendingPages.splice(0, pendingPages.length)
     const stage = getDispatcherTaskPageStageTable()
+    // Keep each serialized page a scalar text parameter. A text[] parameter
+    // makes the driver escape the complete JSON again as an array literal.
     await executor.execute(sql`
       insert into ${stage} ("scope_key", "page_number", "task_count", "tasks")
-      select source.scope_key, source.page_number, source.task_count, source.tasks
-      from unnest(
-        ${sql.param(pages.map((page) => page.scopeKey))}::text[],
-        ${sql.param(pages.map((page) => page.pageNumber))}::integer[],
-        ${sql.param(pages.map((page) => page.taskCount))}::integer[],
-        ${sql.param(pages.map((page) => page.tasks))}::text[]
-      ) as source(scope_key, page_number, task_count, tasks)
+      values ${sql.join(pages.map(page => sql`(
+        ${sql.param(page.scopeKey)}, ${sql.param(page.pageNumber)},
+        ${sql.param(page.taskCount)}, ${sql.param(page.tasks)}
+      )`), sql`, `)}
     `)
     insertRequestCount += 1
   }

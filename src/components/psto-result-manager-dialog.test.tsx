@@ -6,7 +6,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('PstoResultManagerDialog', () => {
   it('preserves the selected repeat while server search temporarily clears the rows', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 7, pstoRequired: 'да', pstoRequest: 'ПСТО-1',
       pstoRepeatCycles: [{ id: 70, weldJointId: 7, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-10-30' }],
     } as WeldRow
@@ -25,7 +25,7 @@ describe('PstoResultManagerDialog', () => {
 
   it('does not present a missing TVMT result as good and allows restoring it explicitly', () => {
     const onCorrectStage = vi.fn()
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 7,
       rowVersion: '107',
       projectTitle: 'Проект А',
@@ -91,7 +91,7 @@ describe('PstoResultManagerDialog', () => {
 
   it('blocks changing the latest good TVMT to failed after post-heat-treatment LNK exists', () => {
     const onCorrectStage = vi.fn()
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 8,
       rowVersion: '108',
       projectTitle: 'Проект А',
@@ -165,7 +165,7 @@ describe('PstoResultManagerDialog', () => {
 
   it('keeps a long TVMT conclusion inside the card and opens the repeat cycle blocking a correction', () => {
     const onCorrectTvmtAndRemoveLaterCycles = vi.fn()
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 9,
       rowVersion: '109',
       projectTitle: 'Проект А',
@@ -246,7 +246,7 @@ describe('PstoResultManagerDialog', () => {
 
   it('shows the missing requested stage and repairs its date and name together', () => {
     const onCorrectStage = vi.fn()
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 10,
       rowVersion: '110',
       projectTitle: 'Проект А',

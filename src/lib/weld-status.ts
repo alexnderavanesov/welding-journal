@@ -8,10 +8,11 @@ import {
   getRejectedPreHeatTreatmentControls,
 } from '@/lib/lnk-control-stage'
 import { encodeIdentityKey } from '@/lib/identity-key'
+import { isRevisionNotActual } from '@/lib/revision-actuality'
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
-export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'не годен по дублю', 'ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ошибка'] as const
+export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'не годен по дублю', 'ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ожидает заявку до ТО', 'ожидает НК до ТО', 'неактуальный', 'ошибка'] as const
 const resultStatusByText = new Map(RESULT_STATUS_OPTIONS.map(status => [status.toLowerCase(), status]))
 const finalStatusByText = new Map(FINAL_STATUS_OPTIONS.map(status => [status.toLowerCase(), status]))
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -59,6 +60,12 @@ export function buildFinalStatusRowsContext(rows: readonly WeldInput[]): FinalSt
 }
 
 export function calculateFinalStatus(record: WeldInput) {
+  const status = calculateControlFinalStatus(record)
+  // Inactivity ends the waiting workflow, but never hides factual results or errors.
+  return isRevisionNotActual(record.revisionActuality) && status.startsWith('ожидает') ? 'неактуальный' : status
+}
+
+function calculateControlFinalStatus(record: WeldInput) {
   const hasResultWithoutEnabledControl = getInactiveControlResultErrors(record).length > 0
   if (hasResultWithoutEnabledControl) return 'ошибка'
 

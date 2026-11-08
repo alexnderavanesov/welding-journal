@@ -120,6 +120,7 @@ export function buildWeldingJournalGenerationPlan({
         periodFrom,
         periodTo,
         templateId: type,
+        documentLabel,
       }),
     ),
   )

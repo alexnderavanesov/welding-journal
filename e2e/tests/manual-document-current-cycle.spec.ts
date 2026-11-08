@@ -8,7 +8,7 @@ import { documentGridRow } from '../document-grid'
 import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
 
 const project = 'E2E manual document current cycle'
-const types = [['weldingJournal', 'ЖСР'], ['checklist', 'Чек-лист'], ['zni', 'ЗНИ']] as const
+const types = [['weldingJournal', 'ЖСР'], ['checklist', 'Чек-лист'], ['zni', 'ЗНИ'], ['custom1', 'Пользовательский 1'], ['custom2', 'Пользовательский 2']] as const
 const fields = ['joint', 'pstoRequest', 'pstoDate', 'heatTreatmentDiagram', 'pstoResult',
   'tvmtRequest', 'tvmtResult', 'tvmtConclusionDate', 'tvmtConclusion']
 const store = createDocumentTemplateFileStore(resolveDocumentTemplateStorageDirectory())
@@ -21,7 +21,7 @@ test.afterEach(async ({ page }) => {
   if (fileKey) await store.delete(fileKey)
 })
 
-test('ЖСР, чек-лист и ЗНИ: формирование и свежий Excel используют текущий цикл, включая пустой повтор', async ({ page }) => {
+test('Общие и пользовательские документы: формирование и свежий Excel используют текущий цикл, включая пустой повтор', async ({ page }) => {
   test.setTimeout(120_000)
   expect(process.env.DOCUMENT_TEMPLATE_STORAGE_PATH).toContain('welding-e2e-templates-')
   const book = XLSX.utils.book_new()

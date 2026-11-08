@@ -281,7 +281,8 @@ test('installed Safari keeps idle rows after another writer, opens fresh data an
     await execute(`window.dispatchEvent(new Event('focus'))`)
     await wait(`return document.body.innerText.includes('Есть обновления')`)
     expect(await execute(`return [window.stabilityDocument,window.stabilityMutations]`)).toEqual(['same', 0])
-    await execute(`document.querySelector('.ag-row[row-index="0"] [col-id="isometry"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`)
+    // Open the complete card through a field outside the inline whitelist.
+    await execute(`document.querySelector('.ag-row[row-index="0"] [col-id="projectTitle"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`)
     await wait(`return !!document.querySelector('[role="dialog"] input[value="SAFARI-FRESH"]')`)
     const input = await execute(`const el=document.querySelector('[role="dialog"] input[value="SAFARI-FRESH"]');el.dataset.safariIsometry='';return true`)
     expect(input).toBe(true)
@@ -449,9 +450,16 @@ test('rapid repeated cell edits keep server facts and displayed values aligned',
     const value = `RAPID-${layout}-${info.repeatEachIndex}`
     const cell = page.locator(`.ag-row[row-id="${id}"] [col-id="isometry"]`)
     await cell.dblclick()
-    await editor(page).getByLabel('Изометрия', { exact: true }).fill(value)
-    await editor(page).getByRole('button', { name: 'Сохранить', exact: true }).click()
-    await expect(editor(page)).toBeHidden()
+    // Isometry now opens the agreed inline editor; card saves are exercised
+    // separately above. Its popup closes before the asynchronous write ends.
+    const inlineEditor = page.getByTestId('journal-inline-editor')
+    await expect(inlineEditor).toBeVisible()
+    await expect(editor(page)).toHaveCount(0)
+    await inlineEditor.getByRole('textbox', { name: 'Изометрия', exact: true }).fill(value)
+    await inlineEditor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+    await expect(inlineEditor).toHaveCount(0)
+    await expect.poll(() => withE2eDatabase(async db =>
+      (await db.query('select isometry from weld_joints where id=$1', [Number(id)])).rows[0]?.isometry)).toBe(value)
     const stored = await withE2eDatabase(async db => (await db.query('select id,joint,isometry from weld_joints where id=$1', [Number(id)])).rows[0])
     await writeFile(info.outputPath(`rapid-${layout}.json`), JSON.stringify({ id, value, stored }))
     expect(stored.isometry).toBe(value)

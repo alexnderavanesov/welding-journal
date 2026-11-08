@@ -2,7 +2,7 @@ import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { lazy, Suspense, memo, type ComponentProps } from 'react'
 const DocumentConnectionsDialog = lazy(() => import('./document-connections-dialog').then(module => ({ default: module.DocumentConnectionsDialog })))
 const CoilRestorationDialog = lazy(() => import('./coil-restoration-dialog').then(module => ({ default: module.CoilRestorationDialog })))
-const ChainActualityDialog = lazy(() => import('./chain-actuality-dialog').then(module => ({ default: module.ChainActualityDialog })))
+const PreHeatTreatmentFillDialog = lazy(() => import('./pre-heat-treatment-fill-dialog').then(module => ({ default: module.PreHeatTreatmentFillDialog })))
 import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
 import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportHeaderActions, type ReportHeaderActionsProps } from '@/components/report-header-actions'
@@ -20,10 +20,10 @@ import { PrintableReportPreview } from '@/components/printable-report-preview'
 import { Button } from './ui/button'
 
 type HomePageViewProps = {
+  preHeatTreatmentFillProps?: ComponentProps<typeof PreHeatTreatmentFillDialog> | null
   onCancelEarlyCoil?: (sourceId: number) => void
   coilRestorationDialogProps?: ComponentProps<typeof CoilRestorationDialog> | null
   coilCorrectionReturnProps?: { onReturn: () => void; onDismiss: () => void } | null
-  chainActualityDialogProps?: ComponentProps<typeof ChainActualityDialog> | null
   documentConnectionsProps?: ComponentProps<typeof DocumentConnectionsDialog> | null
   documentPreviewProps?: ComponentProps<typeof HistoryDocumentPreview> | null
   reportPreviewProps: ComponentProps<typeof PrintableReportPreview> | null
@@ -71,10 +71,10 @@ type HomePageViewProps = {
 }
 
 export function HomePageView({
+  preHeatTreatmentFillProps,
   onCancelEarlyCoil,
   coilRestorationDialogProps,
   coilCorrectionReturnProps,
-  chainActualityDialogProps,
   reportPreviewProps,
   documentPreviewProps,
   documentConnectionsProps,
@@ -183,7 +183,6 @@ export function HomePageView({
 
       {!coilRestorationDialogProps ? <ReportNotificationToast {...reportNotificationToastProps} /> : null}
       {coilRestorationDialogProps ? <Suspense fallback={null}><CoilRestorationDialog key={`${coilRestorationDialogProps.rootId}:${Boolean(coilRestorationDialogProps.earlyDecision)}`} {...coilRestorationDialogProps} /></Suspense> : null}
-      {chainActualityDialogProps ? <Suspense fallback={null}><ChainActualityDialog key={`${chainActualityDialogProps.rowId}:${chainActualityDialogProps.active}`} {...chainActualityDialogProps} /></Suspense> : null}
       {reportPreviewProps ? <PrintableReportPreview {...reportPreviewProps} /> : null}
 
       <ReportDialogs
@@ -209,6 +208,7 @@ export function HomePageView({
         }
       />
       {documentConnectionsProps ? <Suspense fallback={null}><DocumentConnectionsDialog {...documentConnectionsProps} /></Suspense> : null}
+      {preHeatTreatmentFillProps ? <Suspense fallback={null}><PreHeatTreatmentFillDialog {...preHeatTreatmentFillProps} /></Suspense> : null}
       {documentPreviewProps ? <HistoryDocumentPreview {...documentPreviewProps} /> : null}
     </ReportWorkspace>
   )
@@ -281,14 +281,11 @@ function ReportBackground({
       <ReportPageHeader
         title={activeTitle}
         stickyLeft={stickyLeft}
-        fluid={activeReport === 'percentageLines' || isAgGridWeldReport(activeReport)}
+        fluid
         summary={!isStandaloneReport && !isAgGridWeldReport(activeReport) ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
-      >
-        {activeReport === 'percentageLines' ? <div data-line-program-report-actions /> : null}
-        {activeReport !== 'percentageLines' && activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
-          <ReportHeaderActions {...reportHeaderActionsProps} />
-        ) : null}
-      </ReportPageHeader>
+        children={activeReport === 'percentageLines' ? <div data-line-program-report-actions />
+          : isWeldTableReport ? <ReportHeaderActions {...reportHeaderActionsProps} /> : undefined}
+      />
   )
 
   return (

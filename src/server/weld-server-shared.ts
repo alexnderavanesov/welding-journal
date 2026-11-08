@@ -67,6 +67,8 @@ export const GENERATED_DOCUMENT_FIELD_TYPES = {
   jsrDocument: 'weldingJournal',
   checklistDocument: 'checklist',
   zniDocument: 'zni',
+  custom1Document: 'custom1',
+  custom2Document: 'custom2',
   layeredVikEdgesDocument: 'layeredVikEdges',
   layeredVikLayersDocument: 'layeredVikLayers',
   layeredPvkEdgesDocument: 'layeredPvkEdges',

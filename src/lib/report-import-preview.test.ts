@@ -40,6 +40,17 @@ const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = 
   })
 
 describe('existing rows report import preview', () => {
+  it.each(['massFill', 'replaceData'] as const)('allows unrelated edits to stored T composition in %s after merging', async mode => {
+    const keys = ['fillerWire', 'weldingJournalNote'] as const
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, ...keys.map(key => FIELD_BY_KEY.get(key)!.label)], [[7, 'Wire', 'Corrected']]),
+      rows: [{ id: 7, joint: 'ОП-8', connectionType: 'Т1', materialGroup: 'М01 + М05', weldingMethod: 'РАД+РД', rowVersion: 'v1' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, fillerWire: 'Wire', weldingJournalNote: 'Corrected' }])
+  })
   it.each(['massFill', 'replaceData'] as const)('collects T material/method and assignment-basis errors together in %s', async mode => {
     const keys = ['materialGroup', 'weldingMethod', 'hasUzk'] as const
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
@@ -386,7 +397,7 @@ describe('existing rows report import preview', () => {
       activeReport: 'weldingJournal',
       file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'], [[7, 'F1', 'Целевая линия']]),
       rows: [{ id: 7, joint: 'F1', line: 'Исходная линия', vikRequest: 'ВИК-1' },
-        { id: 8, joint: 'F2', line: 'Целевая линия', pstoRequired: 'да', pstoExceptionBasis: 'Только F2' }] as WeldRow[],
+        { preHeatTreatmentMode: 'allPsto' as const, id: 8, joint: 'F2', line: 'Целевая линия', pstoRequired: 'да', pstoExceptionBasis: 'Только F2' }] as WeldRow[],
       pstoLinePolicies: [],
       weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
     })
@@ -981,7 +992,7 @@ describe('existing rows report import preview', () => {
       activeReport: 'weldingJournal',
       file,
       rows: [
-        {
+        { preHeatTreatmentMode: 'allPsto' as const,
           id: 7,
           joint: 'F1',
           weldDate: '2026-07-31',
@@ -994,7 +1005,7 @@ describe('existing rows report import preview', () => {
           pstoNote: null,
           finalStatus: 'ожидает заявку',
         } as WeldRow,
-        {
+        { preHeatTreatmentMode: 'allPsto' as const,
           id: 8,
           joint: 'F2',
           weldDate: null,

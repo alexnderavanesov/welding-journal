@@ -66,7 +66,7 @@ describe('technology card applicability', () => {
     ['да', true], ['дополнительный', true], ['yes', true], ['', false],
     [null, false], ['нет', false], ['отменен', false],
   ])('checks PSTO assignment %s regardless of a performed result', (pstoRequired, required) => {
-    const weld = { ...row, pstoRequired, pstoResult: 'проведено', heatTreatmentDiagram: 'OLD' }
+    const weld = { preHeatTreatmentMode: 'allPsto' as const, ...row, pstoRequired, pstoResult: 'проведено', heatTreatmentDiagram: 'OLD' }
     expect(check(weld, { psto: 'required' }).applicable).toBe(required)
     expect(check(weld, { psto: 'not-required' }).applicable).toBe(!required)
     expect(check(weld, { psto: 'any' }).applicable).toBe(true)
@@ -88,7 +88,7 @@ describe('technology card applicability', () => {
   it.each([
     { weldingMethod: 'РАД + РД + НЕИЗВЕСТНО' }, { weldingMethod: 'РАД++РД' },
     { materialGroup: 'M01 + М05' }, { materialGroup: 'М01 + М05 + М11' },
-    { materialGroup: 'М01 +' }, { connectionType: 'НЕИЗВЕСТНО' }, { pstoRequired: 'ожидает' },
+    { materialGroup: 'М01 +' }, { connectionType: 'НЕИЗВЕСТНО' }, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'ожидает' },
     { d1: -1 }, { d2: Number.NaN }, { t1: 0 }, { t2: '3 мм' },
   ])('does not drop unknown or invalid data: %j', values => {
     const result = check({ ...row, ...values })

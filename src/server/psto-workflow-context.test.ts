@@ -103,11 +103,11 @@ describe('PSTO modal workflow queries', () => {
 
   it('retains request-only history after hydration, without treating waiting as history', () => {
     const rows = [
-      { id: 1, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-30' },
-      { id: 2, pstoRequired: 'отменен', pstoRequest: 'Сохранённая заявка' },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-30' },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 2, pstoRequired: 'отменен', pstoRequest: 'Сохранённая заявка' },
       { id: 3, pstoRepeatCycles: [{ id: 30, weldJointId: 3, sequence: 2, pstoRequest: 'Повторная заявка' }] },
       { id: 4, pstoRequestDate: '2026-10-30' },
-      { id: 5, pstoRequired: 'да', pstoResult: 'ожидает' },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 5, pstoRequired: 'да', pstoResult: 'ожидает' },
       { id: 6, pstoResult: 'проведено' },
     ] as WeldRow[]
     expect(filterPstoWorkflowRows(rows, 'resultRegistry').map(row => row.id)).toEqual([1, 2, 3, 4, 6])

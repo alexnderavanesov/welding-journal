@@ -74,7 +74,7 @@ it.each([null, [], 'psto'] as const)('refuses LNK export with unready, empty or 
 
 it('exports PSTO visible fields in screen order with current repeat values, without changing the source', async () => {
   const p = params('heatTreatment')
-  const source = { id: 1, joint: 'S1', pstoRequired: 'да', pstoRequest: 'OLD', pstoResult: 'проведено', tvmtResult: 'не годен',
+  const source = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: 'да', pstoRequest: 'OLD', pstoResult: 'проведено', tvmtResult: 'не годен',
     pstoRepeatCycles: [{ id: 21, weldJointId: 1, sequence: 2, pstoRequest: 'NEW', pstoRequestDate: '2026-10-18', pstoResult: 'проведено', tvmtResult: 'годен' }] }
   const fields = ['tvmtResult', 'joint', 'pstoRequest', 'pstoRequestDate'].map(key => FIELD_BY_KEY.get(key as never)!)
   const readFields = vi.fn(report => report === 'heatTreatment' ? fields : null)

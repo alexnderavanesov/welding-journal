@@ -268,7 +268,7 @@ export function LnkRequestDialog({
     })
     return getNewLnkChronologyIssues(proposedRows, selectedRows, saveCheckSettings).filter(
       (issue) => issue.kind !== 'post-before-psto-cycle' ||
-        !controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
+        false,
     )
   }, [controlProcessSettings, effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedMethodKeys, selectedRows])
   const chronologyReason = chronologyIssues[0]

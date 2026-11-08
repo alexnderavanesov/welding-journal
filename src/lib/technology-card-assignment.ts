@@ -4,11 +4,12 @@ import { checkTechnologyCardApplicability, createTechnologyCardMatcher } from '@
 import type { TechnologyCardSnapshot } from '@/lib/technology-card-review'
 import type { TechnologyCardWeld } from '@/lib/technology-card-types'
 import { normalizeTechnologyCardName } from '@/lib/technology-card-name'
+import { getTechnologyCardMaterialChanges, type TechnologyCardMaterials } from './technology-card-materials'
 
-export const TK_ASSIGNMENT_ACTIONS = ['assign', 'reassign', 'rename'] as const
+export const TK_ASSIGNMENT_ACTIONS = ['assign', 'reassign', 'rename', 'materials'] as const
 export type TechnologyCardAssignmentAction = typeof TK_ASSIGNMENT_ACTIONS[number]
 export const TK_ASSIGNMENT_LABELS = {
-  assign: 'Назначить', reassign: 'Заменить', rename: 'Обновить название', unchanged: 'Без изменений',
+  assign: 'Назначить', reassign: 'Заменить', rename: 'Обновить название', materials: 'Обновить материалы', unchanged: 'Без изменений',
   ambiguous: 'Неоднозначные', none: 'Нет подходящей ТК', incomplete: 'Недостаточно данных', excluded: 'Пропущены',
 } as const
 export type TechnologyCardAssignmentKind = keyof typeof TK_ASSIGNMENT_LABELS
@@ -18,7 +19,7 @@ export const TK_ASSIGNMENT_FILTER_LABELS = {
 } as const
 export type TechnologyCardAssignmentFilter = keyof typeof TK_ASSIGNMENT_FILTER_LABELS
 export function technologyCardAssignmentFilterCount(counts: TechnologyCardAssignmentCounts, filter: TechnologyCardAssignmentFilter) {
-  if (filter === 'changes') return counts.assign + counts.reassign + counts.rename
+  if (filter === 'changes') return TK_ASSIGNMENT_ACTIONS.reduce((sum, action) => sum + counts[action], 0)
   if (filter === 'attention') return counts.ambiguous + counts.none + counts.incomplete
   if (filter === 'all') return Object.entries(counts).reduce((sum, [key, count]) => sum + (key === 'mismatch' ? 0 : count), 0)
   return counts[filter]
@@ -30,7 +31,7 @@ export function matchesTechnologyCardAssignmentFilter(row: TechnologyCardAssignm
   return row.kind === filter
 }
 export const emptyTechnologyCardAssignmentCounts = (): TechnologyCardAssignmentCounts => ({
-  assign: 0, reassign: 0, rename: 0, unchanged: 0, ambiguous: 0, none: 0, incomplete: 0, excluded: 0, mismatch: 0,
+  assign: 0, reassign: 0, rename: 0, materials: 0, unchanged: 0, ambiguous: 0, none: 0, incomplete: 0, excluded: 0, mismatch: 0,
 })
 export type TechnologyCardAssignmentRow = TechnologyCardWeld & {
   id: number; projectTitle: string | null; subtitleCode: string | null; line: string | null; joint: string | null; version: string
@@ -38,6 +39,8 @@ export type TechnologyCardAssignmentRow = TechnologyCardWeld & {
 export type TechnologyCardAssignmentProposal = {
   id: number; project: string; line: string; joint: string; oldName: string; newName: string;
   kind: TechnologyCardAssignmentKind; mismatch: boolean; reason: string
+  materialChanges?: TechnologyCardMaterials
+  previousMaterials?: TechnologyCardMaterials
 }
 export function isTechnologyCardAssignmentAction(kind: string): kind is TechnologyCardAssignmentAction {
   return TK_ASSIGNMENT_ACTIONS.includes(kind as TechnologyCardAssignmentAction)
@@ -64,13 +67,22 @@ export function createTechnologyCardAssignmentClassifier(snapshot: TechnologyCar
     }
     const current = byName.get(name)
     const applicability = current ? checkTechnologyCardApplicability(current, row, settings) : null
+    const materialDetails = (card: TechnologyCardMaterials) => {
+      const materialChanges = getTechnologyCardMaterialChanges(row, card)
+      const previousMaterials = Object.fromEntries(Object.keys(materialChanges).map(field => [field, String(row[field as keyof TechnologyCardMaterials] ?? '')]))
+      return { materialChanges, previousMaterials }
+    }
     if (current && applicability?.applicable) {
-      return { ...base, newName: current.name, kind: current.name === name ? 'unchanged' : 'rename',
-        reason: current.name === name ? 'Назначенная карта соответствует стыку.' : 'Та же подходящая карта переименована в реестре.' }
+      const materials = materialDetails(current)
+      const hasChanges = Object.keys(materials.materialChanges).length > 0
+      return { ...base, ...materials, newName: current.name, kind: current.name !== name ? 'rename' : hasChanges ? 'materials' : 'unchanged',
+        reason: current.name !== name ? 'Та же подходящая карта переименована в реестре.' : hasChanges
+          ? 'Материалы или сертификаты отличаются от заполненных полей ТК. При применении эти значения будут обновлены; пустые поля ТК не стирают данные стыка.'
+          : 'Назначенная карта соответствует стыку.' }
     }
     const mismatch = Boolean(name)
     const reason = name ? (current ? [...applicability!.cardIssues, ...applicability!.mismatchIssues].map(issue => issue.message).join(' ') : 'Назначенной ТК нет в реестре.') : 'ТК не заполнена.'
-    if (matches.cards.length === 1) return { ...base, mismatch, kind: name ? 'reassign' : 'assign', newName: matches.cards[0].name, reason: `${reason} Найдена единственная подходящая действующая ТК.` }
+    if (matches.cards.length === 1) return { ...base, ...materialDetails(matches.cards[0]), mismatch, kind: name ? 'reassign' : 'assign', newName: matches.cards[0].name, reason: `${reason} Найдена единственная подходящая действующая ТК.` }
     return { ...base, mismatch, kind: matches.cards.length ? 'ambiguous' : 'none',
       reason: `${reason} ${matches.cards.length ? `Подходят несколько карт (${matches.cards.length}); выберите вручную в карточке стыка.` : 'Подходящей действующей карты нет.'}` }
   }

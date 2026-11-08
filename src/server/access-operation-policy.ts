@@ -2,6 +2,8 @@ import { REPORT_ACCESS_AREAS, SETTING_ACCESS_AREAS, type Permission } from '@/li
 
 // Explicit allowlist: a new server function is closed until its policy is reviewed.
 export const OPERATION_POLICIES = {
+  'journal-inline-edit-api.ts#saveJournalCellEdits': 'welding.edit',
+  'journal-inline-edit-api.ts#pasteJournalCells': 'welding.edit',
   'activity-api.ts#listActivityHistory': '@identity',
   'activity-api.ts#getActivityDetails': '@identity',
   'activity-api.ts#getActivityFilters': '@identity',
@@ -61,8 +63,6 @@ export const OPERATION_POLICIES = {
   "pre-heat-treatment-lnk-workflow.ts#updatePreHeatTreatmentRkExposure": "lnk.edit",
   "pre-heat-treatment-lnk-workflow.ts#savePreHeatTreatmentLnkResultEdits": "lnk.edit",
   "pre-heat-treatment-lnk-workflow.ts#correctPreHeatTreatmentLnkResult": "lnk.edit",
-  "control-process-settings-api.ts#getControlProcessSettingsOverview": "processes.view",
-  "control-process-settings-api.ts#getPreHeatTreatmentDisableBlockerRowIds": "processes.view",
   "document-operations.ts#planDocumentOperationBatches": "documents.view",
   "document-operations.ts#previewDocumentOperation": "documents.view",
   "document-operations.ts#applyDocumentOperation": "@documentEdit",
@@ -104,7 +104,9 @@ export const OPERATION_POLICIES = {
   "technology-cards-api.ts#getTechnologyCardAssignmentDetails": "references.view",
   "technology-cards-api.ts#applyTechnologyCardAssignmentBatch": "welding.edit",
   "chain-actuality.ts#previewChainActuality": "welding.view",
-  "chain-actuality.ts#setChainActuality": "welding.edit",
+  "pre-heat-treatment-api.ts#previewPreHeatTreatmentChain": "welding.view",
+  "pre-heat-treatment-api.ts#previewPreHeatTreatmentFill": "lnk.view",
+  "pre-heat-treatment-api.ts#savePreHeatTreatmentFill": "lnk.edit",
   "duplicate-controls.ts#listDuplicateControlCandidatePage": "lnk.view",
   "duplicate-controls.ts#listDuplicateControlCandidateIds": "lnk.view",
   "duplicate-controls.ts#listDuplicateControlCandidateRowsByIds": "lnk.view",
@@ -142,6 +144,7 @@ export const OPERATION_POLICIES = {
   "generated-documents.ts#getRemoteGeneratedDocumentSequence": "@documentSequenceRead",
   "generated-documents.ts#resetRemoteGeneratedDocumentSequence": "numbering.edit",
   "generated-documents.ts#getRemoteGeneratedDocumentRows": "documents.view",
+  "document-participants-api.ts#getDocumentTemplateParticipants": "documents.view",
   "generated-documents.ts#deleteRemoteGeneratedDocument": "documents.delete",
   "dispatcher-task-snapshot.ts#getDispatcherTaskVersion": "@identity",
   "dispatcher-task-snapshot.ts#getDispatcherTaskSnapshot": "@workingViews",

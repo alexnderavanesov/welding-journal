@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" ADD COLUMN "pre_heat_treatment_required" boolean;

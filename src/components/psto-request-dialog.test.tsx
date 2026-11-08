@@ -12,7 +12,7 @@ vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDe
 
 describe('PstoRequestDialog', () => {
   it('keeps the joint list and request names in separate full-width tabs', async () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       projectTitle: 'Проект А',
       subtitleCode: '500',

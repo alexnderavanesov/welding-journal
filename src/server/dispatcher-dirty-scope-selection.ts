@@ -94,7 +94,17 @@ export async function loadWelderStampDispatcherScopes(
 export async function loadBoundedDispatcherDirtyScopes(
   tx: Pick<SystemDocumentSequenceTransaction, 'select'>, scopes: readonly DispatcherDirtyScope[],
 ): Promise<DispatcherDirtyScope[] | null> {
-  if (!scopes.length) return []
+  const selection = await loadDispatcherDirtyScopeSelection(tx, scopes)
+  return selection && selection.rowCount <= MAX_SCOPED_REBUILD_ROWS ? selection.scopes : null
+}
+
+/** Large known contexts can be staged without writer locks. The row bound is
+ * only for calculation while holding those locks, not a reason for a full scan.
+ */
+export async function loadDispatcherDirtyScopeSelection(
+  tx: Pick<SystemDocumentSequenceTransaction, 'select'>, scopes: readonly DispatcherDirtyScope[],
+): Promise<{ scopes: DispatcherDirtyScope[]; rowCount: number } | null> {
+  if (!scopes.length) return { scopes: [], rowCount: 0 }
   if (scopes.length > MAX_SCOPED_REBUILD_SCOPES) return null
   const where = or(...scopes.map(scope => and(...SCOPE_FIELDS.map(key =>
     sql`lower(translate(coalesce(${weldJoints[key]}, ''), ${WHITESPACE}, '')) = ${scope[key].replace(/\s+/g, '').toLocaleLowerCase('ru-RU')}`,
@@ -103,7 +113,8 @@ export async function loadBoundedDispatcherDirtyScopes(
     line: weldJoints.line, joints: sql<number>`count(*)::int`,
   }).from(weldJoints).where(where).groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line)
     .limit(MAX_SCOPED_REBUILD_SCOPES + 1)
-  if (current.length > MAX_SCOPED_REBUILD_SCOPES || current.reduce((sum, scope) => sum + Number(scope.joints), 0) > MAX_SCOPED_REBUILD_ROWS) return null
+  if (current.length > MAX_SCOPED_REBUILD_SCOPES) return null
+  const rowCount = current.reduce((sum, scope) => sum + Number(scope.joints), 0)
   // The scoped loader uses btrim (ASCII space); do not publish a partial legacy
   // context containing tabs/NBSP at the edges. Full hydration uses exact IDs.
   if ([...scopes, ...current].some(scope => SCOPE_FIELDS.some(key => {
@@ -115,5 +126,5 @@ export async function loadBoundedDispatcherDirtyScopes(
     const value = { projectTitle: scope.projectTitle ?? '', subtitleCode: scope.subtitleCode ?? '', line: scope.line ?? '' }
     unique.set(getDispatcherScopeKey(value), value)
   }
-  return unique.size <= MAX_SCOPED_REBUILD_SCOPES ? [...unique.values()] : null
+  return unique.size <= MAX_SCOPED_REBUILD_SCOPES ? { scopes: [...unique.values()], rowCount } : null
 }

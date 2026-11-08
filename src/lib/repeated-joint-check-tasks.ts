@@ -45,6 +45,7 @@ import {
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
 import { getPstoTvmtWorkflowLabel } from '@/lib/tvmt-cycle'
+import { hasPstoExecutionHistory } from '@/lib/psto-cycle'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getLnkChronologyRuleCode, getPstoChronologyRuleCode } from './chronology-rule-code'
 import type { SystemRuleCode } from './system-rule-catalog'
@@ -58,13 +59,13 @@ export function buildPrimaryLnkStageDebtSystemWarnings(
   return rows.flatMap((row) => {
     // Disabling pre-TO removes only that stage, not required PSTO/TVMT debt.
     // Explicit settings also override stale runtime metadata on a supplied row.
-    if (controlProcessSettings && row.preHeatTreatmentLnkEnabled !== controlProcessSettings.preHeatTreatmentLnkEnabled) {
-      row = { ...row, preHeatTreatmentLnkEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled }
+    if (controlProcessSettings && row.preHeatTreatmentMode !== controlProcessSettings.preHeatTreatmentMode) {
+      row = { ...row, preHeatTreatmentMode: controlProcessSettings.preHeatTreatmentMode }
     }
     const methodDebts = LNK_METHODS.flatMap((method) => {
       if (!isEnabledControlValue(row[method.enabledKey])) return []
-      if (!hasPrimaryLnkResultTrace(row, method.code)) return []
       const debt = getPrimaryLnkStageDebt(row, method.code)
+      if (!hasPrimaryLnkResultTrace(row, method.code) && !(hasPstoExecutionHistory(row) && debt?.missingPreHeatTreatmentControls.length)) return []
       return debt ? [{ method, debt }] : []
     })
     if (methodDebts.length === 0) return []
@@ -101,7 +102,7 @@ export function buildPrimaryLnkStageDebtSystemWarnings(
       baseJoint: sourceJoint,
       suffix: 'R' as const,
       reason: PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON,
-      details: `Стык ${joint}: уже внесены данные результата основного НК по методам ${methodCodes.join(', ')}, ` +
+      details: `Стык ${joint}: ${methodDebts.some(({ method }) => hasPrimaryLnkResultTrace(row, method.code)) ? `уже внесены данные результата основного НК по методам ${methodCodes.join(', ')}` : 'уже внесены фактические данные ПСТО или ТВМТ'}, ` +
         `но в системе не подтверждено завершение предыдущих этапов: ${missingStages.join(', ')}. ` +
         'Подтвердите этапы после получения фактических данных. После этого предупреждение исчезнет автоматически.',
       rootCauseActions: [getPrimaryLnkStageDebtRootCauseAction(row, debt)],

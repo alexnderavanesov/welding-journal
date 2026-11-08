@@ -9,7 +9,7 @@ import { buildDispatcherTaskCodeIndexRows, buildMergedDispatcherTaskCodes } from
 
 const line = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', category: 'II', groupName: 'A', weldControlPercent: 30, pvkControlPercent: 10, version: '1', configurationIssue: null }
 function fixture(value: string, connectionType = 'С17'): WeldRow[] {
-  return Array.from({ length: 20 }, (_, i) => ({ ...line, id: i + 1, joint: 'F' + (i + 1), connectionType, hasVik: 'да', vikResult: 'годен',
+  return Array.from({ length: 20 }, (_, i) => ({ preHeatTreatmentMode: 'allPsto' as const, ...line, id: i + 1, joint: 'F' + (i + 1), connectionType, hasVik: 'да', vikResult: 'годен',
     officiality: 'действующий', revisionActuality: 'актуальная', weldDate: '2026-09-01', stamp1K: 'A', pstoRequired: 'да',
     hasRk: i < 6 ? value : null, hasPvk: i < 2 ? value : null,
     rkResult: i < 6 ? 'ожидает заявку' : null, pvkResult: i < 2 ? 'ожидает заявку' : null,
@@ -56,6 +56,6 @@ it.each(['да', 'дополнительный'])('RK repair is a performed fact
   // Own PVK facts stay in history, but rejection removes PVK credit.
   rows[0].preHeatTreatmentControls = [{ id: 1, weldJointId: 1, method: 'ПВК', result: 'годен', conclusionName: 'PRE-PVK' }]
   expect(calculateLineProgram(rows, 30, 10)[0].pvk).toMatchObject({ coveredRowIds: [2], completedRowIds: [1], missing: 1 })
-  rows[0].preHeatTreatmentLnkEnabled = false
+  rows[0].preHeatTreatmentMode = 'selected'
   expect(calculateLineProgram(rows, 30, 10)[0].pvk).toMatchObject({ coveredRowIds: [2], missing: 1 })
 })

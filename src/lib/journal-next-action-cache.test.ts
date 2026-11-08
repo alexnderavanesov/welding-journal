@@ -10,15 +10,15 @@ vi.mock('./joint-next-actions', async importOriginal => {
 
 it('reuses immutable rows on remount, but recomputes new row/task/settings snapshots', () => {
   const row = { id: 12, joint: 'F12', weldDate: '' } as WeldRow
-  const settings = { preHeatTreatmentLnkEnabled: false, allowPrimaryLnkBeforePreviousStagesComplete: false }
+  const settings = { preHeatTreatmentMode: 'selected' as const,  }
   vi.mocked(buildJointNextActions).mockClear()
   const action = journalNextAction(row, [], settings)
   expect(action?.title).toBe('Заполнить сварку F12')
   for (let mount = 0; mount < 100; mount++) expect(journalNextAction(row, [], { ...settings })).toBe(action)
   expect(buildJointNextActions).toHaveBeenCalledTimes(1)
   expect(journalNextAction({ ...row, joint: 'F13' }, [], settings)?.title).toBe('Заполнить сварку F13')
-  journalNextAction(row, [], { ...settings, preHeatTreatmentLnkEnabled: true })
-  journalNextAction(row, [], { ...settings, allowPrimaryLnkBeforePreviousStagesComplete: true })
+  journalNextAction(row, [], { ...settings, preHeatTreatmentMode: 'allPsto' as const })
+  journalNextAction(row, [], { ...settings,  })
   // Use an unrelated task to exercise task snapshot invalidation independently
   // of the welding action. The full action rules have their own business tests.
   const tasks = [{ kind: 'create', row: { ...row, id: 13 } } as RepeatedJointTask]

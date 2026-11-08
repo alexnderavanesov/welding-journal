@@ -111,7 +111,7 @@ test('every available weld-report field preserves exact membership, facets and g
   const rawById = new Map(rawRows.map(row => [row.id, row]))
   for (const report of reports) {
     const fields = getAvailableWeldTableSections({ hiddenFieldKeys:getReportHiddenFieldKeys(report),mergePstoSections:report==='heatTreatment',
-      ...(report==='lnk' ? { sectionLayout:getLnkVisibleFieldSections({ preHeatTreatmentLnkEnabled:true }) } : {}),
+      ...(report==='lnk' ? { sectionLayout:getLnkVisibleFieldSections() } : {}),
     }).flatMap(section=>section.fields)
     const base: JournalGridRequest = { report,columnFilters:{search:marker},groupBy:[],route:[],start:0,end:1000,sort:{fieldKey:'id',direction:'asc'} }
     const initial = await call<JournalGridResult>('readJournalGrid',base)

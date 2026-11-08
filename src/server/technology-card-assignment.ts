@@ -13,6 +13,9 @@ import { lockWeldValidationSettings } from '@/server/weld-validation-settings-lo
 import { lockTechnologyCardRegistry } from '@/server/technology-card-registry-lock'
 import { markTechnologyCardsUsed, readTechnologyCardSettings, toTechnologyCardRecord } from '@/server/technology-card-registry'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { TECHNOLOGY_CARD_MATERIAL_FIELDS, type TechnologyCardMaterials } from '@/lib/technology-card-materials'
+import { lockLayeredControlDocumentsForWeldChange, syncLayeredControlDocumentsForWeldChangesInTransaction } from './layered-control-documents'
+import { buildNumberArrayMatch } from './weld-request-utils'
 
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const columns = {
@@ -20,6 +23,9 @@ const columns = {
   weldDate: weldJoints.weldDate, technologyCardNumber: weldJoints.technologyCardNumber, weldingMethod: weldJoints.weldingMethod,
   connectionType: weldJoints.connectionType, materialGroup: weldJoints.materialGroup, d1: weldJoints.d1, d2: weldJoints.d2,
   t1: weldJoints.t1, t2: weldJoints.t2, pstoRequired: weldJoints.pstoRequired,
+  weldingElectrodes: weldJoints.weldingElectrodes, weldingElectrodesCertificateNumber: weldJoints.weldingElectrodesCertificateNumber,
+  fillerWire: weldJoints.fillerWire, fillerWireCertificateNumber: weldJoints.fillerWireCertificateNumber,
+  shieldingGas: weldJoints.shieldingGas, shieldingGasCertificateNumber: weldJoints.shieldingGasCertificateNumber,
   // Keep PostgreSQL microseconds, not the millisecond-rounded JS Date.
   version: sql<string>`${weldJoints.updatedAt}::text`,
 }
@@ -76,29 +82,41 @@ export async function readTechnologyCardAssignmentDetails(tx: Transaction, input
   return (await readChunk(tx, input.context, input.chunk, false)).map(classify)
 }
 
-/** A short, locked transaction changes only the TK and its welding timestamps.
- * No document memberships, materials, control results or general save normalization.
+/** A short, locked transaction changes the TK, selected nonempty material defaults
+ * and welding timestamps. No document memberships or control results are changed.
  * Chunk hashes make preview verification stateless and bounded; a stale chunk is
  * rejected as a whole, so even edits committed with an older timestamp are safe. */
 export async function applyTechnologyCardAssignments(tx: Transaction, input: TechnologyCardAssignmentApplyInput) {
-  if (!Array.isArray(input.actions) || !input.actions.length || input.actions.length > 3 || input.actions.some(action => !isTechnologyCardAssignmentAction(action)) ||
+  if (!Array.isArray(input.actions) || !input.actions.length || input.actions.length > 4 || input.actions.some(action => !isTechnologyCardAssignmentAction(action)) ||
     !Array.isArray(input.excludedIds) || input.excludedIds.length > TK_ASSIGNMENT_CHUNK_SIZE || input.excludedIds.some(id => !Number.isSafeInteger(id) || id <= 0)) throw new Error('Проверьте выбранные действия и стыки.')
+  // Naming/settings rebuilds lock the process before joint rows. Keep the
+  // same order even though this operation only refreshes existing titles.
+  await lockLayeredControlDocumentsForWeldChange(tx)
   const { classify } = await loadContext(tx, input.context)
   const rows = await readChunk(tx, input.context, input.chunk, true)
   const excluded = new Set(input.excludedIds)
-  const changes: Array<{ id: number; name: string }> = []
+  const changes: Array<{ id: number; name: string } & TechnologyCardMaterials> = []
   const changedRows: TechnologyCardAssignmentRow[] = []
-  const counts = { assign: 0, reassign: 0, rename: 0 }
+  const counts = { assign: 0, reassign: 0, rename: 0, materials: 0 }
   for (const row of rows) {
     const proposal = classify(row)
     if (excluded.has(row.id) || !isTechnologyCardAssignmentAction(proposal.kind) || !input.actions.includes(proposal.kind)) continue
-    changes.push({ id: row.id, name: proposal.newName }); changedRows.push(row); counts[proposal.kind]++
+    changes.push({ id: row.id, name: proposal.newName, ...proposal.materialChanges }); changedRows.push(row); counts[proposal.kind]++
   }
   if (changes.length) {
+    // The preview projection omits ordinary naming fields (e.g. isometry).
+    // Capture the complete old records while the verified chunk is locked;
+    // the title synchronizer reads the complete updated records itself.
+    const previousRows = await tx.select().from(weldJoints)
+      .where(buildNumberArrayMatch(weldJoints.id, changes.map(change => change.id)))
     await auditSql(tx, [{ table: weldJoints, where: sql`${weldJoints.id} = any(${sql.param(changes.map(change => change.id))}::integer[])` }], () => tx.execute(sql`update ${weldJoints} as w set technology_card_number = p.name,
+      ${sql.join(TECHNOLOGY_CARD_MATERIAL_FIELDS.map(([field]) => sql`${sql.identifier(weldJoints[field].name)} = coalesce(p.${sql.identifier(field)}, w.${sql.identifier(weldJoints[field].name)})`), sql`, `)},
       welding_updated_at = greatest(clock_timestamp(), w.updated_at + interval '1 millisecond'),
       updated_at = greatest(clock_timestamp(), w.updated_at + interval '1 millisecond')
-      from jsonb_to_recordset(${JSON.stringify(changes)}::jsonb) as p(id integer, name text) where w.id = p.id`))
+      from jsonb_to_recordset(${JSON.stringify(changes)}::jsonb) as p(id integer, name text,
+        ${sql.join(TECHNOLOGY_CARD_MATERIAL_FIELDS.map(([field]) => sql`${sql.identifier(field)} text`), sql`, `)}) where w.id = p.id`))
+    await syncLayeredControlDocumentsForWeldChangesInTransaction(tx, changes,
+      new Map(previousRows.map(row => [row.id, row])), { refreshTitlesOnly: true })
     await markTechnologyCardsUsed(tx, [...changedRows, ...changes.map(change => ({ technologyCardNumber: change.name }))])
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(changedRows, new Map()) })
   }

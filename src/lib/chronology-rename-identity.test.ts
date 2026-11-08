@@ -14,7 +14,7 @@ describe('historical chronology belongs to a record, not its displayed joint nam
     expect(findFirstNewLnkChronologySaveBlockReason([{ ...renamed, rkConclusionDate: '2026-09-03' }], [previous])).not.toBe('')
   })
   it('preserves the same PSTO date violation through a rename, without allowing another date or record', () => {
-    const previous: WeldInput = { id: 1, joint: 'F1R1W1', weldDate: '2026-09-03', pstoRequired: 'да',
+    const previous: WeldInput = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1R1W1', weldDate: '2026-09-03', pstoRequired: 'да',
       pstoRequest: 'P', pstoRequestDate: '2026-09-04', pstoResult: 'проведено', pstoDate: '2026-09-03' }
     expect(getPstoChronologyIssues([previous]).length).toBeGreaterThan(0)
     const renamed = { ...previous, joint: 'F1R1' }

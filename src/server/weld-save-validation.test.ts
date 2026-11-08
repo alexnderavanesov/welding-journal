@@ -35,10 +35,31 @@ const context: ServerWeldValidationContext = {
 }
 
 describe('validateServerWeldRecords', () => {
+  it.each([false, true])('allows merged note/material corrections of legacy T composition and retains validation (import=%s)', importMode => {
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'ОП-8',
+      connectionType: 'Т1', materialGroup: 'М01 + М05', weldingMethod: 'РАД+РД', weldingJournalNote: 'Old' } as WeldJoint
+    const previousRows = new Map([[1, previous]])
+    const validate = (patch: WeldInput) => validateServerWeldRecords({
+      records: mergeWeldRecordsWithPrevious([{ id: 1, ...patch }], previousRows), previousRows, context, importMode,
+    })
+    expect(() => validate({ weldingJournalNote: null, fillerWire: 'Wire' })).not.toThrow()
+    expect(() => validate({ materialGroup: 'М01 + М11', weldingJournalNote: null })).toThrow('СП-13')
+    expect(() => validate({ weldingMethod: 'РАД+МП' })).toThrow('СП-13')
+    expect(() => validate({ stamp2KFact: 'A' })).toThrow('с индексом 2')
+    expect(previous.weldingJournalNote).toBe('Old')
+  })
+  it.each([false, true])('inherits the physical R/W requirement, keeps new Y/independent roots off (import=%s)', importMode => {
+    const root: WeldRow = { id: 10, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'L', preHeatTreatmentRequired: true }
+    const records: WeldInput[] = ['F1R1', 'F1R1W1', 'F1Y1', 'F1Y2', 'F2'].map(joint => ({ ...root, id: undefined, joint, preHeatTreatmentRequired: undefined }))
+    prepareServerWeldRecords({ records, previousRows: new Map(), importMode,
+      context: { ...context, programRules: { rows: [root], approved: new Set() } } })
+    expect(records.map(row => row.preHeatTreatmentRequired)).toEqual([true, true, false, false, false])
+  })
+
   it.each([false, true])('allows partial other-method backfill only with a retained stored rejection (import=%s)', importMode => {
     const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', weldDate: '2026-09-01',
       hasVik: 'да', vikResult: 'ожидает НК', vikRequest: 'ВИК-1', vikRequestDate: '2026-09-01',
-      hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01', uzkConclusion: 'УЗК-К', uzkConclusionDate: '2026-09-02' } as WeldJoint
+      hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01', uzkConclusion: 'УЗК-К', uzkConclusionDate: '2026-09-02' } as unknown as WeldJoint
     const previousRows = new Map([[1, previous]])
     const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
     const patch = { id: 1, vikResult: 'годен', vikConclusion: 'ВИК-К', vikConclusionDate: '2026-09-02' }
@@ -52,14 +73,14 @@ describe('validateServerWeldRecords', () => {
     expect(previous.uzkResult).toBe('ремонт')
   })
   it.each([false, true])('blocks a partial removal of the last unofficial rejection with checks disabled (import=%s)', importMode => {
-    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasUzk: 'да', uzkResult: 'ремонт' } as WeldJoint
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasUzk: 'да', uzkResult: 'ремонт' } as unknown as WeldJoint
     const previousRows = new Map([[1, previous]])
     const records = mergeWeldRecordsWithPrevious([{ id: 1, uzkResult: null }], previousRows)
     const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
     expect(() => validateServerWeldRecords({ records, previousRows, context: { ...context, saveCheckSettings: checksOff }, importMode })).toThrow('последний негодный результат')
   })
   it('cannot rename a recorded repair even when its legacy name is ordinary and the client forges the chain state', () => {
-    const previous = { id: 9, joint: 'F9', line: 'L' } as WeldJoint
+    const previous = { id: 9, joint: 'F9', line: 'L' } as unknown as WeldJoint
     const stored = { ...previous, programChainState: { weldJointId: 9, kind: 'repair', physicalRootId: 1,
       sourceRowId: 1, coilParentId: null, coilSide: null, replacedByCoil: false } } as WeldRow
     const rules = { ...context, saveCheckSettings: { ...DEFAULT_SAVE_CHECK_SETTINGS, manualJointName: false, systemJointRenameProtection: false },
@@ -79,7 +100,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it.each([false, true])('protects unofficial results after merging partial input (import=%s)', importMode => {
-    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasVik: 'да', vikResult: 'годен', hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01' } as WeldJoint
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasVik: 'да', vikResult: 'годен', hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01' } as unknown as WeldJoint
     const previousRows = new Map([[1, previous]])
     const records = mergeWeldRecordsWithPrevious([{ id: 1, uzkResult: 'годен' }], previousRows)
     const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
@@ -98,7 +119,7 @@ describe('validateServerWeldRecords', () => {
   })
   it('rebuilds mandatory repair controls from trusted scope, ignoring spoofed client chain/requirements', () => {
     const root = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', hasVik: 'да', hasRk: 'да', rkResult: 'ремонт' } as WeldRow
-    const repair = { ...root, id: 2, joint: 'F1R1', rkResult: null, hasRk: 'да' } as WeldJoint
+    const repair = { ...root, id: 2, joint: 'F1R1', rkResult: null, hasRk: 'да' } as unknown as WeldJoint
     const rules = { ...context, programRules: { rows: [root, repair], approved: new Set<string>() } }
     const forged = { ...repair, hasRk: null, programRepairRequirements: [], programChainState: { kind: 'primary', weldJointId: 2, physicalRootId: 2, sourceRowId: null, coilParentId: null, coilSide: null, replacedByCoil: false } } as WeldInput
     expect(() => validateServerWeldRecords({ records: [forged], previousRows: new Map([[2, repair]]), context: rules, allowSystemJointNames: true })).toThrow('унаследован от официального предшественника F1')
@@ -106,12 +127,12 @@ describe('validateServerWeldRecords', () => {
     expect(() => validateServerWeldRecords({ records: [{ ...legacy, weldingJournalNote: 'Дозаполнение примечания' }], previousRows: new Map([[2, legacy]]), context: { ...rules, programRules: { ...rules.programRules, rows: [root, legacy] } }, allowSystemJointNames: true })).not.toThrow()
   })
   it('protects fixed request and TVMT document dates at the server boundary', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 70,
       joint: 'F70',
       hasVik: 'да',
       pstoRequired: 'да',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(getSystemDocumentIntegrityReason({
       ...previous,
@@ -130,7 +151,7 @@ describe('validateServerWeldRecords', () => {
       tvmtRequest: 'Заявка ТВМТ',
       tvmtRequestDate: '2026-08-20',
       tvmtResult: 'ожидает НК',
-    } as WeldJoint
+    } as unknown as WeldJoint
     expect(getSystemDocumentIntegrityReason({
       ...beforeTvmt,
       tvmtResult: 'годен',
@@ -144,7 +165,7 @@ describe('validateServerWeldRecords', () => {
       id: 73,
       joint: 'F73',
       hasVik: 'да',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(getSystemDocumentIntegrityReason({
       ...previous,
@@ -160,7 +181,7 @@ describe('validateServerWeldRecords', () => {
       vikResult: 'годен',
       vikConclusionDate: '2026-08-20',
       vikConclusion: 'Заключение ВИК',
-    } as WeldJoint
+    } as unknown as WeldJoint
     expect(getSystemDocumentIntegrityReason({
       ...withRequest,
       vikRequest: null,
@@ -186,7 +207,7 @@ describe('validateServerWeldRecords', () => {
       vikResult: 'годен',
       vikConclusionDate: '2026-08-20',
       vikConclusion: 'Старое заключение ВИК',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(getSystemDocumentIntegrityReason({
       ...previous,
@@ -201,7 +222,7 @@ describe('validateServerWeldRecords', () => {
       tvmtResult: 'годен',
       tvmtConclusionDate: '',
       tvmtConclusion: '',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(getSystemDocumentIntegrityReason({
       ...previous,
@@ -219,7 +240,7 @@ describe('validateServerWeldRecords', () => {
       joint: 'S72',
       stamp1K: 'OLD',
       responsible: '',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(() => validateServerWeldRecords({
       records: [{ ...previous, responsible: 'Иванов' } as unknown as WeldInput],
@@ -241,7 +262,7 @@ describe('validateServerWeldRecords', () => {
       hasRk: null,
       rkResult: 'годен',
       responsible: '',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(() => validateServerWeldRecords({
       records: [{ ...previous, responsible: 'Иванов' } as unknown as WeldInput],
@@ -266,7 +287,7 @@ describe('validateServerWeldRecords', () => {
 
   it('locks stored weld rows before merging a scoped workflow update', async () => {
     const lockModes: string[] = []
-    const stored = { id: 5, joint: 'F5' } as WeldJoint
+    const stored = { id: 5, joint: 'F5' } as unknown as WeldJoint
     const select = vi.fn(() => {
       const builder = {
         from: () => builder,
@@ -292,7 +313,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks removing or cancelling an assigned method with its own performed pre-TO work', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 41,
       joint: 'F41',
       hasRk: 'да',
@@ -407,7 +428,7 @@ describe('validateServerWeldRecords', () => {
       materialGroup: null,
       connectionType: null,
       weldingMethod: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const [record] = mergeWeldRecordsWithPrevious(
       [{ id: previous.id, weldDate: '2026-07-01' }],
       new Map([[previous.id, previous]]),
@@ -497,7 +518,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('keeps an existing indexed base valid after the setting is disabled', () => {
-    const previous = { id: 7, joint: 'FB01', responsible: '' } as WeldJoint
+    const previous = { id: 7, joint: 'FB01', responsible: '' } as unknown as WeldJoint
     const record = { ...previous, responsible: 'Иванов' } as unknown as WeldInput
 
     expect(() => validateServerWeldRecords({
@@ -530,7 +551,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks an old malformed joint name on the next edit', () => {
-    const previous = { id: 8, joint: 'F1R', responsible: '' } as WeldJoint
+    const previous = { id: 8, joint: 'F1R', responsible: '' } as unknown as WeldJoint
     const record = { ...previous, responsible: 'Петров' } as unknown as WeldInput
 
     expect(() => validateServerWeldRecords({
@@ -565,7 +586,7 @@ describe('validateServerWeldRecords', () => {
       subtitleCode: '400',
       line: 'LIN-001',
       joint: 'F5',
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(mergeWeldRecordsWithPrevious(
       [{ id: 5, responsible: 'Иванов' }],
@@ -615,7 +636,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('recalculates the final status from stored staged-control relations', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 50,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -692,7 +713,7 @@ describe('validateServerWeldRecords', () => {
       d1: 57,
       d2: 108,
       wdi: 4.25,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = {
       ...previous,
       connectionType: 'У17',
@@ -714,7 +735,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('inherits the target-line PSTO assignment without reusing an old cancellation basis', () => {
-    const record = {
+    const record = { preHeatTreatmentMode: 'allPsto' as const,
       projectTitle: 'Проект',
       subtitleCode: '400',
       line: 'L-1',
@@ -741,7 +762,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('ignores a manual per-joint PSTO value on a line without PSTO', () => {
-    const record = {
+    const record = { preHeatTreatmentMode: 'allPsto' as const,
       projectTitle: 'Проект',
       subtitleCode: '400',
       line: 'L-2',
@@ -757,7 +778,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('does not let a raw import payload bypass line-managed PSTO assignment', () => {
-    const record = {
+    const record = { preHeatTreatmentMode: 'allPsto' as const,
       projectTitle: 'Проект',
       subtitleCode: '400',
       line: 'L-IMPORT',
@@ -776,7 +797,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('preserves an old partial line during an unrelated edit but blocks adding another row to it', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 30,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -784,7 +805,7 @@ describe('validateServerWeldRecords', () => {
       joint: 'F30',
       pstoRequired: 'да',
       pstoControlBasis: 'Старое',
-    } as WeldJoint
+    } as unknown as WeldJoint
     const lineKey = getPstoLineIdentityKey(previous)
     const partialContext = {
       ...context,
@@ -811,7 +832,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks a move to a line without PSTO when staged history exists', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 31,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -819,7 +840,7 @@ describe('validateServerWeldRecords', () => {
       joint: 'F31',
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО',
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = { ...previous, line: 'L-5' } as unknown as WeldInput
 
     expect(() => prepareServerWeldRecords({
@@ -830,7 +851,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('does not treat duplicate controls as staged PSTO history', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 32,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -852,7 +873,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('protects the primary PSTO cycle after TVMT or a repeat cycle exists', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 33,
       joint: 'F33',
       pstoRequired: 'да',
@@ -890,7 +911,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('does not let duplicate controls activate the primary PSTO cycle protection', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 34,
       joint: 'F34',
       pstoRequired: 'да',
@@ -910,14 +931,14 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks new primary PSTO data while the line assignment is partial', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 35,
       projectTitle: 'Проект',
       subtitleCode: '400',
       line: 'L-8',
       joint: 'F35',
       pstoRequired: 'да',
-    } as WeldJoint
+    } as unknown as WeldJoint
     const lineKey = getPstoLineIdentityKey(previous)
 
     const record = {
@@ -947,7 +968,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks an imported move of an existing primary LNK set onto a PSTO line', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 351,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -979,7 +1000,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('does not let a line-inherited exemption bypass the dedicated line move during import', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 354,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1014,7 +1035,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('allows an explicitly confirmed keep-primary move while preserving its existing stage debt', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 353,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1028,7 +1049,7 @@ describe('validateServerWeldRecords', () => {
       vikConclusionDate: '2026-08-08',
       vikConclusion: 'Заключение ВИК основное',
     } as unknown as WeldJoint
-    const assigned = {
+    const assigned = { preHeatTreatmentMode: 'allPsto' as const,
       ...previous,
       line: 'L-ПСТО',
       pstoRequired: 'да',
@@ -1038,7 +1059,7 @@ describe('validateServerWeldRecords', () => {
       records: [assigned],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('до завершения цикла ПСТО и ТВМТ')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [assigned],
@@ -1051,7 +1072,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('allows importing the same line move when the weld has only duplicate control data', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 352,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1081,7 +1102,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks an imported move with PSTO history onto an officially cancelled line', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 353,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1113,7 +1134,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('blocks post-TO LNK until the PSTO and TVMT cycle is complete', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 36,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1144,11 +1165,11 @@ describe('validateServerWeldRecords', () => {
         assignedCount: 2,
         basis: '',
       }]]),
-    })).toContain('после ТО недоступен')
+    })).toBe('')
   })
 
   it('does not let a duplicate TVMT result unlock the primary TVMT workflow', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 37,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1186,7 +1207,7 @@ describe('validateServerWeldRecords', () => {
       rkRequest: 'Заявка РК',
       rkRequestDate: '2026-07-02',
       rkResult: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = {
       ...previous,
       rkResult: 'годен',
@@ -1421,7 +1442,7 @@ describe('validateServerWeldRecords', () => {
       rkResult: 'годен',
       rkConclusionDate: '2026-08-20',
       rkConclusion: 'Заключение РК',
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = {
       ...previous,
       rkResult: 'ремонт',
@@ -1445,7 +1466,7 @@ describe('validateServerWeldRecords', () => {
       hasRk: 'да',
       rkResult: 'ремонт',
       responsible: '',
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = {
       ...previous,
       responsible: 'Иванов',
@@ -1469,7 +1490,7 @@ describe('validateServerWeldRecords', () => {
       hasRk: 'да',
       rkResult: 'ремонт',
       responsible: '',
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = { ...previous, responsible: 'Иванов' } as unknown as WeldInput
 
     expect(() => validateServerWeldRecords({
@@ -1480,7 +1501,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('applies SP-05 to a forbidden pre-TO repair too', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 20,
       joint: 'F2R2',
       d1: 159,
@@ -1512,7 +1533,7 @@ describe('validateServerWeldRecords', () => {
       vikRequest: 'Заявка ВИК',
       vikRequestDate: '2026-08-20',
       vikResult: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
 
     expect(() => validateServerWeldRecords({
       records: [{ ...previous, vikResult: 'годен' } as unknown as WeldInput],
@@ -1551,7 +1572,7 @@ describe('validateServerWeldRecords', () => {
       vikRequest: 'Заявка ВИК',
       vikRequestDate: '2026-08-20',
       vikResult: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const record = {
       ...previous,
       vikResult: 'годен',
@@ -1583,7 +1604,7 @@ describe('validateServerWeldRecords', () => {
       vikRequest: 'ВИК-24',
       vikRequestDate: '2026-08-10',
       vikResult: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const baseSettings = {
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -1646,7 +1667,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('rejects new incomplete PSTO requisites instead of creating SP-11 debt', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 23,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1656,7 +1677,7 @@ describe('validateServerWeldRecords', () => {
       pstoRequest: 'ПСТО-23',
       pstoRequestDate: '2026-08-20',
       pstoResult: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const pstoContext = {
       ...context,
       pstoLineAssignments: new Map([[getPstoLineIdentityKey(previous), {
@@ -1684,7 +1705,7 @@ describe('validateServerWeldRecords', () => {
   })
 
   it('keeps ZВ-23 and ZВ-24 independent at the server boundary', () => {
-    const previous = {
+    const previous = { preHeatTreatmentMode: 'allPsto' as const,
       id: 25,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -1695,7 +1716,7 @@ describe('validateServerWeldRecords', () => {
       pstoRequest: 'ПСТО-25',
       pstoRequestDate: '2026-08-10',
       pstoResult: null,
-    } as WeldJoint
+    } as unknown as WeldJoint
     const pstoLineAssignments = new Map([[getPstoLineIdentityKey(previous), {
       rowCount: 1,
       assignedCount: 1,

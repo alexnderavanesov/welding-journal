@@ -34,7 +34,7 @@ test.beforeEach(async () => {
     settings = (await db.query("select key,value,updated_at from app_settings where key in ('data-list','control-processes')")).rows
     for (const [key, value] of [
       ['data-list', { weldingTypes: ['РД'], connectionTypes: ['С17'], materialGroups: ['M01'] }],
-      ['control-processes', { preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: true }],
+      ['control-processes', { preHeatTreatmentMode: 'allPsto',  }],
     ] as const) await db.query(`insert into app_settings(key,value) values ($1,$2)
       on conflict(key) do update set value=excluded.value,updated_at=now()`, [key, JSON.stringify(value)])
     await db.query(`insert into welder_stamps(naks_stamp,welder_name,weld_type,material_groups,
@@ -685,7 +685,7 @@ for (const scenario of ['assign', 'moveWithoutPsto', 'cancel', 'moveWithPsto'] a
     await ensureDispatcherTaskIndexFresh()
     const before = await snapshot(fixture.moved.id)
     // Every required method has a request and no completed result, in either stage.
-    expect(before.row.final_status).toBe('ожидает НК')
+    expect(before.row.final_status).toBe(toPre ? 'ожидает НК' : 'ожидает НК до ТО')
     const open = async () => {
       const move = scenario.startsWith('move') ? await openMove(page, fixture.moved.id) : null
       return { move, window: move?.move ?? (scenario === 'assign' ? await openAssignment(page) : await openCancellation(page)) }

@@ -8,12 +8,14 @@ import { buildNullableControlEnabledWhere } from '@/server/control-availability-
 
 /** Uncorrelated setting lookup: PostgreSQL evaluates it once, not once per weld. */
 export function buildPreHeatTreatmentEnabledWhere() {
-  return sql<boolean>`coalesce((
-    select case when ${appSettings.value} is json
-      then (${appSettings.value}::jsonb -> 'preHeatTreatmentLnkEnabled') is distinct from 'false'::jsonb
-      else true end
+  return sql<boolean>`(${weldJoints.preHeatTreatmentRequired} is true or coalesce((
+    select case when ${appSettings.value} is json then case
+      when (${appSettings.value}::jsonb ->> 'preHeatTreatmentMode') in ('selected', 'allPsto')
+        then (${appSettings.value}::jsonb ->> 'preHeatTreatmentMode') = 'allPsto'
+      else (${appSettings.value}::jsonb -> 'preHeatTreatmentLnkEnabled') is distinct from 'false'::jsonb end
+      else false end
     from ${appSettings} where ${appSettings.key} = ${PROJECT_SETTING_KEYS.controlProcesses}
-  ), true)`
+  ), false))`
 }
 
 type CycleSqlFields = Record<'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' |
@@ -46,10 +48,9 @@ export function buildPstoExecutionHistoryWhere() {
 }
 
 export function buildPreHeatTreatmentAvailableWhere() {
-  return and(buildPreHeatTreatmentEnabledWhere(), or(
+  return and(buildPreHeatTreatmentEnabledWhere(),
     buildNullableControlEnabledWhere(weldJoints.pstoRequired, CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES),
-    buildPstoExecutionHistoryWhere(),
-  )) ?? sql`false`
+  ) ?? sql`false`
 }
 
 export function buildPstoDocumentHistoryWhere() {
@@ -76,7 +77,7 @@ export function buildNoRejectedPreHeatTreatmentWhere({ autoVikForWeldDate = fals
       autoVikForWeldDate && method.code === 'ВИК' ? sql`${weldJoints.weldDate} is not null` : undefined,
     ),
   ))) ?? sql`false`
-  return sql`(not (${buildPreHeatTreatmentEnabledWhere()}) or not exists (
+  return sql`(not exists (
     select 1 from ${preHeatTreatmentControls}
     where ${preHeatTreatmentControls.weldJointId} = ${weldJoints.id} and ${activeMethod}
       and lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) in ('ремонт', 'вырез')

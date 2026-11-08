@@ -1,3 +1,4 @@
+import { useCustomDocumentNames } from '@/lib/custom-document-settings'
 import { overflowTitle } from '@/lib/overflow-title'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, FileSpreadsheet, Layers3 } from 'lucide-react'
@@ -43,7 +44,8 @@ export function WeldingJournalGenerationDialog({
   onGenerated,
 }: WeldingJournalGenerationDialogProps) {
   const { requireDocumentGenerationPassword } = useSecurityGuard()
-  const documentProfile = getGeneratedDocumentProfile(request.type)
+  const customNames = useCustomDocumentNames()
+  const documentProfile = getGeneratedDocumentProfile(request.type, customNames)
   const documentLabel = documentProfile.label
   const documentName = documentProfile.label
   const [template, setTemplate] = useState<StoredDocumentTemplate | null>(null)
@@ -59,9 +61,7 @@ export function WeldingJournalGenerationDialog({
       ),
     [
       request.type,
-      template?.options?.checklist,
-      template?.options?.weldingJournal,
-      template?.options?.zni,
+      template?.options,
     ],
   )
   const preparedRows = useMemo(

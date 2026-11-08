@@ -51,7 +51,7 @@ import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
 
 describe('weld server pagination helpers', () => {
   it('keeps staged-control relations in the final-status persistence calculation', () => {
-    const normalized = prepareWeldInputForPersistence({
+    const normalized = prepareWeldInputForPersistence({ preHeatTreatmentMode: 'allPsto' as const,
       joint: 'F50',
       weldDate: '2026-08-01',
       pstoRequired: 'да',

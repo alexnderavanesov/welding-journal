@@ -4,6 +4,15 @@ import { Check, ChevronDown } from 'lucide-react'
 export type GridDensity = 'compact' | 'comfortable' | 'spacious'
 export type GridTheme = 'quartz' | 'alpine' | 'balham'
 
+export function GridColumnVisibilityActions({ onChange, disabled = false }: {
+  onChange: (visible: boolean) => void; disabled?: boolean
+}) {
+  return <div className="flex shrink-0 gap-3">
+    <button type="button" className="journal-text-button" disabled={disabled} onClick={() => onChange(true)}>Показать все</button>
+    <button type="button" className="journal-text-button" disabled={disabled} onClick={() => onChange(false)}>Скрыть все</button>
+  </div>
+}
+
 const DENSITIES = [
   { value: 'compact', label: 'Компактно', description: 'Больше строк на экране' },
   { value: 'comfortable', label: 'Комфортно', description: 'Для ежедневной работы' },

@@ -98,6 +98,7 @@ test('settings show independent formulas and a reset menu; cancel and pre-TO res
   await expect(page.getByText(/ЗНК-РК-ДО-ТО/)).toBeVisible()
   await page.screenshot({ path: info.outputPath('stage-naming-rules.png') })
   await page.getByRole('main').getByRole('button', { name: 'Документы', exact: true }).click()
+  await page.getByRole('tab', { name: 'Системные', exact: true }).click()
   await page.getByRole('button', { name: /Заявка ЛНК Шаблон заявки/ }).click()
   await expect(page.getByText('Основной: 126')).toBeVisible()
   await expect(page.getByText('До ТО: 126')).toBeVisible()

@@ -2,7 +2,7 @@ const CHUNK_RELOAD_MARKER_PREFIX = 'welding-journal:chunk-reload:'
 
 export function isChunkLoadError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? '')
-  return /importing a module script failed|failed to fetch dynamically imported module|error loading dynamically imported module|loading chunk \S+ failed/i.test(message)
+  return /importing a module script failed|failed to fetch dynamically imported module|error loading dynamically imported module|loading chunk \S+ failed|unable to preload css for/i.test(message)
 }
 
 export function markChunkReloadAttempt(pathname: string, storage?: Storage) {

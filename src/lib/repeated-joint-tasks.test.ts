@@ -262,7 +262,7 @@ describe('buildRepeatedJointTasks', () => {
   })
 
   it('uses rejected pre-TO and duplicate results as early-coil reasons', () => {
-    const preHeatRows = [row({
+    const preHeatRows = [row({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'S20',
       hasVik: 'да',
@@ -419,7 +419,7 @@ describe('buildRepeatedJointTasks', () => {
 
   it('prioritizes a duplicate cut over a pre-heat-treatment repair', () => {
     const tasks = buildRepeatedJointTasks([
-      row({
+      row({ preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         joint: 'S11B',
         pstoRequired: 'да',
@@ -447,7 +447,7 @@ describe('buildRepeatedJointTasks', () => {
 
   it('creates a repeated joint after a rejected pre-heat-treatment result', () => {
     const rows = [
-      row({
+      row({ preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         joint: 'S12',
         pstoRequired: 'да',
@@ -491,7 +491,7 @@ describe('buildRepeatedJointTasks', () => {
   it('still removes a generated repeated-joint draft with derived waiting statuses', () => {
     const rows = [
       row({ id: 1, joint: 'S12' }),
-      row({
+      row({ preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         joint: 'S12W1',
         weldDate: null,
@@ -952,7 +952,7 @@ describe('buildRepeatedJointTasks', () => {
 
   it('does not count PSTO as a rejected primary percentage-line control', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
-      row({
+      row({ preHeatTreatmentMode: 'allPsto' as const,
         id: index + 1,
         joint: `S${index + 1}`,
         stamp1K: 'ABC1',

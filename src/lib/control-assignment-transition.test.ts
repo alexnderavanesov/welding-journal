@@ -16,7 +16,7 @@ describe('T-10/T-22: future decisions and performed facts', () => {
   it.each(['годен', 'ремонт', 'вырез'])('protects own %s against both cancellation and empty with optional checks disabled', result => {
     for (const facts of [
       { rkResult: result },
-      { preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ ...pre, result }] },
+      { preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ ...pre, result }] },
       { duplicateControls: [{ ...pre, method: 'РК' as const, result: result as 'годен', conclusion: 'ЗНК', conclusionDate: '2026-11-01', controlDate: '2026-11-01' }] },
     ]) {
       const row: WeldRow = { ...base, ...facts }
@@ -37,13 +37,13 @@ describe('T-10/T-22: future decisions and performed facts', () => {
       { preHeatTreatmentControls: [{ ...pre, defectDescription: 'Дефект 1' }] },
       { preHeatTreatmentControls: [{ ...pre, rkExposureConfirmedDiameter: 108 }] },
     ]) {
-      const row: WeldRow = { ...base, pstoRequired: 'да', ...facts }
+      const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', ...facts }
       expect(getControlAssignmentRemovalReason({ ...row, hasRk: null }, row)).toContain('нельзя снять')
       expect(getControlAssignmentRemovalReason({ ...row, hasRk: 'отменен' }, row)).toContain('нельзя отменить')
       expect(getControlAssignmentRemovalReason({ ...row, hasUzk: null }, row)).toBe('')
       // Preliminary NK traces protect their stage, but do not fabricate performed PSTO.
       expect(getControlAssignmentPerformedHistory(row, 'pstoRequired')).toBeNull()
-      if (row.preHeatTreatmentControls) expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: null }, row)).toContain('нельзя снять')
+      if (row.preHeatTreatmentControls) expect(getControlAssignmentRemovalReason({ preHeatTreatmentMode: 'allPsto' as const, ...row, pstoRequired: null }, row)).toContain('нельзя снять')
     }
   })
   it('keeps old contradictory facts intact on unrelated correction and rejects a new combination', () => {
@@ -67,11 +67,11 @@ describe('T-10/T-22: future decisions and performed facts', () => {
     expect(row.rkRequest).toBe('А1')
   })
   it('request-only PSTO/TVMT does not constitute execution and is cleared in primary/repeat sources', () => {
-    const row: WeldRow = { ...base, pstoRequired: 'да', pstoRequest: 'П1', tvmtRequest: 'Т1',
+    const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', pstoRequest: 'П1', tvmtRequest: 'Т1',
       preHeatTreatmentControls: [{ ...pre, requestName: 'ДО1' }],
       pstoRepeatCycles: [{ id: 12, weldJointId: 1, sequence: 2, pstoRequest: 'П2', tvmtRequest: 'Т2' }] }
     expect(hasPstoExecutionHistory(row)).toBe(false)
-    const next = { ...row, pstoRequired: null }
+    const next = { preHeatTreatmentMode: 'allPsto' as const, ...row, pstoRequired: null }
     expect(getControlAssignmentRemovalReason(next, row)).toBe('')
     clearRequestsForRemovedControlAssignments(next, row)
     expect(next).toMatchObject({ pstoRequest: null, tvmtRequest: null, preHeatTreatmentControls: [{ requestName: null }],
@@ -79,13 +79,13 @@ describe('T-10/T-22: future decisions and performed facts', () => {
   })
   it('protects contradictory actual PSTO requisites even without the result label', () => {
     for (const facts of [{ pstoDate: '2026-11-01' }, { heatTreatmentDiagram: 'Д1' }]) {
-      const row = { ...base, pstoRequired: 'да', ...facts }
+      const row = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', ...facts }
       expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: null }, row)).toContain('нельзя снять')
       expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: 'отменен' }, row)).toContain('нельзя отменить')
     }
   })
   it('retains three performed assignments while cancelling seven future ones and new records', () => {
-    const rows = Array.from({ length: 10 }, (_, i): WeldRow => ({ ...base, id: i + 1, joint: `F${i + 1}`, pstoRequired: 'да',
+    const rows = Array.from({ length: 10 }, (_, i): WeldRow => ({ preHeatTreatmentMode: 'allPsto' as const, ...base, id: i + 1, joint: `F${i + 1}`, pstoRequired: 'да',
       ...(i < 3 ? { pstoResult: 'проведено', pstoDate: '2026-11-01', heatTreatmentDiagram: 'Д1', tvmtResult: i === 0 ? 'не годен' : null } : { pstoRequest: 'П1' }) }))
     const policy = { programState: 'cancelled' as const, rowCount: 10, assignedCount: 10, cancellationDate: '2026-11-04', cancellationBasis: 'Решение' }
     const next = rows.map(row => applyPstoChainPolicy(row, policy, DEFAULT_SYSTEM_INDEX_SETTINGS))

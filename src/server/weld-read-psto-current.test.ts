@@ -30,10 +30,10 @@ import {
 
 const dialect = new PgDialect()
 const sourceRows: WeldRow[] = [
-  { id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoDate: '2026-09-01', tvmtResult: 'не годен', pstoRepeatCycles: [
+  { preHeatTreatmentMode: 'allPsto' as const, id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoDate: '2026-09-01', tvmtResult: 'не годен', pstoRepeatCycles: [
     { id: 11, weldJointId: 1, sequence: 2, pstoDate: '2026-10-02', tvmtResult: 'годен' },
   ] },
-  { id: 2, weldDate: '2026-09-01', pstoRequired: 'да', pstoDate: '2026-09-04', tvmtResult: 'годен', pstoRepeatCycles: [
+  { preHeatTreatmentMode: 'allPsto' as const, id: 2, weldDate: '2026-09-01', pstoRequired: 'да', pstoDate: '2026-09-04', tvmtResult: 'годен', pstoRepeatCycles: [
     { id: 21, weldJointId: 2, sequence: 2, pstoDate: '2026-10-01', tvmtResult: 'не годен' },
   ] },
 ]

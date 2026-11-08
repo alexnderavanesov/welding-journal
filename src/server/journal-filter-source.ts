@@ -2,11 +2,13 @@ import { and, type SQL } from 'drizzle-orm'
 import type { OtherSettings } from '@/lib/other-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
+import { LNK_METHODS } from '@/lib/report-config'
 import { buildCalculatedReportValueSql } from './report-calculated-values-sql'
 import { buildCalculatedFilterWhere } from './report-filter-text-sql'
 
 export const JOURNAL_DERIVED_FILTER_KEYS = [
   'controlBasisSummary', 'rkExposureScheme', ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
+  ...LNK_METHODS.map(method => method.resultKey),
 ] as const
 
 // Shared by journal reads, filter options and mass-fill/replacement templates.

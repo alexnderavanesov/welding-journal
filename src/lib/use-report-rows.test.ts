@@ -25,7 +25,7 @@ describe('paged repair statuses', () => {
   })
 
   it('uses the visible rejected pre-TO source without a separate context request', () => {
-    const source = { id: 1, joint: 'F1', line: 'L', officiality: 'неофициальный', pstoRequired: 'да', hasVik: 'да',
+    const source = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', line: 'L', officiality: 'неофициальный', pstoRequired: 'да', hasVik: 'да',
       preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'ремонт' }],
     }
     expect(prepareReportRows([source, { ...continuation, finalStatus: 'ожидает сварку' }], [], undefined, undefined, undefined, true)[1].finalStatus).toBe('ожидает ремонт')
@@ -34,7 +34,7 @@ describe('paged repair statuses', () => {
 
 describe('PSTO primary facts after client preparation', () => {
   it.each(['ошибка', 'проведено', null])('preserves cancelled %s only when requested, without changing final status', pstoResult => {
-    const source: WeldRow = { id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01',
+    const source: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01',
       pstoRequired: 'отменен', pstoRequest: 'ПСТО', pstoDate: '2026-09-02', pstoResult, tvmtResult: 'не годен' }
     const legacy = prepareReportRows([source])
     const psto = prepareReportRows([source], [], undefined, undefined, undefined, true, true)
@@ -46,7 +46,7 @@ describe('PSTO primary facts after client preparation', () => {
   })
 
   it('retains the existing waiting label for an active primary cycle', () => {
-    const source = { id: 1, joint: 'F1', weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'ПСТО' }
+    const source = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'ПСТО' }
     expect(prepareReportRows([source], [], undefined, undefined, undefined, true, true)[0].pstoResult).toBe('ожидает')
   })
 })
@@ -79,7 +79,7 @@ describe('reuseEquivalentWeldRows', () => {
 
 describe('prepareReportRowsInPlace', () => {
   it('keeps dispatcher status semantics without replacing owned row objects', () => {
-    const source = [{
+    const source = [{ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       weldDate: '2026-09-20',
       hasVik: null,

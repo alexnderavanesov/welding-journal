@@ -1,3 +1,4 @@
+import { getParticipantTemplateIssues, getParticipantValue, isParticipantField, normalizeParticipantKinds, type TemplateParticipant } from './document-template-participants'
 import type * as XLSXTypes from 'xlsx'
 import { formatBusinessDateTime } from '@/lib/business-date'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -14,7 +15,7 @@ import {
   type TemplateStampNameFieldKey,
 } from '@/lib/welder-stamp-names'
 import { parseRkExposureDescription, type RkExposureLine } from '@/lib/rk-exposure'
-import { isLayeredControlDocumentType } from '@/lib/generated-document-types'
+import { isManualGeneratedDocumentType, isLayeredControlDocumentType } from '@/lib/generated-document-types'
 import { getLayeredControlDocumentProfile } from '@/lib/layered-control-documents'
 import { getSystemDocumentRowResult } from '@/lib/system-document-types'
 import { getCurrentPstoCycle } from '@/lib/tvmt-cycle'
@@ -167,7 +168,7 @@ export async function createWeldingJournalBlobFromTemplate(
   records: WeldInput[],
   context: WeldingJournalTemplateContext = {},
 ) {
-  if (template.id === 'weldingJournal' || template.id === 'checklist' || template.id === 'zni') {
+  if (isManualGeneratedDocumentType(template.id)) {
     // Ordinary documents describe the current weld. System documents are
     // already projected onto their own historical stage/cycle by their loader.
     records = records.map(record => {
@@ -188,6 +189,19 @@ export async function createWeldingJournalBlobFromTemplate(
   const worksheet = workbook.Sheets[sheetName]
   if (!worksheet) throw new Error(`Не удалось прочитать лист Excel в файле «${template.fileName}». Проверьте файл и загрузите его заново в «Настройки» → «Документы».`)
 
+  if (constructorConfig) {
+    const issues = getParticipantTemplateIssues(constructorConfig)
+    if (issues.length) throw new Error(issues.map(issue => issue.message).join('\n'))
+  }
+  if (constructorConfig?.repeatMode === 'participants') {
+    if (!isManualGeneratedDocumentType(template.id)) throw new Error('Режим «По участникам работ» доступен в общих и пользовательских документах.')
+    if (context.participants === undefined) {
+      const { getDocumentTemplateParticipants } = await import('@/server/document-participants-api')
+      context = { ...context, participants: await getDocumentTemplateParticipants({ data: {
+        rowIds: records.map(row => Number(row.id)), kinds: normalizeParticipantKinds(constructorConfig.participantKinds),
+      } }) }
+    }
+  }
   if (constructorConfig?.bindings.length) {
     return createWeldingJournalBlobFromConstructor(
       template,
@@ -258,12 +272,20 @@ type ConstructorRepeatUnit = {
   records: WeldInput[]
   recordIndex: number
   rkExposureLine?: RkExposureLine
+  participant?: TemplateParticipant
 }
 
 function getConstructorRepeatUnits(
   records: WeldInput[],
   config: DocumentTemplateConstructorConfig,
+  context: WeldingJournalTemplateContext,
 ): ConstructorRepeatUnit[] {
+  if (config.repeatMode === 'participants') {
+    const kinds = normalizeParticipantKinds(config.participantKinds)
+    return (context.participants ?? []).filter(person => kinds.includes(person.kind)).map((participant, recordIndex) => ({
+      participant, record: {} as WeldInput, records: [], recordIndex,
+    }))
+  }
   if (config.repeatMode !== 'groups' || !config.repeatGroupBy) {
     const expandsRkExposures = config.bindings.some(
       (binding) => binding.mode === 'row' && bindingUsesRkExposureField(binding),
@@ -339,7 +361,7 @@ async function createWeldingJournalBlobFromConstructor(
     (binding) => binding.mode === 'summary' && binding.scope !== 'group',
   )
   const repeatBindings = [...rowBindings, ...groupBindings]
-  const repeatUnits = getConstructorRepeatUnits(records, config)
+  const repeatUnits = getConstructorRepeatUnits(records, config, context)
 
   if (repeatBindings.length && repeatRowStartIndex === undefined) {
     throw new Error('В конструкторе не выбран блок строк, который должен повторяться для каждого стыка.')
@@ -421,7 +443,7 @@ async function createWeldingJournalBlobFromConstructor(
                 binding,
                 unit.record,
                 unit.recordIndex,
-                context,
+                unit.participant ? { ...context, participant: unit.participant } : context,
                 unit.rkExposureLine,
               )
             : binding.mode === 'summary'
@@ -845,6 +867,7 @@ function getTemplateFieldValueByKey(
   groupIndex?: number,
 ) {
   if (mappedKey === '__index') return recordIndex + 1
+  if (isParticipantField(mappedKey)) return getParticipantValue(mappedKey, context.participant)
   if (isSpecialistTemplateField(mappedKey)) return getSpecialistTemplateValue(mappedKey, context.systemDocument?.specialists, context.systemDocument?.type ?? '', context.systemDocument?.methodCode) ?? ''
   if (mappedKey === '__groupIndex') return (groupIndex ?? recordIndex) + 1
   if (mappedKey === '__welderName') return getWelderNamesForOfficialStamps(record, context.welderStamps ?? [])

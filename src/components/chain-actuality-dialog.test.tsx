@@ -3,86 +3,68 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChainActualityDialog } from './chain-actuality-dialog'
 
-const mocks = vi.hoisted(() => ({ preview: vi.fn(), save: vi.fn(), password: vi.fn(), invalidate: vi.fn() }))
-vi.mock('@/server/chain-actuality', () => ({ previewChainActuality: mocks.preview, setChainActuality: mocks.save }))
-vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
-vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))
-const preview = { rowId: 1, active: false, token: 'a'.repeat(64), reason: null, total: 2, changedCount: 1, page: 0, pageSize: 100,
+const mocks = vi.hoisted(() => ({ preview: vi.fn() }))
+vi.mock('@/server/chain-actuality', () => ({ previewChainActuality: mocks.preview }))
+const preview = { rowId: 1, active: false, token: 'a'.repeat(64), reason: null, total: 2, changedCount: 1, page: 0, pageSize: 100, requestRemovals: [], pendingRequestCount: 0,
   rows: [{ id: 1, joint: 'S1', officiality: 'неофициальный', inactive: false }, { id: 2, joint: 'S1R1', officiality: '', inactive: true }] }
 function mount(active = false) {
-  const props = { rowId: 1, active, onClose: vi.fn(), onSaved: vi.fn() }
+  const props = { rowId: 1, active, onClose: vi.fn(), onConfirm: vi.fn() }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><ChainActualityDialog {...props} /></QueryClientProvider>)
   return props
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.preview.mockResolvedValue(preview); mocks.save.mockResolvedValue({ changedCount: 1 }); mocks.password.mockResolvedValue(true) })
-describe('confirmed reversible chain actuality', () => {
-  it('explains a single inactive joint without repair/coil terminology', async () => {
-    mocks.preview.mockResolvedValue({ ...preview, active: true, total: 1, rows: [preview.rows[1]] })
-    mount(true)
-    await screen.findByRole('heading', { name: 'Вернуть актуальность стыку' })
-    expect(screen.getByText('Стык снова станет актуальным по ИЗМу. Документы, результаты НК, назначения, официальность и факт выреза сохранятся.')).toBeInTheDocument()
-    expect(screen.queryByText(/R\/W|сторона катушки|Записей в цепочке/)).not.toBeInTheDocument()
+beforeEach(() => { vi.clearAllMocks(); mocks.preview.mockResolvedValue(preview) })
+describe('card-only chain actuality confirmation', () => {
+  it('warns about request positions and empty documents before changing the draft', async () => {
+    mocks.preview.mockResolvedValue({ ...preview, pendingRequestCount: 2, requestRemovals: [
+      { documentId: 10, title: 'A1', date: '2026-11-06', positions: ['S1 · УЗК'], remaining: 1 },
+      { documentId: 11, title: 'A2', date: '', positions: ['S1R1 · ПСТО'], remaining: 0 },
+    ] })
+    const props = mount()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Из заявок будут удалены позиции без результата: 2')
+    expect(alert).toHaveTextContent('S1 · УЗК')
+    expect(alert).toHaveTextContent('Останется позиций: 1')
+    expect(alert).toHaveTextContent('Заявка станет пустой и будет удалена')
+    expect(screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' })).toBeDisabled()
+    expect(screen.getByText(/Изменение применится при сохранении карточки/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить актуальность стыка' }))
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' }))
+    expect(props.onConfirm).toHaveBeenCalledExactlyOnceWith({ active: false, token: preview.token, confirmed: true })
   })
-
-  it.each(['cancel', 'escape'])('one preview, no focus/reconnect fetches, %s makes no changes', async mode => {
+  it.each(['cancel', 'escape'])('one preview, no focus/reconnect fetches; %s leaves the draft unchanged', async mode => {
     const props = mount()
     await screen.findByText('S1R1 / 2')
     fireEvent.focus(window); window.dispatchEvent(new Event('online'))
     expect(mocks.preview).toHaveBeenCalledOnce()
     if (mode === 'cancel') fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
     else fireEvent.keyDown(window, { key: 'Escape' })
-    expect(props.onClose).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled()
+    expect(props.onClose).toHaveBeenCalledOnce(); expect(props.onConfirm).not.toHaveBeenCalled()
   })
-  it('requires confirmation and coalesces duplicate clicks', async () => {
+  it('keeps an explicit removal warning when document details are hidden by access rights', async () => {
+    mocks.preview.mockResolvedValue({ ...preview, pendingRequestCount: 2, hiddenRemovalCount: 1 })
     const props = mount()
-    await screen.findByText('S1R1 / 2')
-    expect(screen.getByText(/Каждая сторона катушки — отдельное соединение со своей историей/)).toBeInTheDocument()
-    const save = screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' })
-    expect(save).toBeDisabled(); fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(save); fireEvent.click(save)
-    await waitFor(() => expect(props.onClose).toHaveBeenCalledOnce())
-    expect(mocks.save).toHaveBeenCalledExactlyOnceWith({ data: { rowId: 1, active: false, token: preview.token, confirmed: true } })
-    expect(mocks.invalidate).toHaveBeenCalledOnce()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('сведения о которых недоступны по вашим правам')
+    expect(alert).toHaveTextContent('пустые заявки будут удалены')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' }))
+    expect(props.onConfirm).toHaveBeenCalledWith({ active: false, token: preview.token, confirmed: true })
   })
-  it('leaves stale previews open, clears confirmation and supports a fresh check', async () => {
-    mocks.save.mockRejectedValueOnce(new Error('Цепочка изменилась'))
-    const props = mount()
+  it('lets the card return to its stored state after a confirmed but unsaved change', async () => {
+    mocks.preview.mockResolvedValue({ ...preview, active: true, changedCount: 0 })
+    const props = mount(true)
+    await screen.findByText('Снятые ранее позиции заявок автоматически не восстанавливаются.')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' }))
+    expect(props.onConfirm).toHaveBeenCalledWith({ active: true, token: preview.token, confirmed: true })
+  })
+  it('requires a new confirmation after a manual recheck', async () => {
+    mount()
     await screen.findByText('S1R1 / 2')
-    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Цепочка изменилась')
-    expect(screen.getByRole('checkbox')).not.toBeChecked(); expect(props.onClose).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Повторить проверку' }))
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledTimes(2))
-    expect(mocks.save).toHaveBeenCalledOnce()
-  })
-  it.each([{ reason: 'Исправьте связи' }, { changedCount: 0 }])('does not offer confirmation for blocked/no-op states %s', async values => {
-    mocks.preview.mockResolvedValue({ ...preview, ...values }); mount()
-    await screen.findByText('S1R1 / 2')
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Подтвердить актуальность цепочки' })).toBeDisabled()
-  })
-  it('uses the server page after the group shrinks and clears confirmation on navigation', async () => {
-    mocks.preview.mockResolvedValueOnce({ ...preview, total: 301, page: 0 })
-      .mockResolvedValueOnce({ ...preview, total: 301, page: 1 })
-      .mockResolvedValueOnce({ ...preview, total: 301, page: 2 })
-      .mockResolvedValueOnce({ ...preview, total: 150, page: 1 })
-    mount()
-    await screen.findByText('Страница 1 из 4')
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Следующие записи' }))
-    await screen.findByText('Страница 2 из 4')
     expect(screen.getByRole('checkbox')).not.toBeChecked()
-    fireEvent.click(screen.getByRole('button', { name: 'Следующие записи' }))
-    await screen.findByText('Страница 3 из 4')
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить проверку' }))
-    await screen.findByText('Страница 2 из 2')
-    expect(screen.getByRole('button', { name: 'Следующие записи' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Предыдущие записи' })).toBeEnabled()
-    expect(mocks.preview).toHaveBeenCalledTimes(4)
-    expect(mocks.save).not.toHaveBeenCalled()
   })
 })

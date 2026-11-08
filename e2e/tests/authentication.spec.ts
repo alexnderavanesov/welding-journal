@@ -24,8 +24,25 @@ test('owner invites, user activates, immutable email, recovery revokes old sessi
   await page.getByRole('textbox', { name: 'Фамилия и имя', exact: true }).last().fill('Читатель E2E')
   await page.getByRole('textbox', { name: 'Почта', exact: true }).last().fill('reader@e2e.test')
   await page.screenshot({ path: '/private/tmp/welding-auth-permissions.png', fullPage: true })
+  // A transient red success message can disappear before locator assertions run.
+  const invitationAlerts = await page.getByRole('dialog').evaluateHandle(root => {
+    const messages: string[] = []
+    const observer = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue
+        const alerts = [...node.querySelectorAll('[role="alert"]')]
+        if (node.matches('[role="alert"]')) alerts.push(node)
+        for (const alert of alerts) messages.push(alert.textContent ?? '')
+      }
+    })
+    observer.observe(root, { childList: true, subtree: true })
+    return { messages, stop: () => observer.disconnect() }
+  })
   await page.getByRole('button', { name: 'Создать и отправить приглашение', exact: true }).click()
   await expect(page.getByText('reader@e2e.test', { exact: true })).toBeVisible()
+  expect(await invitationAlerts.evaluate(state => { state.stop(); return state.messages })).toEqual([])
+  await invitationAlerts.dispose()
+  await expect(page.getByRole('status').filter({ hasText: 'Письмо подготовлено и передано отправителю.' })).toBeVisible()
   const token = await latestE2eToken()
   const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } })
   try {

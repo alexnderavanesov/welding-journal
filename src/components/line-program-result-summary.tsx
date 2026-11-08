@@ -21,7 +21,7 @@ export function ProgramResultSummary({ row, compact = false }: { row: WeldRow; c
   const shown = sections.map(section => ({ ...section, controls: section.controls.filter(control => summaryMethods.has(control.method)) })).filter(section => section.controls.length)
   return <div aria-label={`Результат ${row.joint}`} className="cursor-default space-y-1.5 text-[11px] leading-4" onClick={event => event.stopPropagation()}>
     {shown.map(section => <div key={section.title}>
-      <p className="mb-0.5 text-[10px] text-slate-500">{section.title}{section.note ? ' · не учитывается' : ''}</p>
+      <p className="mb-0.5 text-[10px] text-slate-500">{section.title}{section.note ? ' · история' : ''}</p>
       <div className="flex flex-wrap gap-1">{section.controls.map(control => {
         const result = String(control.result || (control.conclusion ? 'заключение без результата' : control.request ? 'ожидает НК' : 'результата нет'))
         const tone = isRejectedLineProgramResult(result) || /^не\s+годен(?:\s|$)/i.test(result) ? 'bg-rose-50 text-rose-700' : normalizeResultStatus(result) === 'годен' ? 'bg-emerald-50 text-emerald-800' : result.includes('ожидает') ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-500'

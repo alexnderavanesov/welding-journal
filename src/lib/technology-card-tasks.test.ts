@@ -24,8 +24,8 @@ describe('DZ-06 technology cards', () => {
       for (let i = 0; i < 200; i++) expect(check({ ...stored })).toEqual(first)
       expect(spy).toHaveBeenCalledTimes(1)
       for (const change of [{ technologyCardNumber: 'Неизвестная' }, { weldingMethod: 'РД' }, { connectionType: 'У19' },
-        { materialGroup: 'М03' }, { d1: 1 }, { d2: 1 }, { t1: 1 }, { t2: 1 }, { pstoRequired: 'неизвестно' }]) {
-        Object.assign(stored, row, { technologyCardNumber: card.name, pstoRequired: undefined }, change)
+        { materialGroup: 'М03' }, { d1: 1 }, { d2: 1 }, { t1: 1 }, { t2: 1 }, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'неизвестно' }]) {
+        Object.assign(stored, row, { preHeatTreatmentMode: 'allPsto' as const, technologyCardNumber: card.name, pstoRequired: undefined }, change)
         expect(check(stored)).toEqual(review()(stored))
         expect(check(stored).status).not.toBe('valid')
       }

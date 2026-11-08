@@ -42,7 +42,7 @@ export function getPreHeatTreatmentRequestBlockReason(
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) {
     return `${methodCode || 'Выбранный метод'} не выполняется как НК до ТО.`
   }
-  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО выключен в настройках.'
+  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО не требуется для этого стыка на текущей линии.'
   if (!isPreHeatTreatmentLnkAvailable(row)) {
     return 'НК до ТО доступен только на линии с ПСТО.'
   }
@@ -74,7 +74,7 @@ export function getPreHeatTreatmentResultBlockReason(
   const familyReason = getLnkMethodFamilyBlockReason(row, methodCode)
   if (familyReason) return familyReason
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) return 'Выберите вид НК до ТО.'
-  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО выключен в настройках.'
+  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО не требуется для этого стыка на текущей линии.'
   if (!isPreHeatTreatmentLnkAvailable(row)) {
     return 'НК до ТО доступен только на линии с ПСТО.'
   }
@@ -90,6 +90,11 @@ export function canAddPreHeatTreatmentResult(
   saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ) {
   return !getPreHeatTreatmentResultBlockReason(row, methodCode, saveCheckSettings)
+}
+
+/** Field metadata is used by the fill preview; the validation/message stay unchanged. */
+export class PreHeatTreatmentDateError extends Error {
+  readonly field = 'date' as const
 }
 
 export function buildPreHeatTreatmentRequestWrites({
@@ -425,14 +430,14 @@ function assertPreHeatTreatmentVikOrder(
         return controlDate && date > controlDate
       })
     if (laterControl) {
-      throw new Error(`Стык ${formatJoint(row)}: ВИК до ТО (${formatDisplayDate(date)}) должен быть выполнен не позже остальных видов НК до ТО: ${laterControl.method} (${formatDisplayDate(parseDateLikeToIso(laterControl.conclusionDate))}).`)
+      throw new PreHeatTreatmentDateError(`Стык ${formatJoint(row)}: ВИК до ТО (${formatDisplayDate(date)}) должен быть выполнен не позже остальных видов НК до ТО: ${laterControl.method} (${formatDisplayDate(parseDateLikeToIso(laterControl.conclusionDate))}).`)
     }
     return
   }
   const vik = getPreHeatTreatmentControl(row, 'ВИК')
   const vikDate = parseDateLikeToIso(vik?.conclusionDate)
   if (vikDate && date < vikDate) {
-    throw new Error(`Стык ${formatJoint(row)}: ${methodCode} до ТО (${formatDisplayDate(date)}) не может быть раньше ВИК до ТО (${formatDisplayDate(vikDate)}).`)
+    throw new PreHeatTreatmentDateError(`Стык ${formatJoint(row)}: ${methodCode} до ТО (${formatDisplayDate(date)}) не может быть раньше ВИК до ТО (${formatDisplayDate(vikDate)}).`)
   }
 }
 
@@ -471,14 +476,14 @@ function assertNotBeforeWeld(row: WeldRow, date: string, label: string, format?:
 function assertNotAfterPsto(row: WeldRow, date: string, label: string, format?: ValidationMessageFormatter) {
   const pstoDate = parseDateLikeToIso(row.pstoDate)
   if (pstoDate && date > pstoDate) {
-    throw new Error(formatValidationMessage({ fields: ['pstoDate'], publicMessage: `Стык ${formatJoint(row)}: ${label} не может быть позже даты ПСТО.`,
+    throw new PreHeatTreatmentDateError(formatValidationMessage({ fields: ['pstoDate'], publicMessage: `Стык ${formatJoint(row)}: ${label} не может быть позже даты ПСТО.`,
       message: `Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть позже даты ПСТО (${formatDisplayDate(pstoDate)}).` }, format))
   }
 }
 
 function assertNotBefore(date: string, minimum: unknown, message: string) {
   const minimumDate = parseDateLikeToIso(minimum)
-  if (minimumDate && date < minimumDate) throw new Error(message)
+  if (minimumDate && date < minimumDate) throw new PreHeatTreatmentDateError(message)
 }
 
 function requireDate(value: string, message: string) {

@@ -1,4 +1,5 @@
 import { normalizeControlResultText } from '@/lib/report-value-utils'
+import { isRevisionNotActual } from '@/lib/revision-actuality'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
@@ -227,8 +228,8 @@ export function buildStatisticsSummary(
   const duplicateGood = sumRows(weightedStatusRows.filter(hasGoodDuplicateControl), unit)
   const duplicateRejected = sumRows(weightedStatusRows.filter(hasRejectedDuplicateControl), unit)
   const waitingWeld = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает сварку')
-  const waitingRequest = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает заявку')
-  const waitingControl = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает НК')
+  const waitingRequest = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает заявку') + sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает заявку до ТО')
+  const waitingControl = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает НК') + sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает НК до ТО')
   const waitingRepair = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает ремонт')
   const completedRepairs = sumRows(
     weightedRows.filter((row) => isCompletedRepeatedJoint(row, systemIndexSettings)),
@@ -252,7 +253,7 @@ export function buildStatisticsSummary(
     const closedRequestRows = requestRows.filter((row) => hasLnkClosedData(row, method))
     const closedWithoutRequestRows = closedRows.filter((row) => !hasStatisticsLnkRequest(row, method))
     const waitingRequestRows = activeRows.filter((row) => !hasStatisticsLnkRequest(row, method) && !hasLnkClosedData(row, method))
-    const waitingControlRows = requestRows.filter((row) => !hasLnkClosedData(row, method))
+    const waitingControlRows = requestRows.filter((row) => !isRevisionNotActual(row.revisionActuality) && !hasLnkClosedData(row, method))
     const requests = sumRows(requestRows, unit)
     const closed = sumRows(closedRequestRows, unit)
     const totalClosed = sumRows(closedRows, unit)
@@ -310,7 +311,7 @@ export function buildStatisticsSummary(
   const pstoClosedRows = pstoClosedSourceRows.filter(hasPstoClosedData)
   const pstoClosedRequestRows = pstoRequestRows.filter(hasPstoClosedData)
   const pstoWaitingRequestRows = pstoActiveRows.filter((row) => !hasStatisticsPstoRequest(row) && !hasPstoClosedData(row))
-  const pstoWaitingControlRows = pstoRequestRows.filter((row) => !hasPstoClosedData(row))
+  const pstoWaitingControlRows = pstoRequestRows.filter((row) => !isRevisionNotActual(row.revisionActuality) && !hasPstoClosedData(row))
   const pstoRequests = sumRows(pstoRequestRows, unit)
   const pstoClosed = sumRows(pstoClosedRows, unit)
   const pstoClosedByRequest = sumRows(pstoClosedRequestRows, unit)
@@ -425,9 +426,9 @@ function buildTvmtStatisticsMethod({
   to: string
   unit: StatisticsUnit
 }): StatisticsMethodSummary {
-  const requiredRequestRows = periodRows.filter(isStatisticsTvmtRequired)
+  const requiredRequestRows = periodRows.filter(isStatisticsTvmtActive)
   const createdRequestRows = requiredRequestRows.filter(hasStatisticsTvmtRequest)
-  const activeRows = weightedRows.filter(isStatisticsTvmtRequired)
+  const activeRows = weightedRows.filter(isStatisticsTvmtActive)
   const requestSourceRows = getWeightedRows(
     rows.filter((row) => isTvmtRequestInRange(row, from, to)),
     unit,
@@ -446,7 +447,7 @@ function buildTvmtStatisticsMethod({
   const waitingRequestRows = activeRows.filter((row) => (
     !hasStatisticsTvmtRequest(row) && !hasTvmtClosedData(row)
   ))
-  const waitingControlRows = requestRows.filter((row) => !hasTvmtClosedData(row))
+  const waitingControlRows = requestRows.filter((row) => !isRevisionNotActual(row.revisionActuality) && !hasTvmtClosedData(row))
   const goodRows = closedRows.filter((row) => normalizeTvmtStatisticsResult(row.tvmtResult) === 'good')
   const rejectedRows = closedRows.filter((row) => normalizeTvmtStatisticsResult(row.tvmtResult) === 'failed')
   const goodFromClosedRequestRows = closedRequestRows.filter(
@@ -533,8 +534,8 @@ export function buildStatisticsStateRowIds(
     if (status === 'годен') result.good.push(id)
     else if (status === 'не годен') result.rejected.push(id)
     else if (status === 'ожидает сварку') result.waitingWeld.push(id)
-    else if (status === 'ожидает заявку') result.waitingRequest.push(id)
-    else if (status === 'ожидает НК') result.waitingControl.push(id)
+    else if ((status === 'ожидает заявку' || status === 'ожидает заявку до ТО')) result.waitingRequest.push(id)
+    else if ((status === 'ожидает НК' || status === 'ожидает НК до ТО')) result.waitingControl.push(id)
     else if (status === 'ожидает ремонт') result.waitingRepair.push(id)
     if (hasGoodDuplicateControl(row)) result.duplicateGood.push(id)
     if (hasRejectedDuplicateControl(row)) result.duplicateRejected.push(id)
@@ -624,7 +625,8 @@ function hasStatisticsLnkRequest(row: WeldRow, method: (typeof LNK_METHODS)[numb
 }
 
 function isStatisticsLnkActive(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
-  return isEnabledControlValue(row[method.enabledKey]) && !isStatisticsLnkNoNeed(row, method)
+  return isEnabledControlValue(row[method.enabledKey]) && !isStatisticsLnkNoNeed(row, method) &&
+    (!isRevisionNotActual(row.revisionActuality) || hasLnkClosedData(row, method))
 }
 
 function isStatisticsLnkNoNeed(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
@@ -661,7 +663,7 @@ function isStatisticsPstoActive(row: WeldRow) {
     isEnabledControlValue(row.pstoRequired) ||
     requiresPostHeatTreatmentCompletion(row) ||
     hasCancelledPstoContinuation(row)
-  ) && !isStatisticsPstoNoNeed(row)
+  ) && !isStatisticsPstoNoNeed(row) && (!isRevisionNotActual(row.revisionActuality) || hasPstoClosedData(row))
 }
 
 function hasCancelledPstoContinuation(row: WeldRow) {
@@ -684,6 +686,10 @@ function getPstoRequestDate(row: WeldRow) {
 
 function isStatisticsTvmtRequired(row: WeldRow) {
   return hasPstoClosedData(row)
+}
+
+function isStatisticsTvmtActive(row: WeldRow) {
+  return isStatisticsTvmtRequired(row) && (!isRevisionNotActual(row.revisionActuality) || hasTvmtClosedData(row))
 }
 
 function hasStatisticsTvmtRequest(row: WeldRow) {

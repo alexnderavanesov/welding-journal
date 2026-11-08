@@ -97,6 +97,7 @@ import {
   getWorkflowDraftRootCauseState,
   type WorkflowDraftUpdate,
 } from '@/lib/workflow-root-cause-preview'
+import { isPreHeatTreatmentLnkAvailable } from '@/lib/lnk-control-stage'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 import {
   savePreHeatTreatmentLnkWorkflow,
@@ -168,7 +169,7 @@ const PRE_HEAT_TREATMENT_REQUEST_METHOD_OPTIONS = PRE_HEAT_TREATMENT_LNK_METHODS
 export function PreHeatTreatmentLnkWorkflowDialog({
   embedded = false,
   mode,
-  rows,
+  rows: inputRows,
   isContextReady = true,
   initialSelectedIds,
   initialMethodCode,
@@ -189,6 +190,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const settings = useRequestConclusionSettings()
   const saveCheckSettings = useSaveCheckSettings()
   const processSettings = useControlProcessSettings()
+  const rows = useMemo(() => inputRows.filter(isPreHeatTreatmentLnkAvailable), [inputRows])
   const systemIndexSettings = useSystemIndexSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)

@@ -116,7 +116,7 @@ describe('SystemDocumentDateEditor', () => {
   })
 
   it('blocks the mutation and exposes every exact next action for a new chronology conflict', async () => {
-    const current = row(5, {
+    const current = row(5, { preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО',
       pstoRequestDate: '2026-08-20',

@@ -1,5 +1,24 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test'
-import { writeFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+async function applicationComponentModule() {
+  const assets = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'public/assets')
+  const files = await readdir(assets)
+  const homeModules = files.filter(name => /^home-page-[^/]+\.js$/.test(name))
+  // Older comparison bundles have an inner HomePage chunk. Newer builds keep
+  // the whole screen in the explicit lazy-route or automatic component chunk.
+  let candidates = homeModules
+  if (!candidates.length) candidates = files.filter(name => /^_app\.lazy-[^/]+\.js$/.test(name))
+  if (!candidates.length) {
+    const appModules = files.filter(name => /^_app-[^/]+\.js$/.test(name))
+    const sources = await Promise.all(appModules.map(name => readFile(resolve(assets, name), 'utf8')))
+    candidates = appModules.filter((_, index) => /\bexport\s*\{[^}]*\bas\s+component\s*[,}]/.test(sources[index]))
+  }
+  expect(candidates, `Expected exactly one application component module in ${assets}`).toHaveLength(1)
+  const filename = candidates[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`/assets/${filename}(?:\\?.*)?$`)
+}
 
 async function expectExplicitRecovery(page: Page, browser: Browser, info: TestInfo, timeout = 5000) {
   try {
@@ -34,7 +53,8 @@ test.beforeEach(() => {
 test('одноразовый отказ модуля приложения восстанавливает загрузку без бесконечного обновления', async ({ page, browser }, info) => {
   let failures = 0, navigations = 0, recoveryFetches = 0
   page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigations++ })
-  await page.route(/\/assets\/home-page-[^/]+\.js(?:\?.*)?$/, async route => {
+  const module = await applicationComponentModule()
+  await page.route(module, async route => {
     if (route.request().resourceType() === 'fetch') recoveryFetches++
     if (failures++ === 0) await route.abort('failed')
     else await route.continue()
@@ -55,7 +75,7 @@ test('одноразовый отказ модуля приложения вос
 test('постоянный отказ модуля останавливает автоматический повтор и позволяет явное восстановление', async ({ page, browser }, info) => {
   let failures = 0, navigations = 0
   page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigations++ })
-  const module = /\/assets\/home-page-[^/]+\.js(?:\?.*)?$/
+  const module = await applicationComponentModule()
   await page.route(module, async route => { failures++; await route.abort('failed') })
   await page.goto('/journal')
   await expect.poll(() => navigations, { timeout: 30_000 }).toBe(2)
@@ -99,7 +119,7 @@ test('отказ хранилища браузера не ломает экра�
   })
   let navigations = 0
   page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigations++ })
-  const module = /\/assets\/home-page-[^/]+\.js(?:\?.*)?$/
+  const module = await applicationComponentModule()
   await page.route(module, route => route.abort('failed'))
   await page.goto('/journal')
   await expect(page.getByRole('heading', { name: 'Не удалось открыть раздел', exact: true })).toBeVisible()

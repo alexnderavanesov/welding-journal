@@ -12,6 +12,7 @@ import { syncPreHeatTreatmentDocumentsInTransaction } from '../../src/server/pre
 import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
 import { previewSheetText } from '../document-sheet'
 import { rpcName } from '../rpc'
+import { documentGridRow } from '../document-grid'
 
 const project = 'E2E template control stage'
 const store = createDocumentTemplateFileStore(resolveDocumentTemplateStorageDirectory())
@@ -74,6 +75,7 @@ test.afterEach(async ({ page }) => {
   await store.delete(fileKey)
 })
 async function builder(page: Page, category: string) {
+  await page.getByRole('tab', { name: category === 'ЖСР' ? 'Общие' : 'Системные', exact: true }).click()
   await page.getByRole('button', { name: new RegExp(`^${category} `) }).click()
   await page.getByRole('button', { name: 'Открыть конструктор', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Конструктор шаблона', exact: true }) })
@@ -130,7 +132,8 @@ test('unresaved legacy templates preview and export the correct stage; the gener
     await page.getByRole('button', { name: view, exact: true }).click()
     for (const before of [false, true]) {
       const start = calls.length
-      await page.getByRole('button', { name: title(before, suffix), exact: true }).click()
+      const document = await documentGridRow(page, title(before, suffix))
+      await document.titleCell.getByRole('button', { name: title(before, suffix), exact: true }).click()
       const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
       const defect = `${method === 'РК' ? '0-100: ' : ''}${before ? 'до ТО' : 'основной'} ${method}`
       const text = await previewSheetText(modal)
@@ -150,7 +153,8 @@ test('unresaved legacy templates preview and export the correct stage; the gener
     }
   }
   await page.getByRole('button', { name: 'ЖСР', exact: true }).click()
-  await page.getByRole('button', { name: 'E2E-STAGE-GENERAL', exact: true }).click()
+  const general = await documentGridRow(page, 'E2E-STAGE-GENERAL')
+  await general.titleCell.getByRole('button', { name: 'E2E-STAGE-GENERAL', exact: true }).click()
   const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
   const common = await previewSheetText(modal)
   for (const value of ['основной ВИК', 'до ТО ВИК', '0-100: основной РК', 'до ТО РК']) expect(common).toContain(value)

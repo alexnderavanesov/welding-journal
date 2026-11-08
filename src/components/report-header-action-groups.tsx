@@ -1,3 +1,6 @@
+import { CUSTOM_DOCUMENT_TYPES } from '@/lib/custom-document-types'
+import { useCustomDocumentNames } from '@/lib/custom-document-settings'
+import type { CustomDocumentType } from '@/lib/custom-document-types'
 import { useAccess } from '@/lib/security-context'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, Gauge, ListChecks, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
@@ -19,6 +22,7 @@ type WeldingJournalHeaderActionsProps = {
   onGenerateWeldingJournalDocument: () => void
   onGenerateChecklistDocument: () => void
   onGenerateZniDocument: () => void
+  onGenerateCustomDocument?: (type: CustomDocumentType) => void
   onOpenCurrentReport: () => void
   currentReportDisabled?: boolean
   onOpenWaitingWeldReport: () => void
@@ -39,6 +43,7 @@ export function WeldingJournalHeaderActions({
   onGenerateWeldingJournalDocument,
   onGenerateChecklistDocument,
   onGenerateZniDocument,
+  onGenerateCustomDocument,
   onOpenCurrentReport,
   currentReportDisabled,
   onOpenWaitingWeldReport,
@@ -48,6 +53,7 @@ export function WeldingJournalHeaderActions({
   onOpenSystemReport,
 }: WeldingJournalHeaderActionsProps) {
   const { can } = useAccess()
+  const customNames = useCustomDocumentNames()
   const editable = can('welding.edit')
   return (
     <>
@@ -79,6 +85,7 @@ export function WeldingJournalHeaderActions({
           { label: 'ЖСР', onClick: onGenerateWeldingJournalDocument },
           { label: 'Чек-лист', onClick: onGenerateChecklistDocument },
           { label: 'ЗНИ', onClick: onGenerateZniDocument },
+          ...CUSTOM_DOCUMENT_TYPES.map(type => ({ label: customNames[type], onClick: () => onGenerateCustomDocument?.(type), disabled: !onGenerateCustomDocument })),
         ]}
       />
       <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled || !can('welding.import')}>

@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FileText, Plus, Stamp, UsersRound } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
+import { ReportPageHeader } from '@/components/report-page-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { SpecialistsRegistry } from '@/components/specialists-registry'
 import { Button } from '@/components/ui/button'
@@ -106,7 +107,7 @@ export function WelderStampsRegistry({ header, taskPanels, onTasksVisibilityChan
           filters, expanded cards or suspension editor state, or refetch data. */}
       <div id="stamp-panel-registry" role="tabpanel" aria-labelledby="stamp-tab-registry" hidden={activeTab !== 'registry'}>
         {(registryOpened || activeTab === 'registry') && <div className="space-y-4">
-          {header ?? <h1 className="text-2xl font-semibold text-slate-950">Клейма</h1>}
+          {header ?? <ReportPageHeader title="Клейма" stickyLeft={0} fluid />}
           {taskPanels}
           <MemoizedWelderStampsRegistryContent {...props} />
         </div>}

@@ -171,15 +171,15 @@ describe('buildStatisticsServerResult', () => {
 
   it('returns PSTO event metrics and clickable state ids for the separate PSTO tab', () => {
     const rows = [
-      makeRow(1, {
+      makeRow(1, { preHeatTreatmentMode: 'allPsto' as const,
         pstoRequired: 'да',
         pstoRequest: 'ПСТО-001',
         pstoRequestDate: '2026-07-16',
         pstoDate: '2026-07-17',
         pstoResult: 'проведено',
       }),
-      makeRow(2, { pstoRequired: 'да', pstoRequest: '', pstoResult: '' }),
-      makeRow(3, { hasVik: 'да', vikResult: 'годен', pstoRequired: '' }),
+      makeRow(2, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', pstoRequest: '', pstoResult: '' }),
+      makeRow(3, { preHeatTreatmentMode: 'allPsto' as const, hasVik: 'да', vikResult: 'годен', pstoRequired: '' }),
     ]
 
     const result = buildStatisticsServerResult({

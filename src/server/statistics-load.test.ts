@@ -42,6 +42,7 @@ describe('physical statistics bounded loading', () => {
   it.each(['general', 'lnk', 'psto', 'welders'] as const)('preserves control-history loading for %s, attaching topology only when used', async tab => {
     state.rows = [{ id: 1, joint: 'S1', line: 'L', weldDate: '2026-09-01' } as WeldRow]
     await computeStatisticsServerResult({ tab, unit: 'joints' })
+    expect(state.select.mock.calls[0][0]).toHaveProperty('revisionActuality', weldJoints.revisionActuality)
     expect(state.tables).toHaveLength(tab === 'general' || tab === 'welders' ? 8 : 7)
     expect(state.tables.filter(table => table === weldJointProgramStates)).toHaveLength(tab === 'general' ? 1 : 0)
   })

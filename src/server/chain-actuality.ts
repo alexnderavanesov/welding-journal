@@ -1,97 +1,110 @@
+import { loadPhysicalChainContext } from './physical-chain-context'
 import { createServerFn } from '@tanstack/react-start'
 import { hashJsonRecordTuple } from './json-record-token'
-import { asc, eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { weldJoints, weldJointProgramStates } from '@/db/schema'
-import { buildChainActualityGroups } from '@/lib/chain-actuality'
+import { weldJoints } from '@/db/schema'
 import { isRevisionNotActual } from '@/lib/revision-actuality'
 import { assertSecurityScope } from './security-functions'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
-import { attachProgramChainStates } from './line-program-chain-state'
-import { lineProgramWeldWhere, loadProgramSystemIndexSettings } from './line-program'
-import { haveSameWeldLineMemberships, lockWeldLineMemberships } from './weld-line-membership-lock'
 import { buildNumberArrayMatch } from './weld-request-utils'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from './dispatcher-task-index-dirty'
-import { lockWeldValidationSettings } from './weld-validation-settings-lock'
+import { getPendingActualityRequests } from '@/lib/chain-actuality-requests'
+import type { ChainActualityConfirmation } from '@/lib/chain-actuality'
+import { attachPreHeatTreatmentControlRelations, attachPstoRepeatCycleRelations } from './heat-treatment-control-relations'
+import { loadControlRequestRemovalPreview } from './control-request-removal-preview'
+import { lockLayeredControlDocumentsForWeldChange } from './layered-control-documents'
+import { lockSystemDocumentIndexes } from './system-document-index'
+import { persistChainActualityRequestRemovals } from './chain-actuality-requests'
+import { lockAllControlProcessSettings } from './control-process-settings-lock'
+import { projectControlRequestRemovalPreview } from './control-request-removal-access'
 
 type Tx = SystemDocumentSequenceTransaction
 export type ChainActualityInput = { rowId: number; active: boolean }
 const changedMessage = 'Состав или данные цепочки изменились. Повторите проверку и подтверждение; ничего не сохранено.'
-const columns = { id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
-  line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality, weldDate: weldJoints.weldDate,
-  revisionActuality: weldJoints.revisionActuality, updatedAt: weldJoints.updatedAt }
-
 async function readContext(tx: Tx, input: ChainActualityInput) {
-  if (!Number.isSafeInteger(input.rowId) || input.rowId <= 0 || typeof input.active !== 'boolean') throw new Error('Не указан стык или новое состояние актуальности.')
-  const [initial] = await tx.select(columns).from(weldJoints).where(eq(weldJoints.id, input.rowId))
-  if (!initial) throw new Error('Стык больше не существует. Обновите данные.')
-  if (!String(initial.line ?? '').trim()) throw new Error('Сначала укажите линию стыка.')
-  // Same membership → row → dispatcher lock order as ordinary edits/imports.
-  await lockWeldLineMemberships(tx, [initial])
-  const [current] = await tx.select(columns).from(weldJoints).where(eq(weldJoints.id, input.rowId))
-  if (!current || !haveSameWeldLineMemberships([initial], [current])) throw new Error(changedMessage)
-  // Legacy membership depends on the configured R/W/Y indexes. Keep that
-  // interpretation stable from the read through confirmation and the update.
-  await lockWeldValidationSettings(tx)
-  const settings = await loadProgramSystemIndexSettings(tx)
-  const scope = await attachProgramChainStates(await tx.select(columns).from(weldJoints)
-    .where(lineProgramWeldWhere({ projectTitle: String(current.projectTitle ?? '').trim(), subtitleCode: String(current.subtitleCode ?? '').trim(), line: String(current.line ?? '').trim() })).orderBy(asc(weldJoints.id)), tx)
-  const { groups, states } = buildChainActualityGroups(scope, settings)
-  const group = groups.find(group => group.rows.some(row => row.id === input.rowId))!
-  const scopeById = new Map(scope.map(row => [row.id, row]))
-  const ids = group.rows.map(row => row.id)
-  const locked = await tx.select(columns).from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids)).orderBy(asc(weldJoints.id)).for('update')
-  if (locked.length !== ids.length || locked.some(row => row.updatedAt.getTime() !== scopeById.get(row.id)?.updatedAt.getTime())) throw new Error(changedMessage)
-  const roots = [...new Set(ids.map(id => states.get(id)!.physicalRootId ?? id))]
-  // A saved link may point to a row moved to another line. Never silently change
-  // a partial physical connection; the integrity workflow must repair that first.
-  const linked = await tx.select({ id: weldJoints.id }).from(weldJointProgramStates)
-    .innerJoin(weldJoints, eq(weldJoints.id, weldJointProgramStates.weldJointId))
-    .where(buildNumberArrayMatch(weldJointProgramStates.physicalRootId, roots)).orderBy(asc(weldJoints.id))
-  const idSet = new Set(ids)
-  let reason: string | null = null
-  if (linked.some(row => !idSet.has(row.id)) || ids.some(id => {
-    const state = states.get(id)!
-    return state.physicalRootId == null || !idSet.has(state.physicalRootId) ||
-      state.kind === 'repair' && (state.sourceRowId == null || !idSet.has(state.sourceRowId))
-  })) reason = 'Сохранённые связи цепочки неполны или ведут в другую линию. Сначала исправьте целостность по СП-09; актуальность не изменена.'
+  if (typeof input.active !== 'boolean') throw new Error('Не указано новое состояние актуальности.')
+  // The standalone preview does not pass through the card's process locks.
+  // Settings transitions lock processes before updating these same chain rows;
+  // retain that order even when pending requests are discovered only later.
+  await lockAllControlProcessSettings(tx)
+  const { group, states, scopeById, ids, locked, settings, linked, reason } = await loadPhysicalChainContext(tx, input.rowId)
   const changes = group.rows.filter(row => isRevisionNotActual(row.revisionActuality) === input.active)
+  const history = !input.active && changes.length && !reason
+    ? await attachPstoRepeatCycleRelations(await attachPreHeatTreatmentControlRelations(locked, tx), tx) : []
+  const pendingRequests = getPendingActualityRequests(history)
+  if (pendingRequests.length) {
+    await lockLayeredControlDocumentsForWeldChange(tx)
+    await lockSystemDocumentIndexes(tx)
+  }
+  const requestPreview = await loadControlRequestRemovalPreview(tx, [], new Map(history.map(row => [row.id, row])), [], pendingRequests)
   const token = hashJsonRecordTuple([
-    input, group.rows.map(row => [scopeById.get(row.id), states.get(row.id)]), settings, linked,
+    input, group.rows.map(row => [scopeById.get(row.id), states.get(row.id)]), settings, linked, pendingRequests, requestPreview.token,
   ])
-  return { group, changes, preview: { ...input, token, reason, total: ids.length, changedCount: changes.length,
+  return { group, changes, history, pendingRequests, preview: { ...input, token, reason, total: ids.length, changedCount: changes.length,
+    requestRemovals: requestPreview.removals, pendingRequestCount: pendingRequests.length,
     rows: group.rows.map(row => ({ id: row.id, joint: String(row.joint ?? row.id), officiality: String(row.officiality ?? ''),
       inactive: isRevisionNotActual(row.revisionActuality) })) } }
 }
 
 export async function previewChainActualityInTransaction(tx: Tx, input: ChainActualityInput & { page?: number }) {
+  const { accessContext } = await import('./access-store')
   const requestedPage = input.page ?? 0
   if (!Number.isSafeInteger(requestedPage) || requestedPage < 0) throw new Error('Некорректная страница предпросмотра.')
   const preview = (await readContext(tx, { rowId: input.rowId, active: input.active })).preview
   // A concurrent deletion may shrink the group while the last page is open.
   // Never offer confirmation with an empty list merely because its page vanished.
   const page = Math.min(requestedPage, Math.max(0, Math.ceil(preview.total / 100) - 1))
-  return { ...preview, rows: preview.rows.slice(page * 100, (page + 1) * 100), page, pageSize: 100 }
+  const { removals, hiddenRemovalCount } = projectControlRequestRemovalPreview({ removals: preview.requestRemovals }, accessContext.getStore()?.identity)
+  return { ...preview, requestRemovals: removals, hiddenRemovalCount,
+    rows: preview.rows.slice(page * 100, (page + 1) * 100), page, pageSize: 100 }
 }
-export async function setChainActualityInTransaction(tx: Tx, input: ChainActualityInput & { token: string; confirmed: boolean }) {
+export async function prepareChainActualityInTransaction(tx: Tx, input: ChainActualityInput & { token: string; confirmed: boolean }) {
   if (input.confirmed !== true || !/^[a-f0-9]{64}$/.test(input.token)) throw new Error('Проверьте состав цепочки и подтвердите изменение актуальности.')
-  const { group, changes, preview } = await readContext(tx, { rowId: input.rowId, active: input.active })
+  const context = await readContext(tx, { rowId: input.rowId, active: input.active })
+  const { preview } = context
   if (preview.token !== input.token) throw new Error(changedMessage)
   if (preview.reason) throw new Error(preview.reason)
+  return context
+}
+
+async function persistContext(tx: Tx, context: Awaited<ReturnType<typeof readContext>>) {
+  const { group, changes, history, pendingRequests, preview } = context
   if (changes.length) {
-    const ids = changes.map(row => row.id)
-    await tx.update(weldJoints).set({ revisionActuality: input.active ? null : 'не актуален', weldingUpdatedAt: new Date(),
+    await persistChainActualityRequestRemovals(tx, history, pendingRequests)
+    const ids = [...new Set([...changes.map(row => row.id), ...pendingRequests.map(position => position.rowId)])]
+    await tx.update(weldJoints).set({ revisionActuality: preview.active ? null : 'не актуален', weldingUpdatedAt: new Date(),
       updatedAt: sql`greatest(clock_timestamp(), ${weldJoints.updatedAt} + interval '1 millisecond')` }).where(buildNumberArrayMatch(weldJoints.id, ids))
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(group.rows, new Map()) })
   }
-  return { changedCount: changes.length }
+  return { changedCount: changes.length, removedRequestPositions: pendingRequests.length }
+}
+
+export async function setChainActualityInTransaction(tx: Tx, input: ChainActualityInput & { token: string; confirmed: boolean }) {
+  return persistContext(tx, await prepareChainActualityInTransaction(tx, input))
+}
+
+/** Called before card writes, after locking both old/new line memberships. */
+export async function prepareCardChainActuality(tx: Tx, rowId: number, confirmation: ChainActualityConfirmation | undefined, scope: string) {
+  if (!confirmation) return null
+  if (scope !== 'welding') throw new Error('Актуальность меняется только в карточке сварочного журнала.')
+  return prepareChainActualityInTransaction(tx, { rowId, active: confirmation.active, token: confirmation.token, confirmed: confirmation.confirmed })
+}
+
+/** The card may legitimately move a control to another stage or remove its
+ * assignment. Re-read after those writes: never overwrite a completed result
+ * or remove a request which was not included in the user's confirmation. */
+export async function finishCardChainActuality(tx: Tx, prepared: NonNullable<Awaited<ReturnType<typeof prepareCardChainActuality>>>) {
+  const current = await readContext(tx, { rowId: prepared.preview.rowId, active: prepared.preview.active })
+  if (current.preview.reason) throw new Error(current.preview.reason)
+  if (current.group.rows.length !== prepared.group.rows.length || current.group.rows.some((row, i) => row.id !== prepared.group.rows[i].id)) throw new Error(changedMessage)
+  const requestKey = (request: typeof current.pendingRequests[number]) => JSON.stringify([request.rowId, request.method, request.name, request.date])
+  const confirmedRequests = new Set(prepared.pendingRequests.map(requestKey))
+  if (current.pendingRequests.some(request => !confirmedRequests.has(requestKey(request)))) throw new Error(changedMessage)
+  return persistContext(tx, current)
 }
 
 export const previewChainActuality = createServerFn({ method: 'POST' }).validator((data: ChainActualityInput & { page?: number }) => data).handler(async ({ data }) => {
   await assertSecurityScope('entry')
   return requireDb().transaction(tx => previewChainActualityInTransaction(tx, data))
-})
-export const setChainActuality = createServerFn({ method: 'POST' }).validator((data: ChainActualityInput & { token: string; confirmed: boolean }) => data).handler(async ({ data }) => {
-  await assertSecurityScope('edit')
-  return requireDb().transaction(tx => setChainActualityInTransaction(tx, data))
 })

@@ -195,17 +195,16 @@ try {
     })).returning()
     if (!apply) {
       // Match the already enabled local setting only inside the rollback test.
-      const value = JSON.stringify({ preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: true, pvkGoodOnly: false })
+      const value = JSON.stringify({ preHeatTreatmentMode: 'allPsto' as const,  pvkGoodOnly: false })
       await tx.insert(schema.appSettings).values({ key: 'control-processes', value })
         .onConflictDoUpdate({ target: schema.appSettings.key, set: { value } })
     }
     const context = await validation.loadServerWeldValidationContext(tx, fixtures.map((v) => v.row))
-    assert(context.controlProcessSettings.preHeatTreatmentLnkEnabled, 'Enable pre-TO before using these manual scenarios')
-    assert(context.controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete, 'SP-01 scenario needs the existing early-primary setting')
+    assert(context.controlProcessSettings.preHeatTreatmentMode === 'allPsto', 'Enable pre-TO before using these manual scenarios')
     assert(!context.controlProcessSettings.pvkGoodOnly, 'Rejected PVK scenarios require PVK-good-only to remain off')
     for (const fixture of fixtures) {
       const row = fixture.row
-      row.preHeatTreatmentLnkEnabled = true
+      row.preHeatTreatmentMode = 'allPsto'
       row.preHeatTreatmentControls = fixture.pre.map((v, i) => ({ ...v, id: i + 1, weldJointId: row.id }))
       row.duplicateControls = fixture.duplicates.map((v, i) => ({ ...v, id: i + 1, weldJointId: row.id })) as WeldRow['duplicateControls']
       row.pstoRepeatCycles = fixture.repeats.map((v, i) => ({ ...v, id: i + 1, weldJointId: row.id }))

@@ -53,7 +53,7 @@ describe('full weld snapshot', () => {
 })
 
 function row(id: number, values: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id,
     weldDate: '2026-08-01',
     hasVik: 'да',

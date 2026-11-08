@@ -37,6 +37,7 @@ import { supportConnectionTypeWhere } from './connection-type-sql'
 
 const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
+  revisionActuality: weldJoints.revisionActuality,
   weldDate: weldJoints.weldDate,
   projectTitle: weldJoints.projectTitle,
   subtitleCode: weldJoints.subtitleCode,
@@ -57,7 +58,7 @@ const STATISTICS_STATUS_ROW_SELECT = {
   hasTvmt: weldJoints.hasTvmt,
   layeredControlAssigned: weldJoints.layeredControlAssigned,
   pvkControlPercent: weldJoints.pvkControlPercent,
-  pstoRequired: weldJoints.pstoRequired,
+  preHeatTreatmentRequired: weldJoints.preHeatTreatmentRequired, pstoRequired: weldJoints.pstoRequired,
   pstoRequest: weldJoints.pstoRequest,
   pstoRequestDate: weldJoints.pstoRequestDate,
   pstoResult: weldJoints.pstoResult,
@@ -84,7 +85,6 @@ const STATISTICS_GENERAL_ROW_SELECT = {
   groupName: weldJoints.groupName,
   category: weldJoints.category,
   weldControlPercent: weldJoints.weldControlPercent,
-  revisionActuality: weldJoints.revisionActuality,
   materialGroup: weldJoints.materialGroup,
   stamp1KFact: weldJoints.stamp1KFact,
   stamp1ZFact: weldJoints.stamp1ZFact,

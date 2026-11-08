@@ -70,7 +70,7 @@ describe('link-only membership writes invalidate parent editor versions', () => 
     await touchEditableDocumentParentsForWeldDeletion({ execute } as never, [21, 22])
     expect(execute).toHaveBeenCalledOnce()
     const query = compile(execute.mock.calls[0][0])
-    expect(query.params).toEqual([['weldingJournal', 'checklist', 'zni', 'layeredVikEdges', 'layeredVikLayers', 'layeredPvkEdges', 'layeredPvkLayers'], [21, 22]])
+    expect(query.params).toEqual([['weldingJournal', 'checklist', 'zni', 'custom1', 'custom2', 'layeredVikEdges', 'layeredVikLayers', 'layeredPvkEdges', 'layeredPvkLayers'], [21, 22]])
     expect(query.sql).toContain('a.document_id = "generated_documents"."id"')
     expect(query.sql).toContain('a.weld_joint_id = any(')
     expect(query.sql).toContain('for update')

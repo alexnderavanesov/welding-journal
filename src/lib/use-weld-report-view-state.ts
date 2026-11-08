@@ -122,6 +122,41 @@ export function useWeldReportViewState({
     })
   }, [allowedFieldKeys, alwaysVisibleFieldKeys, updateValue])
 
+  const setFieldVisible = useCallback((fieldKey: WeldFieldKey, visible: boolean) => {
+    if (alwaysVisibleFieldKeys.has(fieldKey) || !allowedFieldKeys.has(fieldKey)) return
+    const section = sections.find(section => section.fields.some(field => field.key === fieldKey))
+    updateValue(current => {
+      const hidden = new Set(current.hiddenFieldKeys), collapsed = new Set(current.collapsedSections)
+      if (visible && section && collapsed.has(section.section)) {
+        // Opening one field in a hidden section must not revive its siblings.
+        for (const field of section.fields) if (!alwaysVisibleFieldKeys.has(field.key)) hidden.add(field.key)
+        collapsed.delete(section.section)
+      }
+      if (visible) hidden.delete(fieldKey)
+      else hidden.add(fieldKey)
+      const hiddenFieldKeys = [...hidden]
+      return { ...current, activePreset: 'custom', hiddenFieldKeys, customHiddenFieldKeys: hiddenFieldKeys,
+        collapsedSections: [...collapsed] }
+    })
+  }, [allowedFieldKeys, alwaysVisibleFieldKeys, sections, updateValue])
+
+  const setSectionFieldsVisible = useCallback((sectionName: string, visible: boolean) => {
+    const section = sections.find(section => section.section === sectionName)
+    if (!section) return
+    updateValue(current => {
+      const hidden = new Set(current.hiddenFieldKeys), collapsed = new Set(current.collapsedSections)
+      for (const field of section.fields) {
+        if (visible || alwaysVisibleFieldKeys.has(field.key)) hidden.delete(field.key)
+        else hidden.add(field.key)
+      }
+      if (visible) collapsed.delete(sectionName)
+      else collapsed.add(sectionName)
+      const hiddenFieldKeys = [...hidden]
+      return { ...current, activePreset: 'custom', hiddenFieldKeys, customHiddenFieldKeys: hiddenFieldKeys,
+        collapsedSections: [...collapsed] }
+    })
+  }, [alwaysVisibleFieldKeys, sections, updateValue])
+
   const showAllFields = useCallback(() => {
     updateValue((current) => ({
       ...current,
@@ -213,6 +248,8 @@ export function useWeldReportViewState({
     savedViews: value.savedViews,
     applyPreset,
     toggleField,
+    setFieldVisible,
+    setSectionFieldsVisible,
     showAllFields,
     setAllFieldsVisible,
     toggleSection,

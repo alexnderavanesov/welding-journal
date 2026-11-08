@@ -6,7 +6,8 @@ const line = 'STAMP-WINDOW'
 test.use({ actionTimeout: 15000 })
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
-async function prepare(page: Page) {
+async function prepare(page: Page, options: { stamps?: number; firstBranchJoints?: number; otherBranchJoints?: number } = {}) {
+  const { stamps = 180, firstBranchJoints = 120, otherBranchJoints = 2 } = options
   await withLineProgramFixture(async db => {
     const { rows: [program] } = await db.query(`insert into line_programs
       (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
@@ -18,8 +19,8 @@ async function prepare(page: Page) {
       select $1,$2,'STAMP-WINDOW',$3,'F'||(s*1000+n),'2026-10-01','С17','действующий','актуальная',
       'РД','М01',108,108,4,4,'II','Б(а)',10,10,'V'||lpad(s::text,3,'0'),'V'||lpad(s::text,3,'0'),
       'V'||lpad(s::text,3,'0'),'да','годен','нет'
-      from generate_series(0,179) s cross join lateral generate_series(1,case when s=0 then 120 else 2 end) n`,
-    [program.id, project, line])
+      from generate_series(0,$4::integer-1) s cross join lateral generate_series(1,case when s=0 then $5::integer else $6::integer end) n`,
+    [program.id, project, line, stamps, firstBranchJoints, otherBranchJoints])
     await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id)
       select id,'primary',id from weld_joints where line_program_id=$1`, [program.id])
   })
@@ -27,7 +28,7 @@ async function prepare(page: Page) {
   await page.getByLabel('Поиск программы линий', { exact: true }).fill(line)
   await page.getByRole('button', { name: `Расчёт линии ${line}`, exact: true }).click()
   const grid = page.locator('[data-program-grid="stamps"]')
-  await expect(grid).toHaveAttribute('data-program-row-count', '180')
+  await expect(grid).toHaveAttribute('data-program-row-count', String(stamps))
   await expect(page.getByRole('button', { name: 'Клеймо V000', exact: true })).toBeVisible()
   return grid
 }
@@ -161,4 +162,117 @@ test('nested joint navigation has one scroll owner and closing returns focus to 
   // Reopening may restore the previous reading position inside the branch;
   // the virtual master can legitimately leave the rendered window again.
   await expect(joints).toBeInViewport()
+})
+
+test('retained branches preserve their extent, reading position and history when density changes in another tab', async ({ page }, info) => {
+  test.setTimeout(120000)
+  await prepare(page, { stamps: 3, firstBranchJoints: 100, otherBranchJoints: 100 })
+  const workspaces: Locator[] = []
+  for (let index = 0; index < 3; index++) {
+    const stamp = `V${String(index).padStart(3, '0')}`
+    await page.getByRole('button', { name: `Клеймо ${stamp}`, exact: true }).click()
+    const workspace = page.getByRole('region', { name: `Стыки клейма ${stamp} · ${line}`, exact: true })
+    workspaces.push(workspace)
+    await expect(workspace.locator('[data-program-grid="joints"]')).toHaveAttribute('data-program-row-count', '100')
+    if (index === 0) {
+      await workspace.getByRole('button', { name: 'F1', exact: true }).click()
+      await expect(workspace.locator('.program-joint-history')).toBeVisible()
+    }
+    await expect(page.locator('[data-program-motion]')).toHaveCount(0)
+    // Reach the following master through document scrolling, as a reader does;
+    // the preceding branch stays expanded, with its own filters/history intact.
+    if (index < 2) await workspace.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().bottom + window.scrollY - 150))
+  }
+  const first = workspaces[0], third = workspaces[2]
+  const firstGrid = first.locator('[data-program-grid="joints"]')
+  const thirdGrid = third.locator('[data-program-grid="joints"]')
+  await expect(firstGrid).toHaveAttribute('data-program-density', 'comfortable')
+  await thirdGrid.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY + 500))
+  await page.evaluate(async () => { for (let i = 0; i < 8; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
+  await expect.poll(() => firstGrid.evaluate(element => element.getBoundingClientRect().bottom < -window.innerHeight)).toBe(true)
+  const firstHeight = await firstGrid.evaluate(element => element.getBoundingClientRect().height)
+
+  let settingsPage: Page | undefined
+  try {
+    await page.mouse.move(1000, 600)
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(0, 90)
+      await page.evaluate(async () => {
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      })
+    }
+    expect(await firstGrid.evaluate(element => element.getBoundingClientRect().height)).toBe(firstHeight)
+
+    const reading = await thirdGrid.evaluate(element => {
+      const headerBottom = element.querySelector('.ag-grid-pinned-top-rows')!.getBoundingClientRect().bottom
+      const row = [...element.querySelectorAll<HTMLElement>('[data-joint]')].find(candidate => {
+        const box = candidate.getBoundingClientRect()
+        return box.top <= headerBottom + 2 && box.bottom > headerBottom + 2
+      })!
+      return { joint: row.dataset.joint!, top: row.getBoundingClientRect().top, pageY: window.scrollY,
+        gridTop: element.getBoundingClientRect().top, viewportTop: element.querySelector('.ag-grid-viewport')!.scrollTop }
+    })
+    const readingRow = third.locator(`[data-joint="${reading.joint}"]`)
+    await expect(readingRow).toBeInViewport()
+
+    // Appearance changes in another window are a real model/height update for
+    // retained offscreen grids. Keep this reader's tab and position untouched.
+    settingsPage = await page.context().newPage()
+    await settingsPage.goto('/line-program')
+    await settingsPage.getByRole('button', { name: 'Настроить вид программы линий', exact: true }).click()
+    const panel = settingsPage.getByRole('dialog', { name: 'Вид программы линий', exact: true })
+    await panel.getByRole('tab', { name: 'Оформление', exact: true }).click()
+    await panel.getByRole('combobox', { name: 'Плотность таблиц' }).click()
+    await panel.getByRole('option', { name: /Просторно/ }).click()
+    await page.bringToFront()
+    await expect(firstGrid).toHaveAttribute('data-program-density', 'spacious')
+    await expect.poll(() => firstGrid.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(firstHeight + 300)
+    // Nested auto-height observers finish in later frames. Check the settled
+    // position, not an intermediate frame that still happens to match.
+    await page.evaluate(async () => { for (let i = 0; i < 16; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
+    await info.attach('density-position', { contentType: 'application/json', body: JSON.stringify({ before: reading,
+      after: await thirdGrid.evaluate(element => ({ pageY: window.scrollY, gridTop: element.getBoundingClientRect().top,
+        viewportTop: element.querySelector('.ag-grid-viewport')!.scrollTop,
+        rows: [...element.querySelectorAll<HTMLElement>('[data-joint]')].map(row => ({ joint: row.dataset.joint, top: row.getBoundingClientRect().top })) })) }) })
+    await expect(readingRow).toBeInViewport()
+    // A new row density may change the clipping within one row, but must not
+    // send the reader to another branch or lose the current joint.
+    await expect.poll(() => readingRow.evaluate((element, top) => Math.abs(element.getBoundingClientRect().top - top), reading.top)).toBeLessThan(70)
+
+    const returnOffset = await thirdGrid.evaluate(element => element.querySelector('.ag-grid-viewport')!.scrollTop)
+    await firstGrid.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 80))
+    await expect(first.getByRole('button', { name: 'F1', exact: true })).toBeInViewport()
+    await expect(first.locator('.program-joint-history')).toBeVisible()
+    // A detail created after the density change must still measure itself;
+    // retaining an existing height must not freeze newly opened histories.
+    await first.getByRole('button', { name: 'F2', exact: true }).click()
+    await expect(first.getByLabel('История контроля F2', { exact: true })).toBeVisible()
+    await expect(first.locator('[data-program-motion]')).toHaveCount(0)
+    await expect.poll(() => first.getByLabel('История контроля F2', { exact: true }).evaluate(element => {
+      const row = element.closest('.ag-row.ag-full-width-row')!
+      return row.getBoundingClientRect().height - element.getBoundingClientRect().height
+    })).toBeGreaterThanOrEqual(-1)
+    await first.getByRole('button', { name: 'F2', exact: true }).click()
+    await expect(first.getByLabel('История контроля F2', { exact: true })).not.toBeVisible()
+    await expect(first.getByLabel('История контроля F1', { exact: true })).toBeVisible()
+    await thirdGrid.evaluate((element, offset) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY + offset - 36), returnOffset)
+    await expect(readingRow).toBeInViewport()
+    await expect(thirdGrid).toHaveAttribute('data-program-row-count', '100')
+    // Let the page-scroll adapter finish the manual return before capturing
+    // the reading position for the independent reverse density change.
+    await page.evaluate(async () => { for (let i = 0; i < 8; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
+    const spaciousTop = await readingRow.evaluate(element => element.getBoundingClientRect().top)
+    await settingsPage.getByRole('button', { name: 'Вернуть исходное оформление', exact: true }).click()
+    await page.bringToFront()
+    await expect(firstGrid).toHaveAttribute('data-program-density', 'comfortable')
+    await page.evaluate(async () => { for (let i = 0; i < 16; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
+    await expect(readingRow).toBeInViewport()
+    await expect.poll(() => readingRow.evaluate((element, top) => Math.abs(element.getBoundingClientRect().top - top), spaciousTop)).toBeLessThan(70)
+    await page.screenshot({ path: info.outputPath('density-reading-position.png') })
+  } finally {
+    if (settingsPage && !settingsPage.isClosed()) {
+      await settingsPage.getByRole('button', { name: 'Вернуть исходное оформление', exact: true }).click({ timeout: 3000 }).catch(() => {})
+      await settingsPage.close()
+    }
+  }
 })

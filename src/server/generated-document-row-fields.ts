@@ -1,3 +1,4 @@
+import { CUSTOM_DOCUMENT_TYPES } from '@/lib/custom-document-types'
 import { and, eq, like, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -16,6 +17,10 @@ export type GeneratedDocumentRowFields = {
   checklistDocumentId?: number
   zniDocument?: string | null
   zniDocumentId?: number
+  custom1Document?: string | null
+  custom1DocumentId?: number
+  custom2Document?: string | null
+  custom2DocumentId?: number
   layeredVikEdgesDocument?: string | null
   layeredVikEdgesDocumentId?: number
   layeredVikLayersDocument?: string | null
@@ -94,6 +99,10 @@ export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrie
     const systemDocumentIds = buildSystemDocumentIds(row, weldAssignments)
     return {
       ...row,
+      ...Object.fromEntries(CUSTOM_DOCUMENT_TYPES.flatMap(type => {
+        const assignment = weldAssignments.find(item => item.type === type)
+        return assignment ? [[`${type}Document`, assignment.title], [`${type}DocumentId`, assignment.documentId]] : []
+      })),
       ...(jsrAssignment
         ? { jsrDocument: jsrAssignment.title, jsrDocumentId: jsrAssignment.documentId }
         : {}),

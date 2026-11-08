@@ -24,7 +24,7 @@ const expectedRepeat = ['PSTO-2', '05.09.2026', '06.09.2026', 'DIAGRAM-2', 'пр
 describe('manual document fields use the current PSTO/TVMT cycle agreed on 27 October', () => {
   for (const type of ['weldingJournal', 'checklist', 'zni'] as const) for (const mode of ['constructor', 'markers'] as const) {
     it(`${type}/${mode}: complete, partial and cancelled repeats preserve actual history and empty fields`, async () => {
-      const base = { id: 1, joint: 'S1', pstoRequired: 'да', ...primary }
+      const base = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', pstoRequired: 'да', ...primary }
       const pending = { id: 12, weldJointId: 1, sequence: 3, pstoRequest: 'PSTO-3', pstoRequestDate: '2026-09-09' }
       const rows = [base, { ...base, pstoRepeatCycles: [repeat] },
         { ...base, pstoRepeatCycles: [repeat, pending] },
@@ -59,7 +59,7 @@ describe('manual document fields use the current PSTO/TVMT cycle agreed on 27 Oc
         { cell: 'A1', mode: 'row', field: 'heatTreatmentDiagram' }, { cell: 'B1', mode: 'row', field: 'tvmtResult' },
       ] } }
     const blob = await createWeldingJournalBlobFromTemplate(template,
-      [{ id: 1, pstoRequired: 'да', ...primary, pstoRepeatCycles: [repeat] } as WeldRow])
+      [{ preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да', ...primary, pstoRepeatCycles: [repeat] } as WeldRow])
     const sheet = XLSX.read(await blob.arrayBuffer(), { type: 'array' }).Sheets['История']
     expect([sheet.A1.v, sheet.B1.v]).toEqual(['DIAGRAM-1', 'не годен'])
   })

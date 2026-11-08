@@ -1,6 +1,6 @@
 import { hasPermission, type AccessIdentity } from '@/lib/access-permissions'
 import type { ControlWorkflowAccess } from '@/lib/control-workflow-access'
-import { getPrimaryPstoStartPrerequisites, requiresHeatTreatmentStagedLnk } from '@/lib/lnk-control-stage'
+import { getPrimaryPstoStartPrerequisites, isPreHeatTreatmentLnkAvailable, requiresHeatTreatmentStagedLnk } from '@/lib/lnk-control-stage'
 import { hasWeldDate } from '@/lib/report-value-utils'
 import { getPstoTvmtWorkflowState } from '@/lib/tvmt-cycle'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -17,12 +17,13 @@ export function projectControlWorkflowAccess(identity: AccessIdentity, source: R
   // with a guess from its primary-cycle fields while the fresh read loads.
   // Transport may omit null facts and empty history arrays; the policy marker
   // survives that compaction and is set after both histories were loaded.
-  if (typeof source.preHeatTreatmentLnkEnabled !== 'boolean') return result
+  if (!['selected', 'allPsto'].includes(String(source.preHeatTreatmentMode))) return result
   // Do not accept a transported snapshot as authority when projecting fresh data.
   const row = { ...source, controlWorkflowAccess: undefined } as WeldInput
   const access: ControlWorkflowAccess = {}
   if (!hasPermission(identity, 'welding.view')) access.welded = hasWeldDate(row)
   if (lnk && !psto) {
+    access.preHeatTreatmentApplicable = isPreHeatTreatmentLnkAvailable(row)
     access.heatTreatmentRequired = requiresHeatTreatmentStagedLnk(row)
     access.heatTreatmentState = getPstoTvmtWorkflowState(row)
   }

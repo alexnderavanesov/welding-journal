@@ -523,7 +523,7 @@ export async function getWeldJointById({
     // pages do not load the same line once per row or query on every field change.
     const settings = result.programChainState ? undefined : await loadProgramSystemIndexSettings(db)
     if (result.programChainState?.kind === 'repair' || !result.programChainState && parseRepeatedJointName(String(result.joint ?? ''), settings).segments.length) {
-      const context = await loadProgramRuleContext(db, [result], result.preHeatTreatmentLnkEnabled !== false)
+      const context = await loadProgramRuleContext(db, [result], result.preHeatTreatmentMode ?? 'selected')
       result.programRepairRequirements = buildProgramRepairRequirements(context.rows, context.approved, settings).get(result.id) ?? []
     }
     return result
@@ -1069,7 +1069,7 @@ function buildHeatTreatmentStagedLnkReadyWhere() {
     hasExecutionHistory,
   ) ?? sql`false`
   const preHeatTreatmentRequired = and(
-    heatTreatmentStagedLnkRequired,
+    pstoRequired,
     buildPreHeatTreatmentEnabledWhere(),
   ) ?? sql`false`
   const allPreHeatTreatmentControlsGood = and(
@@ -1250,7 +1250,7 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
     ...rowsWithHeatTreatmentControls[index],
     ...rowsWithEarlyCoilDecisions[index],
     ...rowsWithChainContinuations[index],
-    preHeatTreatmentLnkEnabled: rowsWithHeatTreatmentControls[index]?.preHeatTreatmentLnkEnabled,
+    preHeatTreatmentMode: rowsWithHeatTreatmentControls[index]?.preHeatTreatmentMode,
   }))
 }
 
@@ -1350,7 +1350,7 @@ export async function loadCurrentFinalStatusRowsContext() {
         hasRk: weldJoints.hasRk,
         hasUzk: weldJoints.hasUzk,
         hasPvk: weldJoints.hasPvk,
-        pstoRequired: weldJoints.pstoRequired,
+        preHeatTreatmentRequired: weldJoints.preHeatTreatmentRequired, pstoRequired: weldJoints.pstoRequired,
         pstoResult: weldJoints.pstoResult,
         pstoDate: weldJoints.pstoDate,
         heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
@@ -1710,6 +1710,8 @@ export function buildDerivedReportCacheKey(
   extra: Record<string, unknown> = {},
 ) {
   const key = buildDerivedCalculationCacheKey(namespace, {
+    // Old persisted facets/pages/totals used stored main-NK result labels.
+    filterValuesVersion: 2,
     report,
     search: filters.search ?? '',
     projectTitle: filters.projectTitle ?? '',

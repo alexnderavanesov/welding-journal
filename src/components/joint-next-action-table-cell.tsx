@@ -20,7 +20,7 @@ export function JointNextActionTableCell({
   dispatcherTasks: readonly RepeatedJointTask[]
   tasksPending?: boolean
   tasksError?: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
   onRun: (row: WeldRow, action: JointNextAction) => void
   onOpenOverview: (row: WeldRow) => void
   journalTooltips?: boolean

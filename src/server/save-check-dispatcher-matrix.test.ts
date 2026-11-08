@@ -101,7 +101,7 @@ function fixture(setting: SaveCheckSettingId) {
       if (setting === 'lnkResultVikDateBeforeOther') Object.assign(record, { vikResult: 'годен', vikConclusionDate: '2026-07-04', vikConclusion: 'ВИК заключение' })
     }
   } else if (setting.startsWith('pstoResult')) {
-    previous = { ...base, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-07-02' }
+    previous = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-07-02' }
     record = { ...previous, pstoResult: 'проведено', pstoDate: '2026-07-03', heatTreatmentDiagram: 'D1' }
     context.pstoLineAssignments = new Map([[getPstoLineIdentityKey(record), { rowCount: 1, assignedCount: 1 }]])
     if (setting === 'pstoResultDateRequired') record.pstoDate = null

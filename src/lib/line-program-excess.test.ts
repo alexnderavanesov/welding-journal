@@ -53,7 +53,7 @@ describe('excess accounting and safe manual removal suggestions', () => {
   it('allows request-only assignments at either stage within one jointly safe subset', () => {
     const rows = [row(1, { hasRk: 'да', rkResult: 'ожидает заявку' }),
       row(2, { hasRk: 'да', rkRequest: 'РК-2', rkResult: 'ожидает НК' }),
-      row(3, { hasRk: 'да', preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 3, method: 'РК', requestName: 'ДО-3' }] }),
+      row(3, { hasRk: 'да', preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 3, method: 'РК', requestName: 'ДО-3' }] }),
       row(4, { hasRk: 'да', rkConclusion: 'РК-4', rkResult: 'годен' })]
     const hints = getProgramRemovalHints(1, rows, calculateLineProgram(rows, 50, 0), new Set())
     expect([...hints.keys()]).toEqual([3, 2])
@@ -107,7 +107,7 @@ describe('excess accounting and safe manual removal suggestions', () => {
   })
   it('never suggests removing facts, protected preheat work, approved patterns or necessary layered PVK', () => {
     const rows = [row(1, { hasRk: 'да', hasUzk: 'да', rkResult: 'годен', uzkConclusion: 'UZ-1' }),
-      row(2, { hasRk: 'да', rkResult: 'ожидает НК', preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 2, method: 'РК', requestName: 'PRE', result: 'годен' }] }),
+      row(2, { hasRk: 'да', rkResult: 'ожидает НК', preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 2, method: 'РК', requestName: 'PRE', result: 'годен' }] }),
       row(3, { connectionType: 'У19', layeredControlAssigned: true, hasPvk: 'да' })]
     const groups = calculateLineProgram(rows, 30, 10)
     expect(getProgramRemovalHints(1, rows, groups, new Set()).size).toBe(0)

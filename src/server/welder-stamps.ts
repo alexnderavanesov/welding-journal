@@ -30,7 +30,7 @@ import {
 } from '@/lib/welder-stamp-persistence-validation'
 import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
 import { getWelderStampDispatcherImpact, getWelderStampSuspensionDispatcherImpact } from '@/lib/welder-stamp-dispatcher-impact'
-import { loadBoundedDispatcherDirtyScopes, loadWelderStampDispatcherScopes, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
+import { loadDispatcherDirtyScopeSelection, loadWelderStampDispatcherScopes, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
 import { loadWelderQualificationImpactScopes } from './welder-qualification-impact'
 import { DISPATCHER_INDEX_LOCK_ID, DISPATCHER_INDEX_STATE_ID } from './dispatcher-task-index-constants'
 import type { DispatcherDirtyScope } from './dispatcher-task-index-dirty'
@@ -226,7 +226,7 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
         suspensions: currentSuspensionRows.map(suspensionToPayload),
       })
       const selectedScopes = qualificationScopes ?? await loadWelderStampDispatcherScopes(tx, impact.officialAliases, impact.decisionOwnerIds)
-      const scopes = selectedScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, selectedScopes)
+      const scopes = selectedScopes === null ? null : (await loadDispatcherDirtyScopeSelection(tx, selectedScopes))?.scopes ?? null
 
       // Preserve object IDs and dependent decisions during ordinary edits. Only truly
       // removed registry objects may cascade-delete their accepted exceptions.
@@ -406,7 +406,7 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
       const retainedIds = new Set(preparedRecords.map(record => record.id))
       if (currentSuspensionRows.some(before => !retainedIds.has(before.id))) await (await import('./access-functions')).assertActionPermission('references.delete')
       const selectedScopes = await loadWelderStampDispatcherScopes(tx, impact.officialAliases, [])
-      const scopes = selectedScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, selectedScopes)
+      const scopes = selectedScopes === null ? null : (await loadDispatcherDirtyScopeSelection(tx, selectedScopes))?.scopes ?? null
 
       await tx.delete(welderStampSuspensions)
 

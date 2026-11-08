@@ -48,12 +48,16 @@ export function JournalPagedGridFilter({ column, onModelChange }: CustomFilterDi
       : readJournalFilterPage({ signal, data: { ...request, match, start: pageParam, revision: first.data?.revision } }),
     getNextPageParam: last => last.next,
   })
-  const options = useMemo(() => {
+  const availableOptions = useMemo(() => {
     const values = remote ? pages.data?.pages.flatMap(page => page.options) ?? [] : first.data?.options ?? []
+    return values.map(value => ({ ...value, values: [value.value], displayLabel: journalFilterValueLabel(fieldKey, value.label),
+      searchText: small ? journalFilterSearchText(fieldKey, value) : '' }))
+  }, [remote, pages.data, first.data, small, fieldKey])
+  const options = useMemo(() => {
+    if (!small) return availableOptions
     const text = search.toLocaleLowerCase('ru')
-    return (small ? values.filter(value => journalFilterSearchText(fieldKey, value).includes(text)) : values)
-      .map(value => ({ ...value, values: [value.value], displayLabel: journalFilterValueLabel(fieldKey, value.label) }))
-  }, [remote, pages.data, first.data, small, search, fieldKey])
+    return availableOptions.filter(value => value.searchText.includes(text))
+  }, [availableOptions, small, search])
   const displayed = small ? options.slice(0, limit) : options
   const total = small ? options.length : remote ? pages.data?.pages[0]?.total ?? 0 : first.data?.total ?? 0
   const waiting = !small && search !== match
@@ -94,6 +98,10 @@ export function JournalPagedGridFilter({ column, onModelChange }: CustomFilterDi
       apply(buildWeldColumnValueFilter([...next]))
     }} />)}
     {total > displayed.length ? <button type="button" className="w-full p-2 text-sm text-sky-700" disabled={pages.isFetching}
-      onClick={() => { if (small) setLimit(value => value + 150); else { setMore(true); void pages.fetchNextPage() } }}>Ещё значения ({total - displayed.length})</button> : null}
+      onClick={() => {
+        // Keep Escape inside the popup when paging disables or removes More.
+        input.current?.focus({ preventScroll: true })
+        if (small) setLimit(value => value + 150); else { setMore(true); void pages.fetchNextPage() }
+      }}>Ещё значения ({total - displayed.length})</button> : null}
   </GridValueFilterPanel>
 }

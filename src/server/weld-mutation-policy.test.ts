@@ -11,6 +11,12 @@ import {
 } from '@/server/weld-mutation-policy'
 
 describe('weld mutation policy', () => {
+  it.each(['welding', 'lnk', 'psto'] as const)('changes actuality only through the whole-chain workflow, not %s payloads', scope => {
+    for (const revisionActuality of ['не актуален', null]) {
+      expect(restrictWeldMutationRecord({ id: 7, revisionActuality }, scope)).toEqual({ id: 7 })
+    }
+    expect(formHiddenFieldKeys.has('revisionActuality')).toBe(false)
+  })
   it.each(['welding', 'lnk', 'psto'] as const)('allows officiality changes only through the dedicated workflow, not %s payloads', scope => {
     expect(restrictWeldMutationRecord({ id: 7, officiality: 'неофициальный' }, scope)).toEqual({ id: 7 })
     expect(restrictWeldMutationRecord({ id: 7, officiality: null }, scope)).toEqual({ id: 7 })
@@ -47,7 +53,9 @@ describe('weld mutation policy', () => {
     const allowed = new Set(WELD_MUTATION_FIELD_KEYS.welding)
     const silentlyDropped = WELD_FIELDS
       .filter((field) => !isVirtualWeldField(field) && !formHiddenFieldKeys.has(field.key))
-      .filter((field) => !allowed.has(field.key))
+      // Actuality is represented by a confirmed whole-chain plan, never by a
+      // raw single-row field value (covered separately above).
+      .filter((field) => field.key !== 'revisionActuality' && !allowed.has(field.key))
       .map((field) => field.key)
 
     expect(silentlyDropped).toEqual([])
@@ -65,9 +73,9 @@ describe('weld mutation policy', () => {
   })
 
   it.each(['welding', 'lnk', 'psto'] as const)('does not accept client-supplied pre-TO policy through %s', (scope) => {
-    const payload = { id: 7, preHeatTreatmentLnkEnabled: false, preHeatTreatmentLnkExempt: true }
+    const payload = { id: 7, preHeatTreatmentMode: 'selected' as const, preHeatTreatmentRequired: true, preHeatTreatmentLnkExempt: true }
     expect(restrictWeldMutationRecord(payload, scope)).toEqual({ id: 7 })
-    expect(WELD_FIELDS.some((field) => String(field.key) === 'preHeatTreatmentLnkEnabled')).toBe(false)
+    expect(WELD_FIELDS.some((field) => String(field.key) === 'preHeatTreatmentRequired')).toBe(false)
   })
 
   it('allows work-code fields shared with LNK and PSTO reports', () => {

@@ -1,3 +1,4 @@
+import { isCustomDocumentType } from './custom-document-types'
 import { FIELD_BY_KEY, type WeldInput, type WeldFieldKey } from '@/lib/weld-fields'
 import {
   DOCUMENT_FORMATION_DATE_TOKEN,
@@ -17,6 +18,7 @@ export type DocumentTemplateNameFieldKey =
   | '__periodTo'
   | '__formationDate'
   | '__documentNumber'
+  | '__documentType'
 
 export type DocumentTemplateNamePart = {
   type: 'text' | 'field'
@@ -31,6 +33,17 @@ export type DocumentTemplateNameConfig = {
 export function createDefaultDocumentTemplateNameConfig(
   templateId: GeneratedDocumentType | string = 'weldingJournal',
 ): DocumentTemplateNameConfig {
+  if (isCustomDocumentType(templateId)) {
+    return { parts: [
+      { type: 'field', field: '__documentType' },
+      { type: 'text', text: ' - ' },
+      { type: 'field', field: 'subtitleCode' },
+      { type: 'text', text: ' - ' },
+      { type: 'field', field: '__periodFrom' },
+      { type: 'text', text: ' - ' },
+      { type: 'field', field: '__periodTo' },
+    ] }
+  }
   if (isLayeredControlDocumentType(templateId)) {
     const profile = getLayeredControlDocumentProfile(templateId)
     return {
@@ -66,12 +79,14 @@ export function buildDocumentTemplateName({
   periodFrom,
   periodTo,
   templateId = 'weldingJournal',
+  documentLabel,
 }: {
   config?: DocumentTemplateNameConfig
   records: WeldInput[]
   periodFrom: string
   periodTo: string
   templateId?: GeneratedDocumentType | string
+  documentLabel?: string
 }) {
   const currentConfig = config ?? createDefaultDocumentTemplateNameConfig(templateId)
   const fullYearDates = isLayeredControlDocumentType(templateId)
@@ -82,6 +97,7 @@ export function buildDocumentTemplateName({
       if (part.field === '__periodFrom') return formatDocumentNameDate(periodFrom, fullYearDates)
       if (part.field === '__periodTo') return formatDocumentNameDate(periodTo, fullYearDates)
       if (part.field === '__formationDate') return DOCUMENT_FORMATION_DATE_TOKEN
+      if (part.field === '__documentType') return documentLabel ?? (isGeneratedDocumentType(templateId) ? getGeneratedDocumentProfile(templateId).label : 'Документ')
       if (part.field === '__documentNumber') return DOCUMENT_SEQUENCE_NUMBER_TOKEN
 
       const field = FIELD_BY_KEY.get(part.field as WeldFieldKey)

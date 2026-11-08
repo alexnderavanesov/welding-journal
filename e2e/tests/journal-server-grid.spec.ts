@@ -1102,8 +1102,9 @@ test('slow scroll across short nested groups keeps the page chrome and table con
   expect(Math.max(...samples.map((s: any) => s.frameX)) - Math.min(...samples.map((s: any) => s.frameX))).toBeLessThan(1)
   expect(Math.max(...samples.map((s: any) => s.width)) - Math.min(...samples.map((s: any) => s.width))).toBeLessThan(1)
   expect(errors).toEqual([])
-  const boundaryPolicy = await page.evaluate(() => CSS.supports('overscroll-behavior-y', 'chain') ? 'chain' : 'auto')
-  await expect(page.locator('html')).toHaveCSS('overscroll-behavior-y', boundaryPolicy)
+  // Native elastic return is intentional, including browsers that now support
+  // `chain`. Support for that value does not select the application's policy.
+  await expect(page.locator('html')).toHaveCSS('overscroll-behavior-y', 'auto')
   await page.getByRole('button', { name: 'Справочники', exact: true }).click()
   await expect(page.locator('[data-journal-workspace]')).toHaveCount(0)
   await expect(page.locator('html')).toHaveCSS('overscroll-behavior-y', 'auto')
@@ -1412,14 +1413,36 @@ test('grouped browser wheel preserves horizontal input, page boundaries and filt
   // At both page boundaries, reversing the gesture must work immediately.
   for (const edge of ['bottom', 'top']) {
     await page.evaluate(edge => scrollTo(0, edge === 'bottom' ? document.documentElement.scrollHeight : 0), edge)
-    await page.waitForTimeout(100)
+    await page.evaluate(async () => {
+      let last = '', stable = 0
+      for (let frame = 0; frame < 90 && stable < 8; frame++) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        const current = `${scrollY}:${document.documentElement.scrollHeight}`
+        stable = current === last ? stable + 1 : 0
+        last = current
+      }
+      if (stable < 8) throw new Error('Boundary geometry did not settle')
+    })
     const boundary = await page.evaluate(() => scrollY)
+    const boundaryHeight = await page.evaluate(() => document.documentElement.scrollHeight)
     await page.mouse.move(1000, 600)
     await page.mouse.wheel(0, edge === 'bottom' ? 240 : -240)
     await page.waitForTimeout(100)
     expect(await page.evaluate(() => scrollY)).toBe(boundary)
     await page.mouse.wheel(0, edge === 'bottom' ? -240 : 240)
-    await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(boundary + (edge === 'bottom' ? -240 : 240), 0)
+    await page.waitForTimeout(100)
+    console.log('WHEEL_BOUNDARY', JSON.stringify({ edge, boundary, boundaryHeight,
+      after: await page.evaluate(() => ({ y: scrollY, height: document.documentElement.scrollHeight })) }))
+    // Chrome's native edge elasticity consumes part of the reversed delta:
+    // the same 240px gesture on a plain 19209px page moved 225–238px. Check
+    // prompt reversal without demanding exact pixels at an overscroll edge;
+    // the flat/grouped-cell cases above still require the full 240px delta.
+    await expect.poll(async () => {
+      const y = await page.evaluate(() => scrollY)
+      return edge === 'bottom' ? boundary - y : y - boundary
+    }).toBeGreaterThan(200)
+    const reversed = await page.evaluate(() => scrollY)
+    expect(edge === 'bottom' ? boundary - reversed : reversed - boundary).toBeLessThanOrEqual(241)
   }
   await page.locator('.ag-header-cell[col-id="joint"]').click()
   await page.keyboard.press('Space')

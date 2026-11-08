@@ -37,7 +37,7 @@ describe('buildPstoResultRows', () => {
   })
 
   it('refuses primary PSTO while assigned pre-TO control is incomplete', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       weldDate: '2026-08-20',
@@ -64,7 +64,7 @@ describe('buildPstoResultRows', () => {
   })
 
   it('refuses a primary PSTO request or result after rejected pre-TO control', () => {
-    const rejected = {
+    const rejected = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       weldDate: '2026-08-20',
@@ -101,7 +101,7 @@ describe('buildPstoResultRows', () => {
   })
 
   it('refuses a PSTO result dated before an existing pre-TO conclusion', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       weldDate: '2026-08-20',
@@ -132,7 +132,7 @@ describe('buildPstoResultRows', () => {
 
   it('allows gradual PSTO backfill while preserving an existing primary LNK set', () => {
     saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS, { syncRemote: false })
-    const legacyPrimary = {
+    const legacyPrimary = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       weldDate: '2026-08-01',
@@ -247,7 +247,7 @@ describe('buildPstoResultCorrectionRow', () => {
   })
 
   it('deletes a pending PSTO request without treating the waiting marker as a result', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       pstoRequired: 'да',
@@ -272,7 +272,7 @@ describe('buildPstoResultCorrectionRow', () => {
   })
 
   it('does not cascade request deletion into completed PSTO stages', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       pstoRequired: 'да',

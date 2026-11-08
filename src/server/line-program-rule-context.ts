@@ -14,7 +14,7 @@ import { attachProgramChainStates } from './line-program-chain-state'
 export async function loadProgramRuleContext(
   db: Pick<SystemDocumentSequenceTransaction, 'select'>,
   scope: readonly Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>[],
-  preHeatTreatmentLnkEnabled: boolean,
+  preHeatTreatmentMode: import('@/lib/pre-heat-treatment-policy').PreHeatTreatmentMode,
 ) {
   const identities = [...new Map(scope.map(row => [programJointIdentity(row as WeldRow, ''), row])).values()]
   const rows: WeldRow[] = []
@@ -29,12 +29,13 @@ export async function loadProgramRuleContext(
       hasVik: weldJoints.hasVik, hasPvk: weldJoints.hasPvk, hasRk: weldJoints.hasRk, hasUzk: weldJoints.hasUzk,
       vikResult: weldJoints.vikResult, pvkResult: weldJoints.pvkResult, rkResult: weldJoints.rkResult, uzkResult: weldJoints.uzkResult,
       layeredControlAssigned: weldJoints.layeredControlAssigned,
+      preHeatTreatmentRequired: weldJoints.preHeatTreatmentRequired, pstoRequired: weldJoints.pstoRequired,
     }).from(weldJoints).where(sql`(lower(btrim(coalesce(${weldJoints.projectTitle}, ''))),
       lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))), lower(btrim(coalesce(${weldJoints.line}, '')))) in (${sql.join(tuples, sql`, `)})`)
     // A bounded line batch can still contain hundreds of thousands of joints.
     for (const row of batch) rows.push(row)
   }
-  const byId = new Map(rows.map(row => { row.preHeatTreatmentLnkEnabled = preHeatTreatmentLnkEnabled; return [row.id, row] as const }))
+  const byId = new Map(rows.map(row => { row.preHeatTreatmentMode = preHeatTreatmentMode; return [row.id, row] as const }))
   const ids = [...byId.keys()]
   if (ids.length) {
     const pre = await db.select().from(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.weldJointId, ids))

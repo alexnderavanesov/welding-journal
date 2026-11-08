@@ -2,6 +2,8 @@ import { asE2eOwner } from '../with-owner-access'
 import { buildWeldColumnFilterOptionsFromRows, projectPstoReportDisplayValues } from '../../src/server/report-filter-reference.test-helper'
 import { buildReportQueryWhere, buildServerReportRows, listReportPage, listColumnFilterOptions, normalizeWeldPageRequest, normalizeWeldColumnFilterOptionsRequest, getWeldReportSummary as raw_getWeldReportSummary , readReportOutputSnapshot as raw_readReportOutputSnapshot } from '../../src/server/weld-read'
 import { LNK_METHODS } from '../../src/lib/report-config'
+import { getLnkDisplayValue } from '../../src/lib/lnk-status'
+import { prepareJournalPageRows } from '../../src/lib/use-report-rows'
 import type { WeldFieldKey } from '../../src/lib/weld-fields'
 import type { WeldJoint } from '../../src/db/schema'
 import type { WeldRow } from '../../src/lib/dispatcher-types'
@@ -76,7 +78,7 @@ test('SQL preserves pre-TO facts, cancellation, no-need, text parsing and litera
   for (const field of PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS) {
     const expression = buildCalculatedReportValueSql('lnk', field, DEFAULT_OTHER_SETTINGS)!
     const values = await db.select({ id: weldJoints.id, value: expression as ReturnType<typeof sql<string>> }).from(weldJoints).where(where)
-    const expected = new Map(rows.map(row => [row.id, String(getPreHeatTreatmentReportValue({ ...row, preHeatTreatmentLnkEnabled: true } as WeldRow, field) ?? '')]))
+    const expected = new Map(rows.map(row => [row.id, String(getPreHeatTreatmentReportValue({ ...row, preHeatTreatmentMode: 'allPsto' } as WeldRow, field) ?? '')]))
     for (const value of values) assert.equal(String(value.value ?? ''), expected.get(value.id), `${field}:${value.id}`)
   }
   const field = 'preRkResult' as const
@@ -86,7 +88,7 @@ test('SQL preserves pre-TO facts, cancellation, no-need, text parsing and litera
     '__column_choice_filter__:' + encodeURIComponent(JSON.stringify({ kind: 'values', values: [] })),
   ]) {
     const filtered = await db.select({ id: weldJoints.id }).from(weldJoints).where(sql`${where} and ${buildCalculatedFilterWhere(expression, filter)}`)
-    const projected = rows.map(row => ({ ...row, [field]: getPreHeatTreatmentReportValue({ ...row, preHeatTreatmentLnkEnabled: true } as WeldRow, field) }))
+    const projected = rows.map(row => ({ ...row, [field]: getPreHeatTreatmentReportValue({ ...row, preHeatTreatmentMode: 'allPsto' } as WeldRow, field) }))
     assert.deepEqual(filtered.map(row => row.id).sort((a,b) => a-b), filterWeldRowsByColumns(projected, { [field]: filter }).map(row => row.id).sort((a,b) => a-b), filter)
   }
   // Independent facts: first stored pre-RK result is a rejection but a cancelled
@@ -180,6 +182,11 @@ test('all main-method fields and calculated families select the same IDs before 
     let projected = buildServerReportRows(stored as unknown as WeldJoint[], report)
       .map(row => ({ ...row, rkExposureScheme: getRkExposureSchemeState(row, null).label }))
     if (report === 'heatTreatment') projected = projectPstoReportDisplayValues(projected, ['pstoCycleSummary', 'pstoResult', 'pstoRequest', 'tvmtResult', 'pstoDate'])
+    // Main NK filters follow the visible result, not the stored waiting label.
+    const displayed = prepareJournalPageRows(projected, report)
+    projected = projected.map((row, index) => ({ ...row,
+      ...Object.fromEntries(LNK_METHODS.map(method => [method.resultKey, getLnkDisplayValue(displayed[index], method.resultKey)])),
+    }))
     const fields: WeldFieldKey[] = [
       ...LNK_METHODS.flatMap(method => [method.requestKey, method.requestDateKey, method.resultKey, method.conclusionKey, method.conclusionDateKey]),
       ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS, 'controlBasisSummary', 'rkExposureScheme',
@@ -203,7 +210,11 @@ test('page, summary, facets and full output share selection and preserve factual
   const stored = await attachHeatTreatmentControlRelations(await db.select().from(weldJoints).where(where))
   for (const report of ['lnk', 'heatTreatment'] as const) {
     const factual = buildServerReportRows(stored as unknown as WeldJoint[], report)
-    const projected = report === 'heatTreatment' ? projectPstoReportDisplayValues(factual, ['pstoCycleSummary', 'tvmtResult']) : factual
+    const cycleValues = report === 'heatTreatment' ? projectPstoReportDisplayValues(factual, ['pstoCycleSummary', 'tvmtResult']) : factual
+    const displayed = prepareJournalPageRows(factual, report)
+    const projected = cycleValues.map((row, index) => ({ ...row,
+      ...Object.fromEntries(LNK_METHODS.map(method => [method.resultKey, getLnkDisplayValue(displayed[index], method.resultKey)])),
+    }))
     for (const columnFilters of [{ preRkResult: '=ремонт' }, { rkResult: 'годен', preRkRequest: 'R-' }, { controlBasisSummary: '=' }] as Record<string, string>[]) {
       const expected = filterWeldRowsByColumns(projected, columnFilters).map(row => row.id).sort((a,b) => a-b)
       const request = { projectTitle: project, columnFilters, includeTotals: false, sort: { fieldKey: 'id', direction: 'asc' } } as const

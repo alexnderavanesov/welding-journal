@@ -301,8 +301,8 @@ describe('getLnkResultSaveBlockReason', () => {
     ).toThrow('пока нет результата ВИК')
   })
 
-  it('allows a primary result before the PSTO cycle only in permissive mode', () => {
-    const row = {
+  it('allows early primary results with or without explicit process settings', () => {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       ...baseRow,
       weldDate: '2026-07-01',
       pstoRequired: 'да',
@@ -320,13 +320,10 @@ describe('getLnkResultSaveBlockReason', () => {
       conclusionName: 'Заключение ВИК',
     }
 
-    expect(() => buildLnkResultRows(input)).toThrow('Сначала завершите НК до ТО')
+    expect(() => buildLnkResultRows(input)).not.toThrow()
     expect(buildLnkResultRows({
       ...input,
-      controlProcessSettings: {
-        preHeatTreatmentLnkEnabled: true,
-        allowPrimaryLnkBeforePreviousStagesComplete: true,
-      },
+      controlProcessSettings: { preHeatTreatmentMode: 'allPsto' },
     })[0]).toMatchObject({
       vikResult: 'годен',
       vikConclusion: 'Заключение ВИК',
@@ -506,7 +503,7 @@ describe('getLnkResultSaveBlockReason', () => {
   })
 
   it('allows correcting a result while an older post-TO chronology issue is being repaired', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       ...baseRow,
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-001',

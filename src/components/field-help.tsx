@@ -5,12 +5,14 @@ import { Info } from 'lucide-react'
 export function FieldHelp({ label, children, href }: { label: string; children: ReactNode; href?: string }) {
   const id = useId()
   const button = useRef<HTMLSpanElement>(null)
+  const anchor = useRef<{ left: number; top: number } | null>(null)
   const [position, setPosition] = useState<{ left: number; top: number; above: boolean } | null>(null)
   const [pinned, setPinned] = useState(false)
   const open = Boolean(position)
   const show = () => {
     if (!button.current) return
     const rect = button.current.getBoundingClientRect()
+    anchor.current = { left: rect.left, top: rect.top }
     const above = rect.top > window.innerHeight / 2
     setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 328)), top: above ? rect.top - 8 : rect.bottom + 8, above })
   }
@@ -24,14 +26,21 @@ export function FieldHelp({ label, children, href }: { label: string; children: 
       close()
     }
     const outside = (event: PointerEvent) => { if (!button.current?.contains(event.target as Node)) close() }
+    const scroll = () => {
+      const rect = button.current?.getBoundingClientRect()
+      // A queued scroll from bringing the trigger into view can arrive after
+      // its click. Keep the tooltip while its anchor is still in that position.
+      if (anchor.current && rect && Math.abs(rect.left - anchor.current.left) < .5 && Math.abs(rect.top - anchor.current.top) < .5) return
+      close()
+    }
     window.addEventListener('keydown', dismiss, true)
     window.addEventListener('pointerdown', outside, true)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('scroll', scroll, true)
     window.addEventListener('resize', close)
     return () => {
       window.removeEventListener('keydown', dismiss, true)
       window.removeEventListener('pointerdown', outside, true)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('scroll', scroll, true)
       window.removeEventListener('resize', close)
     }
   }, [open])

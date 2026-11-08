@@ -64,7 +64,7 @@ export const LNK_OFFICIALITY_CHAIN_SELECT = {
   subtitleCode: weldJoints.subtitleCode,
   line: weldJoints.line,
   spool: weldJoints.spool,
-  pstoRequired: weldJoints.pstoRequired,
+  preHeatTreatmentRequired: weldJoints.preHeatTreatmentRequired, pstoRequired: weldJoints.pstoRequired,
   pstoControlBasis: weldJoints.pstoControlBasis,
   pstoCancellationDate: weldJoints.pstoCancellationDate,
   joint: weldJoints.joint,

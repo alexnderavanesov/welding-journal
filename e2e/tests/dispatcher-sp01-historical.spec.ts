@@ -32,7 +32,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
       await client.query(`insert into app_settings (key, value) values ('control-processes', $1)
         on conflict (key) do update set value = excluded.value`, [JSON.stringify({
         ...DEFAULT_CONTROL_PROCESS_SETTINGS, ...JSON.parse(previousSetting?.value ?? '{}'),
-        preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: false,
+        preHeatTreatmentMode: 'allPsto',
       })])
       settingsChanged = true
       const inserted = await client.query<{ id: number }>(`insert into weld_joints (
@@ -67,7 +67,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     })
     await ensureDispatcherTaskIndexFresh()
     await expectWarning(id, true)
-    await expectFinalStatus(id, 'ожидает заявку')
+    await expectFinalStatus(id, 'ожидает заявку до ТО')
     const before = await readPreservedState(id)
     expect(before.documents.length).toBeGreaterThan(0)
 
@@ -79,7 +79,11 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     const pictureHeading = page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true })
     await expect(pictureHeading).toBeVisible()
     const picture = page.getByRole('dialog').filter({ has: pictureHeading })
-    await expect(picture).toContainText('Создать заявку НК до ТО')
+    // Early primary entry is now always permissive. Completed primary work
+    // stays visible; the explicit backfill action is offered by SP-06 below.
+    await expect(picture).toContainText('Результаты основного НК внесены')
+    await expect(picture).toContainText('СП-06 остаётся')
+    await expect(picture.getByText('ожидает заявку до ТО', { exact: true })).toBeVisible()
     await expect(picture).not.toContainText('Работа по стыку завершена')
     await page.keyboard.press('Escape')
     await expect(pictureHeading).toBeHidden()
@@ -119,7 +123,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     warning = await openWarning()
     await withE2eDatabase(async (client) => {
       await client.query(`update app_settings set value =
-        jsonb_set(value::jsonb, '{preHeatTreatmentLnkEnabled}', 'false')::text where key = 'control-processes'`)
+        jsonb_set(value::jsonb, '{preHeatTreatmentMode}', '"selected"')::text where key = 'control-processes'`)
     })
     await warning.getByRole('button', { name: 'Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByText('Этап НК до ТО уже изменился или выключен. Обновите расчет диспетчера и повторите действие.', { exact: true })).toBeVisible()
@@ -131,12 +135,12 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     expect(await readPreservedState(id)).toEqual(before)
     await withE2eDatabase(async (client) => {
       await client.query(`update app_settings set value =
-        jsonb_set(value::jsonb, '{preHeatTreatmentLnkEnabled}', 'true')::text where key = 'control-processes'`)
+        jsonb_set(value::jsonb, '{preHeatTreatmentMode}', '"allPsto"')::text where key = 'control-processes'`)
     })
     await markDispatcherTaskIndexDirty(requireDb())
     await ensureDispatcherTaskIndexFresh()
     await expectWarning(id, true)
-    await expectFinalStatus(id, 'ожидает заявку')
+    await expectFinalStatus(id, 'ожидает заявку до ТО')
     await page.reload()
 
     warning = await openWarning()

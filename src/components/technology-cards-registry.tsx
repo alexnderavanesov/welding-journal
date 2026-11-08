@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, CheckCircle2, Files, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ReportPageHeader } from '@/components/report-page-header'
 import { TechnologyCardEditor } from '@/components/technology-card-editor'
 import { TechnologyCardAssignmentDialog } from '@/components/technology-card-assignment-dialog'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
@@ -66,10 +67,9 @@ export function TechnologyCardsRegistry({ active }: { active: boolean }) {
   }
 
   return <section className="space-y-3" aria-label="Реестр технологических карт">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="text-xl font-semibold">Технологические карты</h1><p className="mt-1 text-sm text-slate-500">Общий реестр проверенных заказчиком карт для всего журнала.</p></div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy || !can('welding.edit')} onClick={() => setAssignmentOpen(true)}>Проверить и назначить ТК</Button><Button disabled={busy || !can('references.edit')} onClick={() => { setMessage(''); setEditor({ card: null }) }}><Plus className="h-4 w-4" aria-hidden="true" />Добавить ТК</Button></div>
-    </div>
+    <ReportPageHeader title="Технологические карты" stickyLeft={0} fluid summary="Общий реестр проверенных заказчиком карт для всего журнала.">
+      <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={busy || !can('welding.edit')} onClick={() => setAssignmentOpen(true)}>Проверить и назначить ТК</Button><Button disabled={busy || !can('references.edit')} onClick={() => { setMessage(''); setEditor({ card: null }) }}><Plus className="h-4 w-4" aria-hidden="true" />Добавить ТК</Button></div>
+    </ReportPageHeader>
     <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-3">
       <div className="relative min-w-0 flex-1">
         <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />

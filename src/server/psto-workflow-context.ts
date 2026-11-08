@@ -92,7 +92,7 @@ const PSTO_WORKFLOW_FIELD_KEYS = new Set<string>([
   'pstoUpdatedAt',
   'lnkCreatedAt',
   'lnkUpdatedAt',
-  'pstoRequired',
+  'preHeatTreatmentRequired', 'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
   'pstoRequest',

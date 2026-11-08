@@ -116,7 +116,7 @@ describe('lnk request extension', () => {
 
   it('can add a scheduled primary position before the PSTO and TVMT cycle is complete', () => {
     const analysis = analyzeLnkRequestExtensionTargets({
-      rows: [weld({
+      rows: [weld({ preHeatTreatmentMode: 'allPsto' as const,
         pstoRequired: 'да',
         preHeatTreatmentControls: [{
           id: 10,

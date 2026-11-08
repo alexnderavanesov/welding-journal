@@ -9,25 +9,25 @@ import { hasHeatTreatmentReportState } from './report-control-state'
 import { isPrimaryLnkStageReady } from './lnk-control-stage'
 
 const control = { id: 9, weldJointId: 1, method: 'ВИК', requestName: 'PRE-1', requestDate: '2026-09-02', result: 'годен', conclusionName: 'PRE-C1', conclusionDate: '2026-09-03' }
-const row = (patch: Partial<WeldRow> = {}): WeldRow => ({ id: 1, joint: 'S1', line: 'Л1', weldDate: '2026-09-01', hasVik: 'да', pstoRequired: 'да', pstoRequest: 'PSTO-1', pstoRequestDate: '2026-09-03', preHeatTreatmentControls: [control], ...patch }) as WeldRow
+const row = (patch: Partial<WeldRow> = {}): WeldRow => ({ preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', line: 'Л1', weldDate: '2026-09-01', hasVik: 'да', pstoRequired: 'да', pstoRequest: 'PSTO-1', pstoRequestDate: '2026-09-03', preHeatTreatmentControls: [control], ...patch }) as WeldRow
 
 describe('approved line move: preserve every stage without reclassification', () => {
   it.each([null, 'отменен'])('does not present an inactive unperformed repeat as assignment debt (%s)', pstoRequired => {
-    const next = row({ pstoRequired, pstoResult: 'проведено', tvmtResult: 'не годен', pstoRepeatCycles: [{
+    const next = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired, pstoResult: 'проведено', tvmtResult: 'не годен', pstoRepeatCycles: [{
       id: 12, weldJointId: 1, sequence: 2, pstoRequest: 'P2', pstoRequestDate: '2026-09-04', pstoResult: 'ожидает ПСТО',
     }] })
     const history = buildProgramHistory(next).sections.find(section => section.title === 'ПСТО и ТВМТ')!
     expect(history.controls.find(control => control.id === 'psto-2')).toMatchObject({
       result: 'Сохранённая заявка; выполнение ПСТО не требуется', request: 'P2',
     })
-    expect(buildProgramHistory({ ...next, pstoRequired: 'да' }).sections.find(section => section.title === 'ПСТО и ТВМТ')!
+    expect(buildProgramHistory({ preHeatTreatmentMode: 'allPsto' as const, ...next, pstoRequired: 'да' }).sections.find(section => section.title === 'ПСТО и ТВМТ')!
       .controls.find(control => control.id === 'psto-2')?.result).toBe('ожидает ПСТО')
   })
   it('keeps retained request-only PSTO history visible without turning it into a current requirement', () => {
-    const pending = row({ pstoRequired: null })
+    const pending = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: null })
     expect(hasHeatTreatmentReportState(pending)).toBe(true)
     expect(getPstoTvmtWorkflowState(pending)).toBe('not-required')
-    const waitingOnly = row({ pstoRequired: null, pstoRequest: null, pstoRequestDate: null, pstoResult: 'ожидает заявку' })
+    const waitingOnly = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: null, pstoRequest: null, pstoRequestDate: null, pstoResult: 'ожидает заявку' })
     expect(hasHeatTreatmentReportState(waitingOnly)).toBe(false)
   })
   it.each(['unassigned', 'cancelled'] as const)('preserves every stage and pending request on %s without creating PSTO debt', target => {
@@ -55,12 +55,12 @@ describe('approved line move: preserve every stage without reclassification', ()
     expect(calculateFinalStatus(next)).toBe('не годен')
     expect(getPrimaryRejectedLnkResult(next)).toMatchObject({ result: 'ремонт', method: { code: 'ВИК до ТО' } })
     expect(isPrimaryLnkStageReady(next, 'ВИК')).toBe(false)
-    // The separately agreed global process switch still excludes pre-TO facts.
-    expect(getPrimaryRejectedLnkResult({ ...next, preHeatTreatmentLnkEnabled: false } as WeldRow)).toBeNull()
+    // Selected mode cannot conceal a recorded preliminary rejection.
+    expect(getPrimaryRejectedLnkResult({ ...next, preHeatTreatmentMode: 'selected' as const } as WeldRow)).toMatchObject({ result: 'ремонт' })
   })
 
   it('labels retained history and preserves the actual result, including rejection', () => {
-    const next = row({ line: 'Л2', pstoRequired: null, preHeatTreatmentControls: [{ ...control, result: 'ремонт' }] })
+    const next = row({ preHeatTreatmentMode: 'allPsto' as const, line: 'Л2', pstoRequired: null, preHeatTreatmentControls: [{ ...control, result: 'ремонт' }] })
     const section = buildProgramHistory(next).sections.find(section => section.title.includes('до ТО'))!
     expect(section.note).toContain('На текущей линии этап не предусмотрен')
     expect(section.controls[0].result).toBe('ремонт')

@@ -1,3 +1,5 @@
+import { prepareCardPreHeatTreatment, finishCardPreHeatTreatment } from './pre-heat-treatment-chain'
+import { lockPreHeatTreatmentFillCounters } from './pre-heat-treatment-fill'
 import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-save-receipt'
 import { formatAccessValidationMessage } from './access-validation-message'
@@ -57,6 +59,7 @@ import { getProfileTimestampUpdates, toDbInsert, updateWeldJointsInBatches, WELD
 import { assertExpectedInteractiveWeldVersions, lockInteractiveWeldRows } from '@/server/weld-row-version'
 import { getChangedWeldLineMemberships, haveSameWeldLineMemberships, lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
+import { prepareCardChainActuality, finishCardChainActuality } from './chain-actuality'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { assertEarlyCoilDecisionRowsCanBeDeleted, assertEarlyCoilDecisionSourcesRemainValid, hasActiveEarlyCoilDecisionForSource, refreshEarlyCoilDecisionContextsInTransaction } from '@/server/early-coil-decision-guard'
 import { readRequestConclusionSettings } from '@/server/system-document-sequences'
@@ -344,6 +347,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
   await assertSecurityScope('edit')
   if (!data.id) throw new Error('Не передан id записи')
   const id = data.id
+  if (data.preHeatTreatmentConfirmation?.fill) await prepareDocumentCreationIndex(true)
   const db = requireDb()
 
   return db.transaction(async (tx) => {
@@ -363,11 +367,14 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     const identityDraft = { ...identitySnapshot, ...scopedData }
     await lockSubmittedRequestDocuments(tx, [scopedData], mutationScope)
     const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    if (data.preHeatTreatmentConfirmation?.fill) await lockPreHeatTreatmentFillCounters(tx)
     await lockSupportWeldLengthMemberships(
       tx,
       [identitySnapshot, identityDraft],
       [scopedData],
     )
+    const preHeatTreatment = await prepareCardPreHeatTreatment(tx, id, data.preHeatTreatmentConfirmation, mutationScope)
+    const chainActuality = await prepareCardChainActuality(tx, id, data.chainActualityConfirmation, mutationScope)
     const previousRows = await loadPreviousWeldRows(tx, [scopedData])
     if (!previousRows.has(id)) throw new Error(`Запись ${id} не найдена`)
     await (await import('./access-payload')).assertSubmittedWeldFields(data, previousRows.get(id), mutationScope)
@@ -376,6 +383,15 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       [{ id, version: String(data.expectedVersion ?? '').trim() }],
       [...previousRows.values()],
     )
+    // An actuality-only card save must not rebuild completed documents as a
+    // side effect of an otherwise empty ordinary edit.
+    const original = previousRows.get(id)!
+    const comparable = (value: unknown) => value == null || value === '' ? null : value instanceof Date ? value.toISOString() : value
+    if (chainActuality && !preHeatTreatment && Object.entries(scopedData).every(([key, value]) => key === 'id' ||
+      JSON.stringify(comparable(value)) === JSON.stringify(comparable((original as unknown as Record<string, unknown>)[key])))) {
+      await finishCardChainActuality(tx, chainActuality)
+      return (await loadPreviousWeldRows(tx, [{ id }])).get(id)!
+    }
     const [mergedRecord] = mergeWeldRecordsWithPrevious([scopedData], previousRows)
     let record = mergedRecord as WeldRow
     const validationContext = await loadServerWeldValidationContext(tx, [
@@ -448,11 +464,16 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     const transferredSpecialists = await captureTransferredSpecialists(tx, preparedMove.transferredPreControlIds.length || preparedMove.transferredToPreHeatTreatment ? [id] : [], preparedMove.transferredToPreHeatTreatment ? 'beforeHeatTreatment' : 'primary', data.specialistTransferConfirmation)
     const savedControls = preparedMove.transferredToPreHeatTreatment ? await persistTransferredPrimaryControls(tx, [record]) : []
     await removeTransferredPreControlsInTransaction(tx, preparedMove.transferredPreControlIds)
+    // Verify the confirmed history before our own metadata refresh changes
+    // document versions, and before actuality removes pending requests.
+    if (preHeatTreatment) await finishCardPreHeatTreatment(tx, preHeatTreatment)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
     if (savedControls.length) await syncPreHeatTreatmentDocumentsInTransaction(tx, [updated], savedControls)
     await restoreTransferredSpecialists(tx, transferredSpecialists)
     if (correctedSpecialists) await restoreCorrectedDocumentSpecialists(tx, correctedSpecialists, data.specialistCorrectionConfirmation)
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], previousRows) })
+    if (chainActuality) await finishCardChainActuality(tx, chainActuality)
+    if (chainActuality || preHeatTreatment) return (await loadPreviousWeldRows(tx, [{ id }])).get(id)!
     return {
       ...updated,
       preHeatTreatmentControls: record.preHeatTreatmentControls ?? [],
@@ -1210,7 +1231,7 @@ export async function insertWeldJointsInBatches(
     const rows = await tx
       .insert(weldJoints)
       .values(batch.map((record) => toDbInsert({
-        ...record, preHeatTreatmentLnkEnabled: processSettings.preHeatTreatmentLnkEnabled,
+        ...record, preHeatTreatmentMode: processSettings.preHeatTreatmentMode,
       } as WeldRow, true)))
       .returning(WELD_TABLE_RETURNING)
     inserted.push(...rows)

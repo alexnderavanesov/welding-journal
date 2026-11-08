@@ -9,6 +9,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Select } from './ui/select'
 import { DialogHeader } from './dialog-header'
+import { ReportPageHeader } from './report-page-header'
 import { FieldHelp } from './field-help'
 import { SpecialistDialogShell } from './specialist-dialog-shell'
 
@@ -51,10 +52,9 @@ export function SpecialistsRegistry() {
     finally { saving.current = false; setBusy(false) }
   }
   return <section className="space-y-4" aria-label="Реестр специалистов">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="text-xl font-semibold text-slate-900">Специалисты</h1><p className="mt-1 text-sm text-slate-500">Дефектоскописты и термисты для заключений НК, ТВМТ и ПСТО.</p></div>
-      <Button onClick={() => { setError(''); setDraft({ name: '', certificate: '', kind: 'inspector', methods: [] }) }} disabled={busy || !can('references.edit')}><Plus aria-hidden="true" className="h-4 w-4" />Добавить специалиста</Button>
-    </div>
+    <ReportPageHeader title="Специалисты" stickyLeft={0} fluid summary="Дефектоскописты и термисты для заключений НК, ТВМТ и ПСТО.">
+      <div className="flex flex-wrap justify-end gap-2"><Button onClick={() => { setError(''); setDraft({ name: '', certificate: '', kind: 'inspector', methods: [] }) }} disabled={busy || !can('references.edit')}><Plus aria-hidden="true" className="h-4 w-4" />Добавить специалиста</Button></div>
+    </ReportPageHeader>
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
       <div className="relative min-w-0 flex-1 basis-64">
         <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />

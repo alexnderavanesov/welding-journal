@@ -33,7 +33,7 @@ type ReportTarget = 'weldingJournal' | 'lnk' | 'heatTreatment'
 type JointHistoryOverviewProps = {
   row: WeldRow
   dispatcherTasks?: readonly RepeatedJointTask[]
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: ReportTarget) => void
   onShowInReport: (row: WeldRow) => void
@@ -54,7 +54,7 @@ export function JointHistoryOverview({
   onOpenTasks,
 }: JointHistoryOverviewProps) {
   const displayRow = controlProcessSettings
-    ? { ...row, preHeatTreatmentLnkEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled }
+    ? { ...row, preHeatTreatmentMode: controlProcessSettings.preHeatTreatmentMode }
     : row
   const preControls = getPreHeatTreatmentControls(displayRow)
   // The picture keeps partial raw history too. The operational timeline hides

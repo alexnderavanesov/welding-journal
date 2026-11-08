@@ -11,7 +11,7 @@ test.beforeEach(async () => {
   await withE2eDatabase(async db => {
     settings = (await db.query(`select value,updated_at from app_settings where key='control-processes'`)).rows[0]
     await db.query(`insert into app_settings(key,value) values ('control-processes',$1)
-      on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: true })])
+      on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ preHeatTreatmentMode: 'allPsto',  })])
   })
 })
 test.afterEach(async () => {
@@ -64,10 +64,10 @@ for (const officiality of ['действующий', 'неофициальный
     await withE2eDatabase(db => db.query('update weld_joints set officiality=$1 where id=$2', [officiality, id]))
     await page.goto('/documents')
     await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-    const document = page.getByText(title, { exact: true }).first()
-    await expect(document).toBeVisible()
+    const document = await documentGridRow(page, title)
+    await expect(document.titleCell).toBeVisible()
     const before = await snapshot(id)
-    await (await documentGridRow(page, title)).titleCell.click({ button: 'right' })
+    await document.titleCell.click({ button: 'right' })
     await expect(page.getByTestId('context-action-menu')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
     await page.keyboard.press('Escape')
@@ -95,8 +95,19 @@ for (const officiality of ['действующий', 'неофициальный
     await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
     await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
     dialog = page.getByRole('dialog')
-    // Viewing a different stage remains available; it is not a data transfer.
+    // The global registry initially selects its first request, which may have
+    // no pre-TO context. Choose this joint's request before viewing its history.
+    await dialog.getByPlaceholder('Название, дата, стык или линия').fill('STAGE-VIK-R')
+    await dialog.getByRole('button', { name: /^STAGE-VIK-R\s/ }).click()
+    await expect(dialog.getByRole('heading', { name: 'STAGE-VIK-R', exact: true })).toBeVisible()
+    // Viewing the selected request's other stage remains available; it is not
+    // a data transfer and must show the stored pre-TO request itself.
     await expect(dialog.getByRole('group', { name: 'Этап контроля ЛНК' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
+    await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+    dialog = page.getByRole('dialog')
+    await dialog.getByPlaceholder('Название, дата, стык или линия').fill(line)
+    await expect(dialog.getByText('STAGE-PRE-VIK-R', { exact: true }).first()).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
     const after = await snapshot(id)
     expect(after.row).toEqual(before.row)

@@ -11,7 +11,7 @@ import { revealPstoColumn } from './psto-grid-helpers'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { initializePstoLinePrograms } from '../../src/server/psto-program-transition'
 import { attachDispatcherTaskCodesToPage } from '../../src/server/weld-read'
-import type { DispatcherTaskIndexSnapshot } from '../../src/server/dispatcher-task-index'
+import { ensureDispatcherTaskIndexFresh, type DispatcherTaskIndexSnapshot } from '../../src/server/dispatcher-task-index'
 
 const PROJECT = 'E2E chain PSTO exceptions'
 const A = 'EXCEPTION-A', B = 'EXCEPTION-B', C = 'EXCEPTION-C'
@@ -166,7 +166,7 @@ test('устаревшее окно и неполный состав не мен
   // An official namesake is a fresh record, not a copy of stale assignment columns.
   await withLineProgramFixture(async db => { await db.query("update weld_joints set officiality='неофициальный' where id=$1", [root.id]) })
   const draft = {
-    projectTitle: PROJECT, subtitleCode: 'EX', line: A, joint: 'S3', officiality: 'действующий', revisionActuality: 'актуальная',
+    projectTitle: PROJECT, subtitleCode: 'EX', line: A, joint: 'S3', officiality: 'действующий',
     connectionType: 'С17', category: 'II', groupName: 'A', weldControlPercent: 100,
     mutationScope: 'welding',
   }
@@ -509,6 +509,11 @@ test('снятие исключения удаляет решение даже �
     const [doc] = (await db.query(`insert into generated_documents(type,title,file_name,mime_type,row_count) values ('jsr','История цепочки','test.docx','application/octet-stream',1) returning id`)).rows
     await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values ($1,$2)', [doc.id,child.id])
   })
+  // Raw fixtures omit final_status, unlike normal joint creation. Finish their
+  // initial calculation before taking the operator's versioned preview: a
+  // first-open refresh may otherwise persist these statuses between preview
+  // and save. Keep the application's stale-version protection unchanged.
+  await ensureDispatcherTaskIndexFresh()
   await open(page)
   for (const joint of ['S3', 'S30']) {
     const root = rows.find(row => row.joint === joint)!

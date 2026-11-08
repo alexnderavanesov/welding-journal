@@ -1,4 +1,4 @@
-import { useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -8,15 +8,32 @@ import { useDataListSettings } from '@/lib/data-list-settings'
 import { useTechnologyCardSnapshot } from '@/lib/technology-card-query'
 import { createTechnologyCardReview } from '@/lib/technology-card-review'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { getTechnologyCardMaterialChanges } from '@/lib/technology-card-materials'
+import { parseDateLikeToIso } from '@/lib/date-format'
 
-export function WeldFormTechnologyCardField({ draft, setDraft, fieldRefs }: {
+export function WeldFormTechnologyCardField({ draft, setDraft, fieldRefs, allowAutoAssignment = false }: {
   draft: WeldInput; setDraft: Dispatch<SetStateAction<WeldInput>>;
+  allowAutoAssignment?: boolean
   fieldRefs: MutableRefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
 }) {
   const snapshot = useTechnologyCardSnapshot()
   const settings = useDataListSettings()
   const review = useMemo(() => snapshot.data ? createTechnologyCardReview(snapshot.data, settings) : null, [snapshot.data, settings])
   const state = review?.(draft)
+  const autoAssigned = useRef(false)
+  useEffect(() => {
+    if (!allowAutoAssignment || autoAssigned.current || snapshot.isFetching || snapshot.isError ||
+      !parseDateLikeToIso(draft.weldDate) || String(draft.technologyCardNumber ?? '').trim() || state?.cards.length !== 1) return
+    const card = state.cards[0]
+    // Show defaults before saving so the operator can freely override them.
+    // The server checks this card revision without reapplying those defaults.
+    setDraft(current => {
+      if (current !== draft) return current
+      autoAssigned.current = true
+      return { ...current, ...getTechnologyCardMaterialChanges(current, card),
+        technologyCardNumber: card.name, technologyCardSelection: { id: card.id, revision: card.revision } }
+    })
+  }, [allowAutoAssignment, draft, setDraft, snapshot.isFetching, snapshot.isError, state])
   const summary = snapshot.isError ? 'Реестр недоступен' : !state ? 'Загрузка ТК…' : {
     valid: 'ТК подходит', unknown: 'ТК нет в реестре', mismatch: 'Проверьте ТК', incomplete: 'Не хватает данных',
     none: 'Нет подходящих ТК', single: 'Подходит 1 ТК', multiple: `Подходят: ${state.cards.length}`,
@@ -33,7 +50,7 @@ export function WeldFormTechnologyCardField({ draft, setDraft, fieldRefs }: {
       </FieldHelp>
       <Select aria-label="Выбрать подходящую ТК" className="h-7 w-28 shrink-0 rounded border-slate-200 px-1.5 py-0 text-xs shadow-none" disabled={!state?.cards.length || snapshot.isFetching || snapshot.isError} value="" onChange={event => {
         const card = state?.cards.find(item => item.id === Number(event.target.value))
-      if (card) setDraft(current => ({ ...current, technologyCardNumber: card.name, technologyCardSelection: { id: card.id, revision: card.revision } }))
+        if (card) setDraft(current => ({ ...current, ...getTechnologyCardMaterialChanges(current, card), technologyCardNumber: card.name, technologyCardSelection: { id: card.id, revision: card.revision } }))
       }}><option value="">Выбрать ТК…</option>{state?.cards.map(card => <option key={card.id} value={card.id}>{card.name}</option>)}</Select>
       <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 rounded" aria-label="Обновить список ТК" title="Обновить список ТК" disabled={snapshot.isFetching} onClick={() => void snapshot.refetch()}><RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${snapshot.isFetching ? 'animate-spin' : ''}`} /></Button>
     </div>

@@ -25,7 +25,7 @@ export function useReportImportMutations({
     if (!records.some(row => Object.keys(row).some(key => CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)))) return undefined
     const ids = new Set([...records.map(row => row.id), ...deleteIds])
     const preview = await previewControlRequestRemoval({ data: { records, deleteIds, expectedVersions: expectedVersions.filter(target => ids.has(target.id)) } })
-    if (preview.removals.length && !await confirm({ title: 'Сохранить изменения назначений?', description: formatControlRequestRemovals(preview.removals), confirmLabel: 'Подтвердить и сохранить', cancelLabel: 'Вернуться', tone: 'warning' })) {
+    if ((preview.removals.length || preview.hiddenRemovalCount) && !await confirm({ title: 'Сохранить изменения назначений?', description: formatControlRequestRemovals(preview.removals, preview.hiddenRemovalCount), confirmLabel: 'Подтвердить и сохранить', cancelLabel: 'Вернуться', tone: 'warning' })) {
       throw new Error('Сохранение отменено. Данные и заявки не изменены.')
     }
     return preview.token

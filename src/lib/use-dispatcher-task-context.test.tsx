@@ -63,6 +63,25 @@ it('reuses rows when appended server pages interleave IDs instead of reloading e
   expect(server).toHaveBeenCalledTimes(4)
   client.clear()
 })
+it('reuses an in-flight portion when another grid block arrives before its context', async () => {
+  const { wrapper, client } = setup()
+  let resolve!: (value: { tasks: RepeatedJointTask[]; total: number }) => void
+  server.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const view = renderHook(({ count }) => useDispatcherTaskContext(rows(count), 1, true), {
+    wrapper, initialProps: { count: 100 },
+  })
+  try {
+    await waitFor(() => expect(server).toHaveBeenCalledOnce())
+    view.rerender({ count: 200 })
+    await act(async () => resolve({ tasks: [{ key: 'first-portion' } as RepeatedJointTask], total: 1 }))
+    await waitFor(() => expect(view.result.current.pending).toBe(false))
+    const fetched = server.mock.calls.flatMap(([input]) => input.data.rowIds as number[])
+    expect(fetched).toHaveLength(200)
+    expect(new Set(fetched).size).toBe(200)
+    expect(server.mock.calls.map(([input]) => input.data.rowIds.length)).toEqual([100, 100])
+    expect(view.result.current.tasks.map(task => task.key)).toEqual(['first-portion'])
+  } finally { view.unmount(); client.clear() }
+})
 it('indexes task relations identically to the picture without scanning all cards in each rendered cell', () => {
   const source = rows(4); source[3].joint = source[0].joint
   const tasks = [

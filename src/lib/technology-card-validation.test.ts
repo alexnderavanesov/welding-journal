@@ -12,7 +12,7 @@ const validate = (value: unknown) => validateTechnologyCard(value, DEFAULT_DATA_
 
 describe('technology card registry validation', () => {
   it('preserves identifiers and returns validated numeric ranges', () => {
-    expect(validate(draft)).toEqual({ issues: [], card: { ...draft, name: 'ТК-12/А', diameterFrom: 57, diameterTo: 159, thicknessFrom: 3.5, thicknessTo: 6 } })
+    expect(validate(draft)).toEqual({ issues: [], card: { weldingElectrodes: null, weldingElectrodesCertificateNumber: null, fillerWire: null, fillerWireCertificateNumber: null, shieldingGas: null, shieldingGasCertificateNumber: null, ...draft, name: 'ТК-12/А', diameterFrom: 57, diameterTo: 159, thicknessFrom: 3.5, thicknessTo: 6 } })
     expect(normalizeTechnologyCardName(' ab-12 / 01 ')).toBe('ab-12 / 01')
     expect(normalizeTechnologyCardName('0012')).toBe('0012')
     expect(normalizeTechnologyCardName(' ТК  №12 ')).toBe('ТК  №12')

@@ -1,4 +1,3 @@
-import { lnkRow as lnkGridRow, lnkActionRow } from './lnk-grid-helpers'
 import { scrypt } from 'node:crypto'
 
 import { expect, test, type Page } from '@playwright/test'
@@ -21,7 +20,7 @@ type AppSettingSnapshot = {
 
 type WeldSnapshot = {
   id: number
-  pre_heat_treatment_lnk_exempt: boolean
+  pre_heat_treatment_required: boolean | null
   updated_at: Date
 }
 
@@ -34,10 +33,11 @@ test.beforeEach(async () => {
       'select key, value, updated_at from app_settings order by key',
     )).rows
     weldSnapshot = (await client.query<WeldSnapshot>(`
-      select id, pre_heat_treatment_lnk_exempt, updated_at
+      select id, pre_heat_treatment_required, updated_at
       from weld_joints
       order by id
     `)).rows
+    await client.query("insert into app_settings(key,value) values('control-processes',$1) on conflict(key) do update set value=excluded.value", [JSON.stringify({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' })])
   })
 })
 
@@ -67,9 +67,8 @@ test('owner edits process settings through personal access; legacy password sett
 
   await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
   await expect(page.getByRole('switch', { name: /^ПВК — только годен/ })).not.toBeChecked()
-  await expect(page.getByRole('switch', { name: /^НК до ТО/ })).toBeChecked()
-  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).not.toBeChecked()
-  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeEnabled()
+  await expect(page.getByLabel('Режим НК до ТО')).toHaveValue('allPsto')
+  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Параметры РК', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toBeVisible()
 
@@ -78,27 +77,29 @@ test('owner edits process settings through personal access; legacy password sett
   await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
 
   await page.getByRole('button', { name: /^(Редактировать|Заполнить) справочник$/ }).click()
-  await page.getByRole('button', { name: 'Сохранить справочник', exact: true }).click()
+  await page.getByRole('button', { name: 'Применить к настройкам', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toHaveCount(1)
 
   const layeredSwitch = page.getByRole('switch', { name: /^ПВК — только годен/ })
   await layeredSwitch.locator('xpath=..').click()
   await expect.poll(() => loadControlSettings()).toEqual({
     pvkGoodOnly: false,
-    preHeatTreatmentLnkEnabled: true,
-    allowPrimaryLnkBeforePreviousStagesComplete: false,
+    preHeatTreatmentMode: 'allPsto',
+
   })
 
+  await page.getByRole('button', { name: 'Сохранить процессы контроля', exact: true }).click()
   await page.getByRole('button', { name: 'Включить', exact: true }).click()
   await expect(layeredSwitch).toBeChecked()
-  await expect(page.getByText('ПВК — только годен включен для проекта.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible()
   await expect.poll(() => loadControlSettings()).toEqual({
     pvkGoodOnly: true,
-    preHeatTreatmentLnkEnabled: true,
-    allowPrimaryLnkBeforePreviousStagesComplete: false,
+    preHeatTreatmentMode: 'allPsto',
+
   })
 
   await layeredSwitch.locator('xpath=..').click()
+  await page.getByRole('button', { name: 'Сохранить процессы контроля', exact: true }).click()
   await page.getByRole('button', { name: 'Выключить', exact: true }).click()
   await expect(layeredSwitch).not.toBeChecked()
 })
@@ -112,16 +113,18 @@ test('PVK-only-good never starts the removed automatic layered-document workflow
   const toggle = page.getByRole('switch', { name: /^ПВК — только годен/ })
   await expect(toggle).not.toBeChecked()
   await toggle.locator('xpath=..').click()
+  await page.getByRole('button', { name: 'Сохранить процессы контроля', exact: true }).click()
   await page.getByRole('button', { name: 'Включить', exact: true }).click()
   await expect(toggle).toBeChecked()
   expect(await loadLayeredDocumentTypes()).toEqual([])
   await toggle.locator('xpath=..').click()
+  await page.getByRole('button', { name: 'Сохранить процессы контроля', exact: true }).click()
   await page.getByRole('button', { name: 'Выключить', exact: true }).click()
   await expect(toggle).not.toBeChecked()
   expect(await loadLayeredDocumentTypes()).toEqual([])
 })
 
-test('программа линий пересчитывает сохранённый ПВК при выключении и включении НК до ТО, не удаляя историю', async ({ page }) => {
+test('программа линий сохраняет зачтённый ПВК при смене режима НК до ТО', async ({ page }) => {
   const line = 'E2E-PROGRAM-PRE-POLICY'
   await withE2eDatabase(async (client) => {
     const { rows: [program] } = await client.query(`insert into line_programs
@@ -147,75 +150,40 @@ test('программа линий пересчитывает сохранён�
   await page.goto('/settings')
   let pvk = await openProgram()
   await expect(pvk.getByRole('button', { name: 'ПВК · зачтено / нужно 1 / 2', exact: true })).toBeVisible()
-  for (const enabled of [false, true]) {
+  for (const mode of ['selected', 'allPsto']) {
     await page.getByRole('button', { name: 'Настройки', exact: true }).click()
     await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
-    const toggle = page.getByRole('switch', { name: /^НК до ТО/ })
-    await toggle.locator('xpath=..').click()
-    await page.getByRole('button', { name: enabled ? 'Включить' : 'Выключить', exact: true }).click()
-    await expect(toggle).toBeChecked({ checked: enabled })
+    await changeMode(page, mode)
     pvk = await openProgram()
-    await expect(pvk.getByRole('button', { name: `ПВК · зачтено / нужно ${enabled ? 1 : 0} / 2`, exact: true })).toBeVisible()
+    await expect(pvk.getByRole('button', { name: 'ПВК · зачтено / нужно 1 / 2', exact: true })).toBeVisible()
     expect(await history()).toEqual(initialHistory)
   }
 })
 
-test('blocks disabling unfinished pre-TO; re-enabling requires pre-TO even for PSTO started while off', async ({ page }) => {
+test('mode changes preserve unfinished history, initial requirements and explicit off choices', async ({ page }) => {
   await seedPreHeatTreatmentLines()
+  const stored = () => withE2eDatabase(async client => ({
+    controls: (await client.query('select c.* from pre_heat_treatment_controls c join weld_joints w on w.id=c.weld_joint_id where w.project_title=$1 order by c.id', [TEST_PROJECT])).rows,
+    flags: (await client.query('select joint,pre_heat_treatment_required from weld_joints where project_title=$1 order by joint', [TEST_PROJECT])).rows,
+  }))
+  const before = await stored()
   await openControlProcesses(page)
-
-  let preSwitch = page.getByRole('switch', { name: /^НК до ТО/ })
-  await expect(preSwitch).toBeDisabled()
-  await expect(page.getByText(/Нельзя выключить: незавершенных заявок или негодных результатов/)).toBeVisible()
-  await expect.poll(() => loadControlSettings()).toEqual({
-    pvkGoodOnly: false,
-    preHeatTreatmentLnkEnabled: true,
-    allowPrimaryLnkBeforePreviousStagesComplete: false,
-  })
-
-  await completePreHeatTreatmentBlocker()
-  await page.reload()
-  await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
-  preSwitch = page.getByRole('switch', { name: /^НК до ТО/ })
-  await expect(preSwitch).toBeEnabled()
-  await preSwitch.locator('xpath=..').click()
-  await page.getByRole('button', { name: 'Выключить', exact: true }).click()
-  await expect(preSwitch).not.toBeChecked()
-  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeDisabled()
-  await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
-    ['F-PRE-A1', false],
-    ['F-PRE-A2', false],
-    ['F-PRE-B1', false],
-    ['F-PRE-B2', false],
-  ])
-
-  await page.goto('/lnk')
-  await expect(page.getByText('F-PRE-A1', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: 'НК до ТО', exact: true })).toHaveCount(0)
-  const unstarted = await lnkActionRow(page, 'F-PRE-A2')
-  await expect(page.getByText('Создать заявку ПСТО', { exact: false }).first()).toBeVisible()
-
-  await unstarted.getByRole('button', { name: 'Выполнить: Создать заявку ПСТО', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Заявка ПСТО', exact: true })).toBeVisible()
-  await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-02')
-  await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Заявка ПСТО', exact: true })).toBeHidden()
-  await openControlProcesses(page)
-  preSwitch = page.getByRole('switch', { name: /^НК до ТО/ })
-  await preSwitch.locator('xpath=..').click()
-  await page.getByRole('button', { name: 'Включить', exact: true }).click()
-  await expect(preSwitch).toBeChecked()
-  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeEnabled()
-  await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
-    ['F-PRE-A1', false],
-    ['F-PRE-A2', false],
-    ['F-PRE-B1', false],
-    ['F-PRE-B2', false],
-  ])
-  await page.goto('/lnk')
-  const started = await lnkActionRow(page, 'F-PRE-A2')
-  await expect(started.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true })).toBeVisible()
+  await changeMode(page, 'selected')
+  expect((await stored()).controls).toEqual(before.controls)
+  expect((await stored()).flags.every(row => row.pre_heat_treatment_required === true)).toBe(true)
+  await withE2eDatabase(client => client.query('update weld_joints set pre_heat_treatment_required=false where project_title=$1 and joint=$2', [TEST_PROJECT, PRE_JOINTS[1]]))
+  await changeMode(page, 'allPsto')
+  await changeMode(page, 'selected')
+  expect((await stored()).flags.find(row => row.joint === PRE_JOINTS[1])?.pre_heat_treatment_required).toBe(false)
+  expect((await stored()).controls).toEqual(before.controls)
 })
+
+async function changeMode(page: Page, mode: string) {
+  await page.getByLabel('Режим НК до ТО').selectOption(mode)
+  await page.getByRole('button', { name: 'Сохранить процессы контроля', exact: true }).click()
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect.poll(async () => (await loadControlSettings()).preHeatTreatmentMode).toBe(mode)
+}
 
 async function openControlProcesses(page: Page) {
   await page.goto('/settings')
@@ -323,20 +291,6 @@ async function seedPreHeatTreatmentLines() {
   })
 }
 
-async function completePreHeatTreatmentBlocker() {
-  await withE2eDatabase(async (client) => {
-    await client.query(`
-      update pre_heat_treatment_controls control
-      set result = 'годен', conclusion_date = '2026-09-01',
-          conclusion_name = 'E2E заключение ВИК до ТО', updated_at = now()
-      from weld_joints weld
-      where weld.id = control.weld_joint_id
-        and weld.project_title = $1
-        and weld.joint = $2
-    `, [TEST_PROJECT, PRE_JOINTS[0]])
-  })
-}
-
 async function loadControlSettings() {
   return withE2eDatabase(async (client) => {
     const result = await client.query<{ value: string }>(
@@ -346,14 +300,13 @@ async function loadControlSettings() {
     if (!result.rows[0]) {
       return {
         pvkGoodOnly: false,
-        preHeatTreatmentLnkEnabled: true,
-        allowPrimaryLnkBeforePreviousStagesComplete: false,
+        preHeatTreatmentMode: 'allPsto',
+
       }
     }
     return JSON.parse(result.rows[0].value) as {
       pvkGoodOnly: boolean
-      preHeatTreatmentLnkEnabled: boolean
-      allowPrimaryLnkBeforePreviousStagesComplete: boolean
+      preHeatTreatmentMode: string
     }
   })
 }
@@ -369,21 +322,6 @@ async function loadLayeredDocumentTypes() {
       order by document.type
     `, [TEST_PROJECT, LAYERED_JOINT])
     return result.rows.map((row) => row.type)
-  })
-}
-
-async function loadPreHeatTreatmentExemptions() {
-  return withE2eDatabase(async (client) => {
-    const result = await client.query<{
-      joint: string
-      pre_heat_treatment_lnk_exempt: boolean
-    }>(`
-      select joint, pre_heat_treatment_lnk_exempt
-      from weld_joints
-      where project_title = $1 and joint = any($2::text[])
-      order by joint
-    `, [TEST_PROJECT, [...PRE_JOINTS]])
-    return result.rows.map((row) => [row.joint, row.pre_heat_treatment_lnk_exempt] as const)
   })
 }
 
@@ -415,9 +353,9 @@ async function restoreDatabaseSnapshot() {
       for (const weld of weldSnapshot) {
         await client.query(`
           update weld_joints
-          set pre_heat_treatment_lnk_exempt = $2, updated_at = $3
+          set pre_heat_treatment_required = $2, updated_at = $3
           where id = $1
-        `, [weld.id, weld.pre_heat_treatment_lnk_exempt, weld.updated_at])
+        `, [weld.id, weld.pre_heat_treatment_required, weld.updated_at])
       }
       await client.query('commit')
     } catch (error) {

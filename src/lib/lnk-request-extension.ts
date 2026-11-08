@@ -150,7 +150,7 @@ export function analyzeLnkRequestExtensionTargets({
   methodKeys: WeldFieldKey[]
   requestName: string
   requestDate: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
 }): LnkRequestExtensionAnalysis {
   const targets: LnkRequestExtensionTarget[] = []
   const issues: LnkRequestExtensionIssue[] = []
@@ -195,7 +195,7 @@ export function buildLnkRequestExtensionRows({
   targets: LnkRequestExtensionTarget[]
   requestName: string
   requestDate: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
 }): WeldInput[] {
   const normalizedRequestName = requestName.trim()
   const normalizedRequestDate = normalizeDateLikeForStorage(requestDate) ?? ''
@@ -258,7 +258,7 @@ function getLnkRequestExtensionTargetReason(
   method: (typeof LNK_METHODS)[number],
   requestName: string,
   requestDate: string,
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   if (!isEnabledControlValue(row[method.enabledKey])) {
     return 'вид НК должен быть назначен как «да» или «дополнительный».'

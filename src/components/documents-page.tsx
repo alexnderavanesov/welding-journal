@@ -1,3 +1,5 @@
+import { CUSTOM_DOCUMENT_TYPES } from '@/lib/custom-document-types'
+import { useCustomDocumentNames } from '@/lib/custom-document-settings'
 import { overflowTitle } from '@/lib/overflow-title'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentConnectionsDialog } from './document-connections-dialog'
@@ -47,6 +49,7 @@ import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuSt
 import type { DocumentOperationRequest } from '@/lib/system-document-operation'
 import { DocumentsHistoryGrid } from '@/components/documents-history-grid'
 import { useDocumentGridController } from '@/lib/use-document-grid-controller'
+import { documentMethodCountQuery } from '@/lib/document-method-count-query'
 import type { DocumentHistoryGridRequest } from '@/lib/document-history-grid'
 import { HistoryDocumentPreview, type HistoryDocumentPreviewRequest } from '@/components/history-document-preview'
 import { attachPreviewZoom, previewZoomAnchor } from '@/lib/preview-zoom'
@@ -130,7 +133,6 @@ import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
 } from '@/lib/system-document-sequence-storage'
 import {
-  GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
   scheduleWeldDataRefresh,
   WELD_JOINTS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
@@ -352,6 +354,11 @@ export function DocumentsPage({
   onOpenDocumentRows,
   onOpenJointHistory,
 }: DocumentsPageProps) {
+  const customNames = useCustomDocumentNames()
+  const documentTypeOptions = [...DOCUMENT_TYPE_OPTIONS, ...CUSTOM_DOCUMENT_TYPES.map(type => ({
+    type, label: customNames[type], title: `Формирование: ${customNames[type]}`,
+    description: 'Выберите период и состав стыков, затем сформируйте документ по своему шаблону.',
+  }))]
   const queryClient = useQueryClient()
   const { requireDocumentGenerationPassword } = useSecurityGuard()
   const initialRange = useMemo(() => getCurrentMonthRange(), [])
@@ -447,16 +454,14 @@ export function DocumentsPage({
   const isDocumentTemplatePending = generationOpen && !templateReady
   const activeDocumentTemplate = templateReady ? templateLoad.template : null
   const activeDocumentProfile =
-    DOCUMENT_TYPE_OPTIONS.find((option) => option.type === activeGeneratedDocumentType) ?? DOCUMENT_TYPE_OPTIONS[0]
+    documentTypeOptions.find((option) => option.type === activeGeneratedDocumentType) ?? documentTypeOptions[0]
   const activeDocumentOptions = useMemo(
     () =>
       getWeldingJournalTemplateOptions(
         activeDocumentTemplate?.options?.[activeGeneratedDocumentType],
       ),
     [
-      activeDocumentTemplate?.options?.checklist,
-      activeDocumentTemplate?.options?.weldingJournal,
-      activeDocumentTemplate?.options?.zni,
+      activeDocumentTemplate?.options,
       activeGeneratedDocumentType,
     ],
   )
@@ -735,11 +740,12 @@ export function DocumentsPage({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
             <DocumentTypeGroupLabel>Общие</DocumentTypeGroupLabel>
-            {DOCUMENT_TYPE_OPTIONS.map((option) => {
+            {documentTypeOptions.map((option) => {
             const isActive = activeDocumentType === option.type
             return (
               <button
                 key={option.type}
+                title={option.label}
                 type="button"
                 onClick={() => {
                   setActiveNavigationRequest(null)
@@ -748,7 +754,7 @@ export function DocumentsPage({
                   setTemplateDocumentPreview(null)
                   setTemplatePreviewError(null)
                 }}
-                className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
+                className={`max-w-full break-words rounded-xl border px-4 py-2 text-sm font-medium transition ${
                   isActive
                     ? 'border-sky-100 bg-sky-50 text-sky-700'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
@@ -1609,9 +1615,11 @@ function SystemDocumentsPanel({
   })
   const { selectedDocuments, setSelectedDocuments, resolveDocuments, sourceRevision, refresh, selectionError, selectionPending } =
     useDocumentGridController(historyStorageKey, loadRows, JSON.stringify([effectiveColumnFilters, navigationTarget?.documentId, gridSearch]))
+  const methodCounts = documentMethodCountQuery({ viewId: historyStorageKey, type: documentType,
+    columnFilters: effectiveColumnFilters, gridSearch, documentId: navigationTarget?.documentId })
   const methodOptionsQuery = useQuery({
-    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'grid-method-counts', historyStorageKey, effectiveColumnFilters, navigationTarget?.documentId, gridSearch],
-    queryFn: () => loadSystemDocumentHistoryFilterOptions({ type: documentType, fieldKey: 'method', columnFilters: getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, 'method'), gridSearch, ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}) }),
+    queryKey: methodCounts.queryKey,
+    queryFn: () => loadSystemDocumentHistoryFilterOptions(methodCounts.request),
     enabled: documentType === 'lnkConclusion' && methodScope === 'lnk', staleTime: 30_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
   const filterOptions = { method: methodOptionsQuery.data?.options ?? [] }

@@ -39,15 +39,22 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   const report = journalReport(options.report)
   const client = useQueryClient()
   const [generation, setGeneration] = useState(0)
+  const [visit, setVisit] = useState({ report, enabled: options.enabled, id: 0 })
+  // A remounted grid is a new view, even if its filters match the last visit.
+  // Adjust before children commit so neither cached rows nor late replies from
+  // the previous visit can mark this grid ready or pin it to an expired revision.
+  if (visit.report !== report || visit.enabled !== options.enabled) {
+    setVisit({ report, enabled: options.enabled, id: visit.id + 1 })
+  }
   const [state, setState] = useState<{ identity: string; rows: WeldRow[]; ready: boolean; modelPending?: boolean; error: Error | null; summary?: WeldReportSummaryResult; summaryError?: Error }>({ identity: '', rows: [], ready: false, error: null })
   const filters = useMemo(() => JSON.stringify(Object.fromEntries(Object.entries(options.columnFilters).filter(([, value]) => value.trim()).sort(([a], [b]) => a.localeCompare(b)))), [options.columnFilters])
   // User selection changes invalidate output; background row refreshes do not
   // invalidate an independently prepared, coherent report snapshot.
   const selectionIdentity = useMemo(() => JSON.stringify([report, options.enabled, filters, options.sort]), [report, options.enabled, filters, options.sort])
-  const requestedIdentity = useMemo(() => JSON.stringify([report, options.enabled, filters, options.sort, generation]), [report, options.enabled, filters, options.sort, generation])
+  const requestedIdentity = useMemo(() => JSON.stringify([report, options.enabled, filters, options.sort, visit.id, generation]), [report, options.enabled, filters, options.sort, visit.id, generation])
   // Only typing waits. Checkbox filters, sort and explicit refresh apply now,
   // also committing any search draft already typed by the user.
-  const immediate = useMemo(() => JSON.stringify([report, options.enabled, Object.entries(options.columnFilters).filter(([key, value]) => key !== 'search' && value.trim()).sort(([a], [b]) => a.localeCompare(b)), options.sort, generation]), [report, options.enabled, options.columnFilters, options.sort, generation])
+  const immediate = useMemo(() => JSON.stringify([report, options.enabled, Object.entries(options.columnFilters).filter(([key, value]) => key !== 'search' && value.trim()).sort(([a], [b]) => a.localeCompare(b)), options.sort, visit.id, generation]), [report, options.enabled, options.columnFilters, options.sort, visit.id, generation])
   const [applied, setApplied] = useState({ immediate, identity: requestedIdentity })
   useEffect(() => {
     const timer = setTimeout(() => setApplied({ immediate, identity: requestedIdentity }), applied.immediate === immediate ? 180 : 0)
@@ -77,7 +84,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       setNotice(previous => previous.identity === identity && previous.expired ? previous : { identity, expired: true })
       return true
     }
-    const retryKey = JSON.stringify([report, filters, options.sort])
+    const retryKey = JSON.stringify([report, filters, options.sort, visit.id])
     if (automaticRetry.current === retryKey) {
       setState(previous => ({ ...previous, identity, ready: false, modelPending: false, error: new Error(JOURNAL_CHANGED_MESSAGE) }))
       return true
@@ -87,7 +94,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
     setState(previous => ({ ...previous, ready: false, modelPending: false }))
     setGeneration(value => value + 1)
     return true
-  }, [identity, report, filters, options.sort])
+  }, [identity, report, filters, options.sort, visit.id])
   const refetch = useCallback(async (refreshDispatcher = true) => {
     leafCache.current.clear()
     automaticRetry.current = ''

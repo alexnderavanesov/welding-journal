@@ -133,7 +133,7 @@ describe('PSTO cycle workflow payload', () => {
   })
 
   it('starts cycle 2 after a failed TVMT result in the primary cycle', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 12,
       joint: 'F12',
       pstoRequired: 'да',
@@ -168,7 +168,7 @@ describe('PSTO cycle workflow payload', () => {
   })
 
   it('finishes a performed cycle after cancellation but does not start another cycle', () => {
-    const cancelledFailed = {
+    const cancelledFailed = { preHeatTreatmentMode: 'allPsto' as const,
       id: 17,
       joint: 'F17',
       pstoRequired: 'отменен',
@@ -210,7 +210,7 @@ describe('PSTO cycle workflow payload', () => {
 
     expect(() => buildWorkflowWrite({
       action: 'pstoRequest',
-      row: {
+      row: { preHeatTreatmentMode: 'allPsto' as const,
         id: 18,
         joint: 'F18',
         pstoRequired: 'отменен',
@@ -223,7 +223,7 @@ describe('PSTO cycle workflow payload', () => {
   })
 
   it('does not create another cycle after a cancelled physical cycle is complete', () => {
-    const cancelledComplete = {
+    const cancelledComplete = { preHeatTreatmentMode: 'allPsto' as const,
       id: 19,
       joint: 'F19',
       pstoRequired: 'отменен',
@@ -249,7 +249,7 @@ describe('PSTO cycle workflow payload', () => {
   })
 
   it('rejects a stale primary request that would overwrite the current cycle', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 13,
       joint: 'F13',
       pstoRequired: 'да',
@@ -269,7 +269,7 @@ describe('PSTO cycle workflow payload', () => {
   })
 
   it('rejects a stale primary result that would overwrite a completed PSTO', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 14,
       joint: 'F14',
       pstoRequired: 'да',
@@ -291,13 +291,13 @@ describe('PSTO cycle workflow payload', () => {
   })
 
   it('keeps primary and repeat cycle writes separate inside one document', () => {
-    const primary = {
+    const primary = { preHeatTreatmentMode: 'allPsto' as const,
       id: 15,
       joint: 'F15',
       pstoRequired: 'да',
       pstoRepeatCycles: [],
     } as unknown as WeldRow
-    const repeat = {
+    const repeat = { preHeatTreatmentMode: 'allPsto' as const,
       id: 16,
       joint: 'F16',
       pstoRequired: 'да',

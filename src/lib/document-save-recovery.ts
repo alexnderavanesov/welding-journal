@@ -1,4 +1,4 @@
-export const DOCUMENT_SAVE_OPERATIONS = ['updateWeldJoints', 'savePstoRepeatWorkflow', 'savePreHeatTreatmentLnkWorkflow'] as const
+export const DOCUMENT_SAVE_OPERATIONS = ['updateWeldJoints', 'savePstoRepeatWorkflow', 'savePreHeatTreatmentLnkWorkflow', 'savePreHeatTreatmentFill'] as const
 export type DocumentSaveOperation = typeof DOCUMENT_SAVE_OPERATIONS[number]
 export const DOCUMENT_SAVE_ID_HEADER = 'x-welding-document-save-id'
 export const DOCUMENT_SAVE_RECOVERY_EVENT = 'welding-document-save-recovery'

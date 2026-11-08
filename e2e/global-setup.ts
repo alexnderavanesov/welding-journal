@@ -36,6 +36,12 @@ export default async function globalSetup() {
       [JSON.stringify({ status: 'complete', schemaTime: time })])
   })
 
+  // The shared historical fixture exercises mandatory preliminary control.
+  // Selective-mode scenarios override this explicitly; empty-install defaults
+  // are verified before fixtures by the release-transition tests.
+  await withE2eDatabase(client => client.query("update app_settings set value=$1 where key='control-processes'",
+    [JSON.stringify({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' })]))
+
   await applyDeepBaselineJointIndex()
 
   await withE2eDatabase(async (client) => {

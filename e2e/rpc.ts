@@ -75,6 +75,48 @@ export async function deserializeRpcResponse(payload: string): Promise<unknown> 
   return fromCrossJSON(JSON.parse(payload), { plugins: createDefaultSerovalPlugins() })
 }
 
+/** Decode the real Start transport, including RawStream responses. Keep the
+ * installed frame parser and serializer plugins as the protocol authority. */
+export async function deserializeRpcHttpResponse(response: Response): Promise<unknown> {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/x-tss-framed')) return deserializeRpcResponse(await response.text())
+  const version = /;\s*v=(\d+)/.exec(contentType)?.[1]
+  if (version && version !== '1') throw new Error(`Unsupported E2E framed protocol version ${version}`)
+  if (!response.body) throw new Error('Framed E2E response has no body')
+  const clientDirectory = dirname(coreRequire.resolve('@tanstack/start-client-core/package.json'))
+  const { createFrameDecoder } = await import(pathToFileURL(resolve(clientDirectory, 'dist/esm/client-rpc/frame-decoder.js')).href)
+  const routerPackage = coreRequire('@tanstack/router-core/package.json')
+  const routerClient = resolve(dirname(coreRequire.resolve('@tanstack/router-core/package.json')), routerPackage.exports['./ssr/client'].import.default)
+  const { createDefaultSerovalPlugins, createRawStreamDeserializePlugin } = await import(pathToFileURL(routerClient).href)
+  const [records, getStream] = createFrameDecoder(response.body) as [ReadableStream<string>, (id: number) => ReadableStream<Uint8Array>]
+  const reader = records.getReader()
+  const options = { refs: new Map(), plugins: [createRawStreamDeserializePlugin(getStream), ...createDefaultSerovalPlugins()] }
+  try {
+    const first = await reader.read()
+    if (first.done) throw new Error('Framed E2E response ended before its first record')
+    const result = fromCrossJSON(JSON.parse(first.value), options)
+    // The raw stream follows the initial JSON record. Drain later records
+    // concurrently, just as Start's client does, so backpressure can advance.
+    void (async () => {
+      try {
+        for (;;) {
+          const next = await reader.read()
+          if (next.done) return
+          fromCrossJSON(JSON.parse(next.value), options)
+        }
+      } catch (error) {
+        // Cancelling the JSON lane propagates failure to every raw stream.
+        await reader.cancel(error).catch(() => {})
+      } finally { reader.releaseLock() }
+    })()
+    return result
+  } catch (error) {
+    await reader.cancel(error).catch(() => {})
+    reader.releaseLock()
+    throw error
+  }
+}
+
 /** A visible tab records activity while checking identity; a hidden tab only checks identity. */
 export function isAccountRefreshRpc(name: string): boolean {
   return /^(getCurrentAccount|refreshAccountActivity)(?:_|$)/.test(name)

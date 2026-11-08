@@ -1,4 +1,5 @@
 import { loadControlRequestRemovalPreview } from './control-request-removal-preview'
+import { projectControlRequestRemovalPreview } from './control-request-removal-access'
 import { getClearedControlAssignments } from '@/lib/control-assignment-request-removal'
 import { lockLayeredControlDocumentsForWeldChange } from './layered-control-documents'
 import { lockSystemDocumentIndexes } from './system-document-index'
@@ -72,6 +73,7 @@ export const previewLineProgramControl = createServerFn({ method: 'POST' })
 
 /** Preview and commit share validation; commit rechecks the whole calculation under the membership lock. */
 export async function changeProgramInTransaction(tx: SystemDocumentSequenceTransaction, data: LineProgramControlRequest, previewOnly: boolean) {
+      const { accessContext } = await import('./access-store')
       assertSelection(data.targets)
       const targetIds = new Set(data.targets.map(target => target.id))
       if (!Array.isArray(data.changes) || data.changes.length !== data.targets.length || new Set(data.changes.map(change => change.id)).size !== data.changes.length || data.changes.some(change => !targetIds.has(change.id) || !change.values || !Object.keys(change.values).length)) throw new Error('Передайте изменения для каждого выбранного стыка.')
@@ -107,7 +109,8 @@ export async function changeProgramInTransaction(tx: SystemDocumentSequenceTrans
       }
       const removalPreview = await loadControlRequestRemovalPreview(tx, preview.records, previousRows)
       const token = hashJsonRecordTuple([getLineProgramControlToken(currentLine.updatedAt, allRows, data.changes), removalPreview.token])
-      const result = { token, requestRemovals: removalPreview.removals, excess: new Set(preview.newExcess.map(programExcessIdentity)).size, changed: preview.records.length, rows: [] as WeldRow[], lineSummary: null as Awaited<ReturnType<typeof loadLineProgramOverviews>>[number] | null }
+      const { removals, hiddenRemovalCount } = projectControlRequestRemovalPreview(removalPreview, accessContext.getStore()?.identity)
+      const result = { token, requestRemovals: removals, hiddenRemovalCount, excess: new Set(preview.newExcess.map(programExcessIdentity)).size, changed: preview.records.length, rows: [] as WeldRow[], lineSummary: null as Awaited<ReturnType<typeof loadLineProgramOverviews>>[number] | null }
       // Run save checks for preview too; no documents, assignment flags or indexes are written.
       prepareServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
       validateServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })

@@ -1,6 +1,6 @@
 import { overflowTitle } from '@/lib/overflow-title'
 import { SupportStatisticsPanel } from './support-statistics-panel'
-import { buildSupportStatisticsReport, emptySupportStatistics, type SupportStatisticsSummary } from '@/lib/support-statistics'
+import { buildSupportStatisticsReport, emptySupportStatistics, type SupportStatisticsSummary, type SupportWelderStatisticsRow } from '@/lib/support-statistics'
 import { useAccess } from '@/lib/security-context'
 import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
@@ -181,6 +181,7 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   controlDynamics: [],
 }
 
+const EMPTY_SUPPORT_WELDER_ROWS: SupportWelderStatisticsRow[] = []
 const EMPTY_STATISTICS_STATE_ROW_IDS: StatisticsStateRowIds = {
   good: [],
   rejected: [],
@@ -398,7 +399,9 @@ function StatisticsReports({
   const lineSummary = statisticsQuery.data?.lineSummary ?? EMPTY_LINE_SUMMARY
   const [visibleWelderRows, onWelderRowsChange, welderViewReady] = useStatisticsGridRows(welderSummary.rows)
   const [visibleLineRows, onLineRowsChange, lineViewReady] = useStatisticsGridRows(lineSummary.rows)
-  const reportReady = calculationReady && (activeTab === 'welders' ? welderViewReady : activeTab === 'lineSummary' ? lineViewReady : true)
+  const [visibleSupportWelderRows, onSupportWelderRowsChange, supportWelderViewReady] = useStatisticsGridRows(supportSummary.welders ?? EMPTY_SUPPORT_WELDER_ROWS)
+  const reportReady = calculationReady && (activeTab === 'welders' ? welderViewReady : activeTab === 'lineSummary' ? lineViewReady : activeTab === 'supports' ? supportWelderViewReady : true)
+  const visibleSupportSummary = useMemo(() => ({ ...supportSummary, welders: visibleSupportWelderRows }), [supportSummary, visibleSupportWelderRows])
   const visibleWelderSummary = useMemo(() => summarizeWelderGridRows(welderSummary, visibleWelderRows), [welderSummary, visibleWelderRows])
   const visibleLineSummary = useMemo(() => summarizeLineGridRows(lineSummary, visibleLineRows), [lineSummary, visibleLineRows])
   const generalProgressSummary = statisticsQuery.data?.generalProgressSummary ?? EMPTY_LINE_SUMMARY
@@ -428,7 +431,7 @@ function StatisticsReports({
     () =>
       reportReady ? buildStatisticsPrintableReport({
         activeTab,
-        supportSummary,
+        supportSummary: visibleSupportSummary,
         dynamics: weldingDynamics,
         dynamicsTableGrouping: weldingDynamicsTableGrouping,
         jointFilter,
@@ -445,7 +448,7 @@ function StatisticsReports({
       }) : null,
     [
       reportReady,
-      supportSummary,
+      visibleSupportSummary,
       activeTab,
       allPeriod,
       jointFilter,
@@ -735,7 +738,7 @@ function StatisticsReports({
       {/* Keep local chart/table controls mounted, but never expose previous-key
           values (or empty fallbacks) under the newly selected period/unit. */}
       <div hidden={!calculationReady}>
-      {activeTab === 'supports' ? <SupportStatisticsPanel summary={supportSummary} onOpenRows={onOpenWeldRowIds} /> : activeTab === 'general' ? (
+      {activeTab === 'supports' ? <SupportStatisticsPanel summary={supportSummary} onOpenRows={onOpenWeldRowIds} onWelderRowsChange={onSupportWelderRowsChange} /> : activeTab === 'general' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard

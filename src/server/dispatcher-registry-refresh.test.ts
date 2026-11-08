@@ -10,7 +10,8 @@ import { ensureDispatcherTaskIndexFresh } from './dispatcher-task-index'
 
 const storage = vi.hoisted(() => ({ requireDb: vi.fn() }))
 vi.mock('@/db', () => ({ requireDb: storage.requireDb }))
-const fullSelected = new Error('test boundary: full calculation selected')
+// Both full and large-scoped calculations stage first; real-PG tests verify the selected rows.
+const fullSelected = new Error('test boundary: staged calculation selected')
 beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}))
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
@@ -67,11 +68,11 @@ function database(options: { dirtyScopes?: string; computedRevision?: number; fu
 }
 
 describe('registry-only dispatcher publication', () => {
-  it('invalidates version 71 despite equal revisions, today\'s date and empty dirty scopes', async () => {
+  it.each([71, 83])('invalidates old version %i despite equal revisions, today\'s date and empty dirty scopes', async calculationVersion => {
     // v71 could persist a same-name repair without its whitespace-equivalent
     // rejected source. A reminder-only save must not bless that old index.
-    const db = database({ calculationVersion: 71, computedRevision: 2 })
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toBe(fullSelected)
+    const db = database({ calculationVersion, computedRevision: 2 })
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toMatchObject({ cause: fullSelected })
     expect(db.events).toEqual(['begin:1', 'full:1', 'end:1'])
     expect(db.updates).toEqual([])
   })
@@ -106,7 +107,7 @@ describe('registry-only dispatcher publication', () => {
 
   it('does not advance the computed revision on publication failure and allows retry', async () => {
     const failed = database({ failPublish: true })
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toThrow('publication failed')
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toThrow('Не удалось обновить расчёт. Повторите загрузку.')
     expect(failed.state().computedRevision).toBe(1)
     database()
     await expect(ensureDispatcherTaskIndexFresh()).resolves.toMatchObject({ computedRevision: 2 })
@@ -114,14 +115,14 @@ describe('registry-only dispatcher publication', () => {
 
   it.each(['broken', '{}', '[null]', '[{"line":"L"}]'])('never treats malformed %s as reminder-only, even at equal revisions', async dirtyScopes => {
     const db = database({ dirtyScopes, computedRevision: 2 })
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toBe(fullSelected)
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toMatchObject({ cause: fullSelected })
     expect(db.updates).toEqual([])
     expect(db.events).not.toContain('weld-lock:1')
   })
 
   it.each([{ fullRebuild: true }])('retains an existing full rebuild: %j', async options => {
     database(options)
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toBe(fullSelected)
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toMatchObject({ cause: fullSelected })
   })
 
   it('refreshes a new business day without reading the journal when no line depends on today', async () => {
@@ -154,21 +155,21 @@ describe('registry-only dispatcher publication', () => {
   it('releases writer locks before a full fallback if daily dependencies grow while waiting', async () => {
     const scopes = Array.from({ length: 501 }, (_, i) => ({ projectTitle: 'P', subtitleCode: 'S', line: String(i) }))
     const db = database({ computedRevision: 2, computedAt: new Date('2026-01-01T00:00:00Z'), dateScopes: [[], scopes] })
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toBe(fullSelected)
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toMatchObject({ cause: fullSelected })
     expect(db.events).toEqual(['begin:1', 'weld-lock:1', 'end:1', 'begin:2', 'full:2', 'end:2'])
     expect(db.updates).toEqual([])
   })
 
-  it.each([5001, 200000])('selects full calculation before writer locks for a complete line of %i rows', async count => {
+  it.each([5001, 200000])('stages before writer locks for a complete line of %i rows', async count => {
     const db = database({ dirtyScopes: JSON.stringify([{ projectTitle: 'P', subtitleCode: 'S', line: 'L' }]), counts: [count] })
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toBe(fullSelected)
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toMatchObject({ cause: fullSelected })
     expect(db.events).toEqual(['begin:1', 'full:1', 'end:1'])
     expect(db.updates).toEqual([])
   })
 
-  it('releases scoped writer locks before falling back when queued writes enlarge the complete context', async () => {
-    const db = database({ dirtyScopes: JSON.stringify([{ projectTitle: 'P', subtitleCode: 'S', line: 'L' }]), counts: [1, 5001] })
-    await expect(ensureDispatcherTaskIndexFresh()).rejects.toBe(fullSelected)
+  it('releases scoped writer locks before staging when queued writes enlarge the complete context', async () => {
+    const db = database({ dirtyScopes: JSON.stringify([{ projectTitle: 'P', subtitleCode: 'S', line: 'L' }]), counts: [1, 5001, 5001] })
+    await expect(ensureDispatcherTaskIndexFresh()).rejects.toMatchObject({ cause: fullSelected })
     expect(db.events).toEqual(['begin:1', 'weld-lock:1', 'end:1', 'begin:2', 'full:2', 'end:2'])
     expect(db.updates).toEqual([])
   })

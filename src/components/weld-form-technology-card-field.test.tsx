@@ -10,14 +10,33 @@ const query = vi.hoisted(() => ({ data: undefined as TechnologyCardSnapshot | un
 vi.mock('@/lib/technology-card-query', () => ({ useTechnologyCardSnapshot: () => query }))
 const card = { id: 1, revision: 2, name: 'ТК №1', weldingMethods: ['РАД'], connectionType: 'С17', materialGroups: ['М01'], diameterFrom: 1, diameterTo: 200, thicknessFrom: 1, thicknessTo: 10, psto: 'any' as const, archived: false }
 
-function Form({ initial }: { initial?: WeldInput }) {
+function Form({ initial, allowAutoAssignment = false, concurrentDraft = false }: { initial?: WeldInput; allowAutoAssignment?: boolean; concurrentDraft?: boolean }) {
   const [draft, setDraft] = useState<WeldInput>(initial ?? { technologyCardNumber: 'Старая ТК', weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 57, t1: 3, t2: 3 })
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
-  return <><WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /><span data-testid="draft">{JSON.stringify(draft)}</span></>
+  const pendingChange = useRef(concurrentDraft)
+  const concurrentSetDraft: typeof setDraft = action => setDraft(current => {
+    const latest = pendingChange.current ? { ...current, isometry: 'Concurrent draft' } : current
+    pendingChange.current = false
+    return typeof action === 'function' ? action(latest) : action
+  })
+  return <><WeldFormTechnologyCardField draft={draft} setDraft={concurrentDraft ? concurrentSetDraft : setDraft} fieldRefs={fieldRefs} allowAutoAssignment={allowAutoAssignment} /><span data-testid="draft">{JSON.stringify(draft)}</span></>
 }
 beforeEach(() => {
   localStorage.clear(); query.refetch.mockClear(); query.isError = false; query.isFetching = false
   query.data = { cards: [card], names: [{ name: card.name, cardId: card.id }] }
+})
+
+it('shows auto-assigned materials in the draft before saving and preserves empty TK fields', () => {
+  query.data = { cards: [{ ...card, weldingElectrodes: 'Из ТК', fillerWire: null }], names: [{ name: card.name, cardId: card.id }] }
+  render(<Form allowAutoAssignment initial={{ weldDate: '2026-11-07', weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 57, t1: 3, t2: 3, fillerWire: 'Ручная' }} />)
+  expect(screen.getByRole('textbox')).toHaveValue(card.name)
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toMatchObject({ weldingElectrodes: 'Из ТК', fillerWire: 'Ручная', technologyCardSelection: { id: 1, revision: 2 } })
+})
+
+it('retries a skipped draft assignment instead of losing defaults during a concurrent field update', () => {
+  query.data = { cards: [{ ...card, weldingElectrodes: 'Default' }], names: [{ name: card.name, cardId: card.id }] }
+  render(<Form allowAutoAssignment concurrentDraft initial={{ weldDate: '2026-11-07', weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 57, t1: 3, t2: 3 }} />)
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toMatchObject({ technologyCardNumber: card.name, weldingElectrodes: 'Default', isometry: 'Concurrent draft' })
 })
 
 it('keeps compact controls mounted on clear/typing and stores an explicit versioned selection', () => {

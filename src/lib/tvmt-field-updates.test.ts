@@ -77,7 +77,7 @@ describe('primary TVMT updates', () => {
   })
 
   it('explains cancellation instead of claiming PSTO was never assigned', () => {
-    expect(getTvmtWorkflowBlockReason(row({
+    expect(getTvmtWorkflowBlockReason(row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: null,
       pstoRequestDate: null,
@@ -87,7 +87,7 @@ describe('primary TVMT updates', () => {
   })
 
   it('does not describe a failed TVMT on a cancelled line as good', () => {
-    expect(getTvmtWorkflowBlockReason(row({
+    expect(getTvmtWorkflowBlockReason(row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       tvmtRequest: 'Заявка ТВМТ-001',
       tvmtResult: 'не годен',
@@ -172,7 +172,7 @@ describe('primary TVMT updates', () => {
 })
 
 function row(values: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1,
     joint: 'F1',
     weldDate: '2026-08-15',

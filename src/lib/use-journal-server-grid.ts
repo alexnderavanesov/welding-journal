@@ -92,11 +92,11 @@ export function useJournalServerGrid(options: {
     current.current.onError?.(journalReadErrorMessage(error))
   }
   const selectionScope = () => JSON.stringify([current.current.source?.identity, revision.current, query().groupBy])
-  const getRange = (mode: 'summary' | 'copy' | 'selection' = 'summary'): JournalRangeRequest | null => {
+  const getRange = (mode: 'summary' | 'copy' | 'selection' | 'edit' = 'summary', explicitRanges?: Array<{ first: number; last: number; columns: WeldFieldKey[] }>): JournalRangeRequest | null => {
     const { api, source, anchor, ready } = current.current
     if (!source || !api || api.isDestroyed() || revision.current === undefined || !ready) return null
     if (source.revisionExpired && mode !== 'summary') throw new Error(JOURNAL_CHANGED_MESSAGE)
-    const ranges = (api.getCellRanges() ?? []).flatMap(range => range.startRow && range.endRow ? [{
+    const ranges = explicitRanges ?? (api.getCellRanges() ?? []).flatMap(range => range.startRow && range.endRow ? [{
       first: Math.min(range.startRow.rowIndex, range.endRow.rowIndex), last: Math.max(range.startRow.rowIndex, range.endRow.rowIndex),
       columns: mode === 'selection' ? ['id' as const]
         : range.columns.filter(column => column.isVisible() && FIELD_BY_KEY.has(column.getColId() as WeldFieldKey)).map(column => column.getColId() as WeldFieldKey),
@@ -657,6 +657,7 @@ export function useJournalServerGrid(options: {
       pending: selecting || !options.ready || !groupingReady, toggle }
   }, [source?.identity, api, options.selected, selection, selecting, options.total, options.ready, groupingReady, toggle])
   return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, storeRefreshed, groupOpened, copy, selectRange, selectionContext, trimCache, isRestoring,
+    getEditRange: (range: { first: number; last: number; columns: WeldFieldKey[] }) => getRange('edit', [range]),
     resetLayout: () => {
       const groups = JSON.stringify(api?.getRowGroupColumns().map(column => column.getColId()) ?? [])
       for (const [controller, requestedGroups] of activeLoads.current) if (requestedGroups !== groups) controller.abort()

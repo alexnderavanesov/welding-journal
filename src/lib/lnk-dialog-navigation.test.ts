@@ -1,6 +1,7 @@
+import type { ControlProcessSettings } from './control-process-settings'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { createLnkDialogNavigation } from './lnk-dialog-navigation'
+import { useLnkDialogNavigation } from './lnk-dialog-navigation'
 import { useHomeLnkController } from './use-home-lnk-controller'
 import type { WeldRow } from './dispatcher-types'
 
@@ -12,12 +13,12 @@ function setup(canLeaveResultEditor: () => boolean = () => true, tableRows: Weld
     openCreateLnkRequestModalForRows: vi.fn(), openExtendLnkRequestModalForRows: vi.fn(),
     openLnkRequestRegistry: vi.fn(), setMessage: vi.fn(), setSelectedLnkIds: vi.fn(),
   }
-  const settings = { preHeatTreatmentLnkEnabled: true }
+  const settings: ControlProcessSettings = { pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' as const }
   const { result } = renderHook(() => {
     const controller = useHomeLnkController()
     return {
       controller,
-      navigation: createLnkDialogNavigation({
+      navigation: useLnkDialogNavigation({
         ...controller, ...actions,
         canLeaveResultEditor,
         closePreHeatTreatmentResultRegistryState: controller.closePreHeatTreatmentResultRegistry,
@@ -32,7 +33,7 @@ function setup(canLeaveResultEditor: () => boolean = () => true, tableRows: Weld
 
 describe('LNK dialog navigation', () => {
   it('passes the complete primary selection from the header into the same bulk result action', () => {
-    const rows = [1, 2].map(id => ({ id, pstoRequired: 'нет', hasVik: 'да', vikRequest: 'R', vikRequestDate: '2026-09-01', vikResult: 'ожидает НК' }) as WeldRow)
+    const rows = [1, 2].map(id => ({ preHeatTreatmentMode: 'allPsto' as const, id, pstoRequired: 'нет', hasVik: 'да', vikRequest: 'R', vikRequestDate: '2026-09-01', vikResult: 'ожидает НК' }) as WeldRow)
     const { result, actions } = setup(() => true, rows)
     act(() => result.current.navigation.openAddLnkWorkflowResultFromHeader(rows))
     expect(actions.openAddLnkResultModalForRows).toHaveBeenCalledWith(rows)
@@ -114,13 +115,22 @@ describe('LNK dialog navigation', () => {
     expect(actions.openExtendLnkRequestModalForRows).toHaveBeenCalledWith([{ id: 1, joint: 'F1' }])
   })
 
-  it('does not open a disabled pre-TO stage or silently replace an unknown result', () => {
+  it('restores primary rows excluded from the preliminary stage after a rerender', () => {
+    const rows = [1, 2].map(id => ({ id, vikRequest: 'R' }) as WeldRow)
+    const { result, actions } = setup(() => true, rows)
+    act(() => result.current.navigation.switchLnkWorkflowStage('request', 'beforeHeatTreatment', [1, 2]))
+    rows.pop() // The preliminary query only returns its applicable row.
+    act(() => result.current.navigation.switchLnkWorkflowStage('request', 'primary', [1]))
+    expect(actions.openCreateLnkRequestModalForRows.mock.lastCall?.[0].map((row: WeldRow) => row.id)).toEqual([1, 2])
+    expect(actions.setSelectedLnkIds).toHaveBeenLastCalledWith(new Set([1, 2]))
+  })
+
+  it('allows selected-mode stage navigation and rejects an unknown result', () => {
     const { result, actions, settings } = setup()
-    settings.preHeatTreatmentLnkEnabled = false
+    settings.preHeatTreatmentMode = 'selected'
     act(() => result.current.navigation.switchLnkWorkflowStage('request', 'beforeHeatTreatment', [1]))
-    expect(result.current.controller.preHeatTreatmentLnkWorkflowMode).toBeNull()
-    expect(actions.setSelectedLnkIds).not.toHaveBeenCalled()
-    expect(actions.setMessage).toHaveBeenLastCalledWith('НК до ТО выключен в настройках проекта.')
+    expect(result.current.controller.preHeatTreatmentLnkWorkflowMode).toBe('request')
+    expect(actions.setSelectedLnkIds).toHaveBeenCalledWith(new Set([1]))
     act(() => result.current.navigation.openExactLnkResult({ id: 1, joint: 'F1' } as WeldRow, 'vikRequest'))
     expect(actions.openLnkResultManager).not.toHaveBeenCalled()
     expect(actions.setMessage).toHaveBeenLastCalledWith('Не удалось определить внесенный результат ЛНК')

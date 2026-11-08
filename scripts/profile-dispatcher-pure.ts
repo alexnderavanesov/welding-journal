@@ -63,7 +63,7 @@ function rowsFor(lines: number, size: number, repairs = false): WeldRow[] {
     const local = index % size
     return { ...base, id: index + 1, projectTitle: 'PURE CPU PROFILE', line: `L${Math.floor(index / size)}`,
       joint: repairs ? `F${Math.floor(local / 2) + 1}${local % 2 ? 'R1' : ''}` : `F${local + 1}`,
-      preHeatTreatmentLnkEnabled: DEFAULT_CONTROL_PROCESS_SETTINGS.preHeatTreatmentLnkEnabled,
+      preHeatTreatmentMode: DEFAULT_CONTROL_PROCESS_SETTINGS.preHeatTreatmentMode,
       ...(repairs ? { hasRk: 'да', rkResult: local % 2 ? 'годен' : 'ремонт' } : {}),
     }
   })

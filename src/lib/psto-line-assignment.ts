@@ -365,7 +365,6 @@ export function getPrimaryStagedMethodCodes(row: WeldRow) {
 
 export function hasPrimaryLnkHistoryBeforePstoAssignment(row: WeldRow) {
   return (
-    isPreHeatTreatmentStageEnabled(row) &&
     !isControlEnabledValue(row.pstoRequired) &&
     !hasPstoWorkflowStageData(row) &&
     getPrimaryStagedMethodCodes(row).length > 0

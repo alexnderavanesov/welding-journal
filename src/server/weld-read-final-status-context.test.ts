@@ -15,7 +15,7 @@ vi.mock('@/db', () => ({
 vi.mock('@/server/heat-treatment-control-relations', () => ({
   attachHeatTreatmentControlRelations: async (rows: WeldRow[]) => rows.map((row) => ({
     ...row,
-    preHeatTreatmentLnkEnabled: state.enabled,
+    preHeatTreatmentMode: state.enabled ? 'allPsto' as const : 'selected' as const,
     preHeatTreatmentControls: [{ id: 1, weldJointId: row.id, method: 'ВИК', requestName: 'НК-1', result: 'ремонт' }],
   })),
   attachPreHeatTreatmentControlRelations: vi.fn(),
@@ -26,9 +26,9 @@ import { loadCurrentFinalStatusRowsContext } from '@/server/weld-read'
 
 describe('server final-status context for same-name repair after pre-TO rejection', () => {
   it.each([
-    { enabled: true, pstoRequired: 'да', heatTreatmentDiagram: null, expected: 'ожидает ремонт' },
-    { enabled: true, pstoRequired: 'отменен', heatTreatmentDiagram: 'Фактическая диаграмма', expected: 'ожидает ремонт' },
-    { enabled: false, pstoRequired: 'да', heatTreatmentDiagram: null, expected: 'ожидает сварку' },
+    { preHeatTreatmentMode: 'allPsto' as const, enabled: true, pstoRequired: 'да', heatTreatmentDiagram: null, expected: 'ожидает ремонт' },
+    { preHeatTreatmentMode: 'allPsto' as const, enabled: true, pstoRequired: 'отменен', heatTreatmentDiagram: 'Фактическая диаграмма', expected: 'ожидает ремонт' },
+    { preHeatTreatmentMode: 'allPsto' as const, enabled: false, pstoRequired: 'да', heatTreatmentDiagram: null, expected: 'ожидает ремонт' },
   ])('retains policy facts in the compact SQL selection: %j', async ({ enabled, expected, ...history }) => {
     state.enabled = enabled
     state.row = { id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'L', officiality: 'неофициальный', hasVik: 'да', ...history }

@@ -96,8 +96,9 @@ for (const mode of ['single', 'bulk', 'import'] as const) test(`${mode}: уда�
   // Replay of an old delete must not affect another ID, including a future namesake.
   await expect(deleteWeldJoint({ data: targets[0] })).rejects.toThrow(/больше не существуют|устарел/)
   const fresh = await createWeldJoint({ data: { projectTitle: project, subtitleCode: 'DOC-DELETE', line: 'DOC-DELETE',
-    joint: 'F201', connectionType: 'СШ', officiality: 'действующий', revisionActuality: 'актуальная' } })
+    joint: 'F201', connectionType: 'СШ', officiality: 'действующий' } })
   expect(fresh.id).not.toBe(ids[0])
+  expect(fresh.revisionActuality).toBeNull()
   const recreated = await readJournalGrid(journalQuery)
   expect(recreated.rowCount).toBe(2)
   expect(recreated.rows.map(row => row.id).sort((a, b) => a - b)).toEqual([ids[1], fresh.id].sort((a, b) => a - b))

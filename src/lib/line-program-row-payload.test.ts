@@ -18,8 +18,8 @@ it('compacts stable chain metadata losslessly without repeating seven field name
 
 it('round-trips explicit nulls, absent properties, zero, false and document/history data without changing rows', () => {
   const rows: WeldRow[] = [
-    { id: 1, joint: 'F1', hasPvk: null, d1: 0, rkResult: null, rkConclusion: null, preHeatTreatmentLnkEnabled: false, systemDocumentIds: { rkConclusion: 19 }, rowVersion: 'v1' },
-    { id: 2, joint: 'F2', hasPvk: null, d1: null, rkResult: '', preHeatTreatmentLnkEnabled: true, rowVersion: 'v2' },
+    { id: 1, joint: 'F1', hasPvk: null, d1: 0, rkResult: null, rkConclusion: null, preHeatTreatmentMode: 'selected' as const, systemDocumentIds: { rkConclusion: 19 }, rowVersion: 'v1' },
+    { id: 2, joint: 'F2', hasPvk: null, d1: null, rkResult: '', preHeatTreatmentMode: 'allPsto' as const, rowVersion: 'v2' },
   ]
   const original = structuredClone(rows), packed = packProgramRows(rows)
   expect(packed.nullFields).toEqual(['hasPvk'])

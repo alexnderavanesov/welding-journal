@@ -5,7 +5,7 @@ import { buildPstoCycleHistoryContextMenuItem } from '@/lib/psto-report-context-
 
 describe('PSTO report context menu', () => {
   it('opens the exact cycle history from a direct report menu item', () => {
-    const row = { id: 7, joint: 'F7', pstoRequired: 'да' } as WeldRow
+    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 7, joint: 'F7', pstoRequired: 'да' } as WeldRow
     const onOpen = vi.fn()
     const item = buildPstoCycleHistoryContextMenuItem({ rows: [row], onOpen })
 
@@ -48,8 +48,8 @@ describe('PSTO report context menu', () => {
   it('names a selected-row history action explicitly', () => {
     const item = buildPstoCycleHistoryContextMenuItem({
       rows: [
-        { id: 7, pstoRequired: 'да' } as WeldRow,
-        { id: 8, pstoRequired: 'да' } as WeldRow,
+        { preHeatTreatmentMode: 'allPsto' as const, id: 7, pstoRequired: 'да' } as WeldRow,
+        { preHeatTreatmentMode: 'allPsto' as const, id: 8, pstoRequired: 'да' } as WeldRow,
       ],
       onOpen: vi.fn(),
     })

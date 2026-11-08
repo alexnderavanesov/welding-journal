@@ -30,12 +30,13 @@ export function buildWeldingJournalRowsByStatus(rows: WeldInput[], status: Weldi
 
 export function buildWeldingJournalWaitingRepairRows(rows: WeldInput[]) {
   const journalRows = buildWeldingJournalRows(rows).map((row, index) => (
-    normalizeFinalStatus(rows[index]?.finalStatus) === 'ожидает ремонт'
+    row.finalStatus !== 'неактуальный' && normalizeFinalStatus(rows[index]?.finalStatus) === 'ожидает ремонт'
       ? { ...row, finalStatus: 'ожидает ремонт' }
       : row
   ))
   const previousRejectedSourceLookup = buildPreviousRejectedSourceLookup(journalRows)
   return journalRows.flatMap((row) => {
+    if (row.finalStatus === 'неактуальный') return []
     const sourceRow = findPreviousRejectedSourceRow(previousRejectedSourceLookup, row)
     const isWaitingRepair = normalizeFinalStatus(row.finalStatus) === 'ожидает ремонт'
     if (!isWaitingRepair && !sourceRow) return []

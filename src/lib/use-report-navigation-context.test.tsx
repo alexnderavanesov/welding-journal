@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import { createBrowserHistory } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,6 +32,7 @@ function createHookProps(activeReport: ActiveReport, overrides: Partial<HookProp
 
 describe('useReportNavigationContext', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.useFakeTimers()
     window.sessionStorage.clear()
     window.history.replaceState({ __TSR_key: 'journal' }, '', '/journal')
@@ -52,6 +53,7 @@ describe('useReportNavigationContext', () => {
   })
 
   afterEach(() => {
+    cleanup()
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -79,6 +81,21 @@ describe('useReportNavigationContext', () => {
     expect(setters[report === 'weldingJournal' ? 'setSelectedWeldingJournalIds' :
       report === 'lnk' ? 'setSelectedLnkIds' : 'setSelectedHeatTreatmentIds']).toHaveBeenCalledWith(new Set([12, 14]))
     expect(window.scrollTo).toHaveBeenCalledWith({ left: 84, top: 420, behavior: 'auto' })
+  })
+
+  it.each(['#system-rule-control-history', '#save-check-setting-controlHistoryProtection', '#unknown', ''])('honors a recognized settings rule link before a saved scroll offset: %s', hash => {
+    const setters = {
+      setColumnFilters: vi.fn(), setHeatTreatmentFilters: vi.fn(), setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(), setSelectedHeatTreatmentIds: vi.fn(), setSelectedLnkIds: vi.fn(),
+    }
+    window.history.replaceState({ __TSR_key: 'settings-rule' }, '', `/settings${hash}`)
+    window.sessionStorage.setItem('welding-report-navigation:v1:settings-rule', JSON.stringify({
+      version: 1, report: 'settings', filters: {}, selectedRowIds: [], scrollPosition: { left: 0, top: 420 },
+    }))
+    renderHook(() => useReportNavigationContext({ ...createHookProps('settings'), ...setters }))
+    act(() => vi.runAllTimers())
+    if (hash && hash !== '#unknown') expect(window.scrollTo).not.toHaveBeenCalled()
+    else expect(window.scrollTo).toHaveBeenCalledWith({ left: 0, top: 420, behavior: 'auto' })
   })
 
   it('restores report filters, selection, and scroll on browser Back and Forward entries', () => {

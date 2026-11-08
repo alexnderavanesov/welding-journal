@@ -21,7 +21,7 @@ function renderActions(row: WeldRow, report: 'heatTreatment' | 'lnk' = 'heatTrea
 
 describe('WeldTableRowActions for PSTO', () => {
   it('shows the actual pre-TO prerequisite instead of claiming that a request exists', () => {
-    renderActions({
+    renderActions({ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       hasVik: 'да',
@@ -39,7 +39,7 @@ describe('WeldTableRowActions for PSTO', () => {
   })
 
   it('enables result entry and explains why another request cannot be created', () => {
-    renderActions({
+    renderActions({ preHeatTreatmentMode: 'allPsto' as const,
       id: 2,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-001',
@@ -57,7 +57,7 @@ describe('WeldTableRowActions for PSTO', () => {
 
 describe('WeldTableRowActions for LNK', () => {
   it('offers an early primary request while PSTO/TVMT is incomplete', () => {
-    renderActions({
+    renderActions({ preHeatTreatmentMode: 'allPsto' as const,
       id: 3,
       pstoRequired: 'да',
       hasVik: 'да',

@@ -69,15 +69,18 @@ try {
       await assert.rejects(save(stale), /изменились/)
       await db.delete(weldJoints).where(eq(weldJoints.id, later.id))
       const fresh = await preview(root, false)
-      let executions = 0
+      let invalidationReached = false
       await assert.rejects(db.transaction(tx => actuality.setChainActualityInTransaction(new Proxy(tx, { get(target, key) {
         if (key === 'execute') return (...args: Parameters<typeof tx.execute>) => {
-          if (++executions === 3) throw new Error('dirty index failure')
+          const statement = typeof args[0] === 'string' ? args[0] : new PgDialect().sqlToQuery(args[0].getSQL()).sql
+          if (statement.includes('"dispatcher_state"')) {
+            invalidationReached = true; throw new Error('dirty index failure')
+          }
           return target.execute(...args)
         }
         const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value
       } }), { ...fresh, confirmed: true })), /dirty index failure/)
-      assert.equal(executions, 3, 'Failure must occur at invalidation after the row update')
+      assert(invalidationReached, 'Failure must occur at invalidation after the row update')
       assert.equal((await preview(root, false)).changedCount, 3)
       // Already stored mixed records must appear on every member, including the
       // unofficial one, in both persisted and virtual dispatcher columns.

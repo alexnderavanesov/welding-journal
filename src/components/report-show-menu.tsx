@@ -48,7 +48,7 @@ export function ReportShowMenu({
               }}
               disabled={item.disabled}
               title={item.disabled ? 'Дождитесь загрузки строк текущей выборки.' : undefined}
-              className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-normal leading-5 text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-wait disabled:text-slate-400 disabled:hover:bg-transparent"
+              className="flex min-h-10 w-full items-center break-words rounded px-3 py-2 text-left text-sm font-normal leading-5 text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-wait disabled:text-slate-400 disabled:hover:bg-transparent"
             >
               {item.label}
             </button>

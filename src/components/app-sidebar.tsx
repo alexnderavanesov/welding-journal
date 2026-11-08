@@ -46,7 +46,7 @@ export function AppSidebar({ activeReport, collapsed, animateWidth = true, onCol
   const accountNameParts = identity?.name.trim().split(/\s+/).slice(0, 2) ?? []
   const accountName = accountNameParts.join(' ')
   const accountInitials = accountNameParts.map(part => Array.from(part)[0]).join('').toLocaleUpperCase('ru-RU')
-  const settingsVisible = ['templates', 'checks', 'dispatcher', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes'].some(area => can(`${area}.view` as Permission))
+  const settingsVisible = ['templates', 'checks', 'dispatcher', 'assignmentWarnings', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes'].some(area => can(`${area}.view` as Permission))
   const sidebarRef = useRef<HTMLElement>(null)
   const [isHorizontallyScrolled, setIsHorizontallyScrolled] = useState(false)
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }

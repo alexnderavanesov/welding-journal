@@ -27,7 +27,7 @@ function mount(rows: WeldRow[]) {
 
 describe('compact joint rows preserve meaningful details', () => {
   it.each(['да', 'отменен', null])('shows primary and repeat requests without results for assignment %s', (assignment) => {
-    mountContent(<JointDetails row={{ id: 1, joint: 'F1', pstoRequired: assignment,
+    mountContent(<JointDetails row={{ preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', pstoRequired: assignment,
       pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-02',
       pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-10-04' }],
     }} />)
@@ -48,7 +48,7 @@ describe('compact joint rows preserve meaningful details', () => {
     ['assignment without result', { ...good, vikResult: null }, 'ожидает заявку', null],
     ['error is not a good joint', { ...good, hasRk: null, rkResult: 'годен' }, 'ошибка', null],
     ['inactive historical good joint', { ...good, revisionActuality: 'не актуален', officiality: 'неофициальный' }, 'годен', 'program-joint-good'],
-    ['disabled preheat rejection stays history', { ...good, preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }, 'годен', 'program-joint-good'],
+    ['disabled preheat rejection stays history', { ...good, preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }, 'годен', 'program-joint-good'],
   ]
 
   it.each(colorCases)('uses the same saved final-state tint in the list and assignments: %s', (_name, source, status, tone) => {
@@ -93,7 +93,7 @@ describe('compact joint rows preserve meaningful details', () => {
   })
 
   it('labels every result stage consistently and keeps the result column part of the same table', () => {
-    const source = { ...row, id: 2, joint: 'F2', duplicateControls: [duplicate], preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 2, method: 'ВИК' as const, result: 'годен' }] }
+    const source = { ...row, id: 2, joint: 'F2', duplicateControls: [duplicate], preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 2, method: 'ВИК' as const, result: 'годен' }] }
     const onSelect = vi.fn(), onChange = vi.fn(), open = vi.spyOn(window, 'open')
     mountContent(<ProgramAssignmentTable rows={[row, source]} selected={new Set([2])} draft={new Map()} busy={false} canSelect={() => true} onSelect={onSelect} onSelectAll={vi.fn()} onChange={onChange} getError={() => ''} />)
     const table = screen.getByRole('table', { name: 'Стыки и назначения всех методов' })
@@ -110,7 +110,7 @@ describe('compact joint rows preserve meaningful details', () => {
       fireEvent.click(within(result).getByText('РК: ремонт')) // has a linked conclusion
     }
     const result = screen.getByLabelText('Результат F2')
-    expect(result).toHaveTextContent('НК до ТО · не учитывается')
+    expect(result).toHaveTextContent('НК до ТО · история')
     expect(result).toHaveTextContent('Дубли контроля')
     expect(open).not.toHaveBeenCalled()
     expect(mocks.open).not.toHaveBeenCalled()
@@ -198,8 +198,8 @@ describe('compact joint rows preserve meaningful details', () => {
   })
 
   it('shows rejected pre-heat history and duplicate results before expansion and labels disabled history honestly', () => {
-    mount([{ ...row, preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт', requestName: 'ДО-ТО-1', conclusionName: 'ИСТОРИЯ-1' }], duplicateControls: [duplicate] }])
-    const history = screen.getByRole('button', { name: 'НК до ТО · история, не учитывается: РК ремонт' })
+    mount([{ ...row, preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт', requestName: 'ДО-ТО-1', conclusionName: 'ИСТОРИЯ-1' }], duplicateControls: [duplicate] }])
+    const history = screen.getByRole('button', { name: 'НК до ТО: РК ремонт' })
     expect(history).toHaveClass('text-rose-700')
     expect(screen.getByRole('button', { name: 'Дубли: УЗК вырез' })).toHaveClass('text-rose-700')
     const cells = within(screen.getByTestId('line-program-readonly-joint')).getAllByRole('cell')
@@ -210,7 +210,7 @@ describe('compact joint rows preserve meaningful details', () => {
     expect(results.at(-1)).toBe(screen.getByRole('button', { name: 'Дубли: УЗК вырез' }))
     expect(screen.queryByText('ДУБЛЬ-1')).not.toBeInTheDocument()
     fireEvent.click(history)
-    expect(screen.getByText('История: НК до ТО выключен, в расчёте не учитывается.')).toBeVisible()
+    expect(screen.getByText(/Негодный результат сохраняет силу/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'ИСТОРИЯ-1' })).toBeVisible()
     expect(screen.getByText('ДУБЛЬ-1')).toBeVisible()
     expect(screen.getByText('Контроль: 01.09.2026')).toBeVisible()

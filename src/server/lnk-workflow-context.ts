@@ -89,7 +89,7 @@ const LNK_WORKFLOW_FIELD_KEYS = new Set<string>([
   'officiality',
   'finalStatus',
   'lnkCreatedAt',
-  'pstoRequired',
+  'preHeatTreatmentRequired', 'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
   'pstoRequest',
@@ -183,6 +183,7 @@ export async function getLnkWorkflowSummary(): Promise<LnkWorkflowSummary> {
   const reportWhere = buildReportKindWhere('lnk')
   const countRows = await db
     .select({
+      preHeatTreatmentApplicableRowCount: filteredCount(buildPreHeatTreatmentAvailableWhere()),
       pendingPrimaryResultRowCount: filteredCount(buildPendingPrimaryLnkResultWhere()),
       primaryResultRowCount: filteredCount(buildFinalPrimaryLnkResultWhere()),
       preHeatTreatmentRequestRowCount: filteredCount(buildPreHeatTreatmentRequestWhere()),
@@ -192,6 +193,7 @@ export async function getLnkWorkflowSummary(): Promise<LnkWorkflowSummary> {
     .where(reportWhere)
   const counts = countRows[0]
   return {
+    preHeatTreatmentApplicableRowCount: Number(counts?.preHeatTreatmentApplicableRowCount) || 0,
     pendingPrimaryResultRowCount: Number(counts?.pendingPrimaryResultRowCount) || 0,
     primaryResultRowCount: Number(counts?.primaryResultRowCount) || 0,
     preHeatTreatmentRequestRowCount: Number(counts?.preHeatTreatmentRequestRowCount) || 0,
@@ -409,6 +411,7 @@ export function buildLnkWorkflowRowsWhere(
     : undefined
   return and(
     buildReportKindWhere('lnk'),
+    request.scope === 'preHeatTreatmentRequestCandidates' || request.scope === 'preHeatTreatmentResultCandidates' ? buildPreHeatTreatmentAvailableWhere() : undefined,
     includedRowsWhere ? or(filteredWhere, includedRowsWhere) : filteredWhere,
   ) ?? sql`false`
 }

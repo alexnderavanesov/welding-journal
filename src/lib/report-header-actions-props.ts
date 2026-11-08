@@ -1,3 +1,4 @@
+import type { CustomDocumentType } from '@/lib/custom-document-types'
 import type { WorkflowAvailability } from '@/components/workflow-action-menu-item'
 import type { ReportHeaderActionsProps } from '@/components/report-header-actions'
 import type { ActiveReport } from '@/lib/home-state'
@@ -16,6 +17,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onGenerateWeldingJournalDocument: () => void
   onGenerateChecklistDocument: () => void
   onGenerateZniDocument: () => void
+  onGenerateCustomDocument?: (type: CustomDocumentType) => void
   onOpenWeldingJournalCurrentReport: () => void
   onOpenWeldingJournalWaitingWeldReport: () => void
   onOpenWeldingJournalWaitingRequestReport: () => void
@@ -86,6 +88,7 @@ export function createReportHeaderActionsProps({
   onGenerateWeldingJournalDocument,
   onGenerateChecklistDocument,
   onGenerateZniDocument,
+  onGenerateCustomDocument,
   onOpenWeldingJournalCurrentReport,
   onOpenWeldingJournalWaitingWeldReport,
   onOpenWeldingJournalWaitingRequestReport,
@@ -155,6 +158,7 @@ export function createReportHeaderActionsProps({
     onGenerateWeldingJournalDocument,
     onGenerateChecklistDocument,
     onGenerateZniDocument,
+    onGenerateCustomDocument,
     onOpenWeldingJournalCurrentReport,
     onOpenWeldingJournalWaitingWeldReport,
     onOpenWeldingJournalWaitingRequestReport,

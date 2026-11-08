@@ -21,7 +21,7 @@ describe('authoritative assignment history boundary', () => {
     expect(getSystemWorkflowStageTransitionReason(record, previous, context)).toContain('нельзя снять')
   })
   it('preserves cancelled request-only PSTO history during normalization', () => {
-    const row: WeldRow = { id: 1, pstoRequired: 'отменен', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-09-01', pstoResult: 'ожидает' }
+    const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'отменен', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-09-01', pstoResult: 'ожидает' }
     expect(prepareServerWeldInput(row)).toMatchObject(row)
   })
 })

@@ -26,13 +26,13 @@ describe('large affected-line batches', () => {
       }
       const db = database(kind === 'rules' ? [rows, [], [], [], []] : [rows, []])
       const loaded = kind === 'rules'
-        ? (await loadProgramRuleContext(db as never, scope, false)).rows
+        ? (await loadProgramRuleContext(db as never, scope, 'selected')).rows
         : await loadProgramChainScopeRows(db as never, scope)
       expect(db.select).toHaveBeenCalledTimes(kind === 'rules' ? 4 : 2)
       expect(loaded).toHaveLength(count)
       expect(loaded[0].id).toBe(1)
       expect(loaded.at(-1)?.id).toBe(count)
-      if (kind === 'rules') expect(loaded.every(row => row.preHeatTreatmentLnkEnabled === false)).toBe(true)
+      if (kind === 'rules') expect(loaded.every(row => row.preHeatTreatmentMode === 'selected')).toBe(true)
     },
   )
 })

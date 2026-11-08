@@ -70,15 +70,8 @@ const LNK_SECTION_LAYOUT: Array<{ section: string; fieldKeys: WeldFieldKey[] }> 
   },
 ]
 
-export type LnkVisibleFieldSectionOptions = {
-  preHeatTreatmentLnkEnabled: boolean
-}
-
-export function getLnkVisibleFieldSections({
-  preHeatTreatmentLnkEnabled = true,
-}: Partial<LnkVisibleFieldSectionOptions> = {}): WeldTableSection[] {
+export function getLnkVisibleFieldSections(): WeldTableSection[] {
   return LNK_SECTION_LAYOUT
-    .filter(({ section }) => preHeatTreatmentLnkEnabled || section !== 'НК до ТО')
     .map(({ section, fieldKeys }) => ({
       section,
       fields: fieldKeys.map((fieldKey) => {

@@ -1,7 +1,10 @@
-import { createServerFn } from '@tanstack/react-start'
+import { createServerFn, RawStream } from '@tanstack/react-start'
 import { isTConnectionType } from '@/lib/connection-type'
 import { asSupportLineProgram } from '@/lib/line-program'
 import { packProgramRows } from '@/lib/line-program-row-payload'
+import { createProgramRowsStream, PROGRAM_ROWS_PROTOCOL } from '@/lib/line-program-row-stream'
+import { requireIdentity } from './access-context'
+import { redactOperationResult } from './access-response'
 import { and, asc, count, eq, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { appSettings, derivedCalculationState, duplicateControls, preHeatTreatmentControls, pstoRepeatCycles, dispatcherAcceptedWarnings, linePrograms, weldJoints, type LineProgram } from '@/db/schema'
@@ -56,7 +59,7 @@ const LINE_PROGRAM_CALCULATION_COLUMNS = {
   hasVik: weldJoints.hasVik, hasRk: weldJoints.hasRk, hasUzk: weldJoints.hasUzk, hasPvk: weldJoints.hasPvk,
   vikControlBasis: weldJoints.vikControlBasis, rkControlBasis: weldJoints.rkControlBasis, uzkControlBasis: weldJoints.uzkControlBasis, pvkControlBasis: weldJoints.pvkControlBasis,
   vikResult: weldJoints.vikResult, rkResult: weldJoints.rkResult, uzkResult: weldJoints.uzkResult, pvkResult: weldJoints.pvkResult,
-  pstoRequired: weldJoints.pstoRequired, pstoRequest: weldJoints.pstoRequest, pstoResult: weldJoints.pstoResult,
+  preHeatTreatmentRequired: weldJoints.preHeatTreatmentRequired, pstoRequired: weldJoints.pstoRequired, pstoRequest: weldJoints.pstoRequest, pstoResult: weldJoints.pstoResult,
   pstoDate: weldJoints.pstoDate, tvmtResult: weldJoints.tvmtResult,
   pstoRequestDate: weldJoints.pstoRequestDate, heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
   tvmtRequest: weldJoints.tvmtRequest, tvmtRequestDate: weldJoints.tvmtRequestDate,
@@ -172,7 +175,7 @@ async function attachCalculationRelations(rows: WeldRow[], db: Pick<SystemDocume
   const pre = await db.select({ id: preHeatTreatmentControls.id, weldJointId: preHeatTreatmentControls.weldJointId, method: preHeatTreatmentControls.method, result: preHeatTreatmentControls.result, requestName: preHeatTreatmentControls.requestName, requestDate: preHeatTreatmentControls.requestDate, conclusionName: preHeatTreatmentControls.conclusionName, conclusionDate: preHeatTreatmentControls.conclusionDate, defectDescription: preHeatTreatmentControls.defectDescription, rkExposureConfirmedDiameter: preHeatTreatmentControls.rkExposureConfirmedDiameter }).from(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.weldJointId, ids))
   const duplicates = await db.select({ id: duplicateControls.id, weldJointId: duplicateControls.weldJointId, method: duplicateControls.method, result: duplicateControls.result, conclusion: duplicateControls.conclusion, conclusionDate: duplicateControls.conclusionDate, controlDate: duplicateControls.controlDate }).from(duplicateControls).where(buildNumberArrayMatch(duplicateControls.weldJointId, ids))
   const repeats = await db.select().from(pstoRepeatCycles).where(buildNumberArrayMatch(pstoRepeatCycles.weldJointId, ids))
-  const byId = new Map(rows.map(row => { row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled; return [row.id, row] as const }))
+  const byId = new Map(rows.map(row => { row.preHeatTreatmentMode = settings.preHeatTreatmentMode; return [row.id, row] as const }))
   for (const control of pre) { const row = byId.get(control.weldJointId); if (row) (row.preHeatTreatmentControls ??= []).push(control) }
   for (const control of duplicates) { const row = byId.get(control.weldJointId); if (row) (row.duplicateControls ??= []).push({ ...control, method: control.method as 'ВИК' | 'РК' | 'УЗК' | 'ПВК', result: control.result as 'годен' | 'ремонт' | 'вырез', conclusion: control.conclusion ?? '', conclusionDate: control.conclusionDate ?? '', controlDate: control.controlDate ?? '' }) }
   for (const cycle of repeats) { const row = byId.get(cycle.weldJointId); if (row) (row.pstoRepeatCycles ??= []).push(cycle) }
@@ -354,10 +357,14 @@ export function normalizeProgramDetailRequest(data: { id: number; family?: 'supp
 }
 
 export const getLineProgramJointPage = createServerFn({ method: 'GET' })
-  .validator((data: { id: number; family?: 'supports' }) => normalizeProgramDetailRequest(data))
+  .validator((data: { id: number; family?: 'supports'; transport?: typeof PROGRAM_ROWS_PROTOCOL }) => {
+    const request = normalizeProgramDetailRequest(data)
+    if (data.transport !== undefined && data.transport !== PROGRAM_ROWS_PROTOCOL) throw new Error('Неизвестный формат состава линии. Обновите страницу.')
+    return { ...request, ...(data.transport ? { transport: data.transport } : {}) }
+  })
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    return requireDb().transaction(async (db) => {
+    const payload = await requireDb().transaction(async (db) => {
     const [line] = await db.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
     if (!line) throw new Error('Линия больше не существует.')
     const rows = await db.select(WELD_TABLE_SELECT).from(weldJoints)
@@ -369,6 +376,14 @@ export const getLineProgramJointPage = createServerFn({ method: 'GET' })
     const detailed = applyGeneratedDocumentFields(withRequirements, await loadGeneratedDocumentAssignments(attached, db))
     return { total: detailed.length, ...packProgramRows(detailed), approvals, approvedKeys: approvals.map(row => row.key) }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+    // An already open older client still expects the original shape. Its
+    // response continues through the global field-redaction middleware.
+    if (!data.transport) return payload
+    // Raw streams are opaque to the global result middleware. Apply the same
+    // field policy to the entire packed snapshot before creating any stream,
+    // after the transaction has released its database connection.
+    const readable = redactOperationResult(await requireIdentity(), 'line-program.ts', 'getLineProgramJointPage', payload)
+    return { protocol: PROGRAM_ROWS_PROTOCOL, stream: new RawStream(createProgramRowsStream(readable)) } as const
   })
 
 /** Detail is loaded only when requested and transfers at most 50 explanatory rows. */

@@ -456,11 +456,11 @@ describe('local parsed-name reuse preserves topology and captured state', () => 
     rows[2].weldDate = null
     rows[1].officiality = 'неофициальный'
     rows[3].rkResult = 'ремонт'
-    rows[3].preHeatTreatmentLnkEnabled = false
+    rows[3].preHeatTreatmentMode = 'selected'
     rows[3].preHeatTreatmentControls = [{ id: 1, weldJointId: 4, method: 'РК', result: 'вырез' }]
     expectOldCalculation(rows, settings)
     rows[3].rkResult = 'годен'
-    rows[3].preHeatTreatmentLnkEnabled = true
+    rows[3].preHeatTreatmentMode = 'allPsto'
     rows[3].preHeatTreatmentControls[0].result = 'годен'
     rows[1].joint = 'J9T2'
     rows[2].programChainState = state(3, { kind: 'repair', sourceRowId: 99 })

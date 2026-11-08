@@ -93,12 +93,14 @@ test('требование ДЛС доступно в параметрах, со
     // The protected action awaits the password/settings check before updating
     // this controlled input. setChecked asserts synchronously after the click.
     await toggle.click()
+    await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
     await expect(toggle).toBeChecked({ checked: !initial })
     const stored = () => withE2eDatabase(async db => JSON.parse((await db.query('select value from app_settings where key=$1', [key])).rows[0]?.value ?? 'null'))
     await expect.poll(stored).toMatchObject({ officialDls: !initial, officialRegistry: true, officialNaksDate: true, officialMaterialGroup: true })
     await page.reload()
     await expect(toggle).toBeChecked({ checked: !initial })
     await toggle.click()
+    await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
     await expect(toggle).toBeChecked({ checked: initial })
     await expect.poll(stored).toMatchObject({ officialDls: initial, officialRegistry: true, officialDiameter: true, officialThickness: true })
   } finally {
@@ -114,7 +116,7 @@ test('требование ДЛС доступно в параметрах, со
 test('закрепленные подвкладки, связи СП/ЗВ/ДЗ и доступ к исключениям без прокрутки', async ({ page }) => {
   await page.goto('/settings#rules-system')
   const tabs = page.getByRole('tablist', { name: 'Разделы правил и проверок' })
-  await expect(tabs.getByRole('tab')).toHaveCount(5)
+  await expect(tabs.getByRole('tab')).toHaveCount(6)
   await page.locator('#system-rule-control-history').scrollIntoViewIfNeeded()
   await expect(tabs).toBeInViewport()
   await expect(page.getByRole('searchbox', { name: 'Поиск по настройкам' })).toBeInViewport()

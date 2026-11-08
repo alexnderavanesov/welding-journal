@@ -12,13 +12,13 @@ export function prepareStatisticsHeatTreatmentRows(
   rows: readonly WeldRow[],
   repeatCycles: readonly PstoRepeatCycleRecord[],
   preHeatTreatmentControls: readonly PreHeatTreatmentControlRecord[],
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled'>,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   const hydrated = mergePreHeatTreatmentControlsIntoRows(
     applyLatestPstoCycleToStatisticsRows(rows, repeatCycles),
     preHeatTreatmentControls,
   )
-  if (settings) for (const row of hydrated) row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled
+  if (settings) for (const row of hydrated) row.preHeatTreatmentMode = settings.preHeatTreatmentMode
   return hydrated
 }
 

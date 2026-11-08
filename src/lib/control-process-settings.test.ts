@@ -1,58 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { applyRemoteControlProcessSettings, DEFAULT_CONTROL_PROCESS_SETTINGS, loadControlProcessSettings, normalizeControlProcessSettings, saveControlProcessSettings } from './control-process-settings'
 
-import {
-  applyRemoteControlProcessSettings,
-  DEFAULT_CONTROL_PROCESS_SETTINGS,
-  loadControlProcessSettings,
-  normalizeControlProcessSettings,
-  saveControlProcessSettings,
-} from '@/lib/control-process-settings'
-
-describe('control process settings', () => {
-  beforeEach(() => {
-    window.localStorage.clear()
-    vi.restoreAllMocks()
+describe('control process modes and legacy settings', () => {
+  beforeEach(() => window.localStorage.clear())
+  it('starts new projects in selected mode and preserves legacy enabled/disabled meaning', () => {
+    expect(normalizeControlProcessSettings(null)).toEqual({ pvkGoodOnly: false, preHeatTreatmentMode: 'selected' as const })
+    expect(normalizeControlProcessSettings({ pvkGoodOnly: false }).preHeatTreatmentMode).toBe('allPsto')
+    expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: true }).preHeatTreatmentMode).toBe('allPsto')
+    expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: false }).preHeatTreatmentMode).toBe('selected')
   })
-
-  it('defaults PVK-good-only off without changing pre-heat policy', () => {
-    expect(normalizeControlProcessSettings(null)).toEqual(DEFAULT_CONTROL_PROCESS_SETTINGS)
-    expect(normalizeControlProcessSettings({ pvkGoodOnly: false })).toEqual({
-      pvkGoodOnly: false,
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
-    })
-    expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: false })).toEqual({
-      pvkGoodOnly: false,
-      preHeatTreatmentLnkEnabled: false,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
-    })
+  it.each([true, false])('ignores the retired primary restriction (%s)', old => {
+    expect(normalizeControlProcessSettings({ preHeatTreatmentMode: 'selected', allowPrimaryLnkBeforePreviousStagesComplete: old })).toEqual(DEFAULT_CONTROL_PROCESS_SETTINGS)
   })
-
-  it('persists the normalized local snapshot', () => {
-    saveControlProcessSettings({
-      pvkGoodOnly: false,
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
-    }, { syncRemote: false })
-
-    expect(loadControlProcessSettings()).toEqual({
-      pvkGoodOnly: false,
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
-    })
-  })
-
-  it('applies the authoritative project snapshot without a remote echo', () => {
-    applyRemoteControlProcessSettings({
-      pvkGoodOnly: true,
-      preHeatTreatmentLnkEnabled: false,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
-    })
-
-    expect(loadControlProcessSettings()).toEqual({
-      pvkGoodOnly: true,
-      preHeatTreatmentLnkEnabled: false,
-      allowPrimaryLnkBeforePreviousStagesComplete: false,
-    })
+  it('persists selected/allPsto without legacy keys and accepts authoritative remote settings', () => {
+    saveControlProcessSettings({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' as const }, { syncRemote: false })
+    expect(loadControlProcessSettings()).toEqual({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' as const })
+    applyRemoteControlProcessSettings({ pvkGoodOnly: true, preHeatTreatmentLnkEnabled: false })
+    expect(loadControlProcessSettings()).toEqual({ pvkGoodOnly: true, preHeatTreatmentMode: 'selected' as const })
   })
 })

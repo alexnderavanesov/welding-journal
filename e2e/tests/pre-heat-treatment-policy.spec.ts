@@ -88,13 +88,13 @@ test('открытая заявка не обходит выключение э�
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-17')
     await expect(page.getByRole('button', { name: 'Создать заявку до ТО', exact: true })).toBeEnabled()
     await withE2eDatabase(async (client) => {
-      const value = JSON.stringify({ ...JSON.parse(previousSetting?.value ?? '{}'), preHeatTreatmentLnkEnabled: false })
+      const value = JSON.stringify({ ...JSON.parse(previousSetting?.value ?? '{}'), preHeatTreatmentMode: 'selected' })
       await client.query(`insert into app_settings (key, value) values ('control-processes', $1)
         on conflict (key) do update set value = excluded.value`, [value])
       settingChanged = true
     })
     await page.getByRole('button', { name: 'Создать заявку до ТО', exact: true }).click()
-    await expect(page.getByText('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.', { exact: true })).toBeVisible()
+    await expect(page.getByText('Стык E2E-PRE-STALE-SETTING: НК до ТО не требуется для этого стыка на текущей линии.', { exact: true })).toBeVisible()
     expect(await withE2eDatabase(async (client) => (await client.query('select id from pre_heat_treatment_controls where weld_joint_id = $1', [id])).rows)).toEqual([])
   } finally {
     await page.close()

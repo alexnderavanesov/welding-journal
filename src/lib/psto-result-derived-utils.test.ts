@@ -17,7 +17,7 @@ import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('PSTO result request identity', () => {
   it('keeps an assigned primary PSTO cycle before a result is entered', () => {
-    const assignedRow = { id: 1, pstoRequired: 'да' } as WeldRow
+    const assignedRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да' } as WeldRow
     const unrelatedRow = { id: 2 } as WeldRow
 
     expect(getManagedPstoResultRows([assignedRow, unrelatedRow], new Set([1, 2])))
@@ -43,14 +43,14 @@ describe('PSTO result request identity', () => {
 
   it('selects only rows from the matching request date', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         pstoRequired: 'да',
         pstoRequest: 'Заявка пользователя',
         pstoRequestDate: '2026-07-21',
         pstoResult: 'ожидает ПСТО',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         pstoRequired: 'да',
         pstoRequest: 'Заявка пользователя',
@@ -70,7 +70,7 @@ describe('PSTO result request identity', () => {
 
   it('accepts separate custom names filled for every diagram group', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         joint: 'F16A',
         weldDate: '2026-07-31',
@@ -79,7 +79,7 @@ describe('PSTO result request identity', () => {
         pstoRequestDate: '2026-08-01',
         pstoResult: 'ожидает ПСТО',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         joint: 'S13',
         weldDate: '2026-07-31',
@@ -142,7 +142,7 @@ describe('PSTO result request identity', () => {
 
   it('keeps selected rows in the save plan when the text filter hides them', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         joint: 'F1',
         weldDate: '2026-08-01',
@@ -151,7 +151,7 @@ describe('PSTO result request identity', () => {
         pstoRequestDate: '2026-08-02',
         pstoResult: 'ожидает ПСТО',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         joint: 'F2',
         weldDate: '2026-08-01',
@@ -187,7 +187,7 @@ describe('PSTO result request identity', () => {
   })
 
   it('returns separate exact corrections for a blocked PSTO result modal', () => {
-    const currentRow = {
+    const currentRow = { preHeatTreatmentMode: 'allPsto' as const,
       id: 6,
       joint: 'F6',
       weldDate: '2026-08-01',

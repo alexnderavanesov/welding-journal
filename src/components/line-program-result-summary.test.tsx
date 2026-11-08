@@ -6,7 +6,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 
 afterEach(cleanup)
 it('omits PSTO and TVMT only from the assignment summary and leaves all NK stages unscrolled', () => {
-  const row: WeldRow = {
+  const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const,
     id: 1, joint: 'F1', hasVik: 'да', vikResult: 'годен', hasRk: 'да', rkResult: 'годен',
     pstoRequired: 'да', pstoResult: 'проведено', pstoRequest: 'ПСТО-ЗАЯВКА', heatTreatmentDiagram: 'ПСТО-1',
     tvmtResult: 'годен', tvmtConclusion: 'ТВМТ-1',
@@ -52,12 +52,12 @@ it('does not hide completed, rejected or cancelled methods or their documents', 
   expect(screen.getByText('ПВК: отменен')).toBeVisible()
   expect(screen.getByText('РК: ремонт')).toBeVisible()
 })
-it.each([true, false])('only active pre-heat rejection changes pending primary methods (enabled=%s)', enabled => {
-  const row: WeldRow = { ...rejected, rkResult: 'ожидает НК', rkConclusion: null, pstoRequired: 'да', preHeatTreatmentLnkEnabled: enabled, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'вырез' }, { id: 2, weldJointId: 1, method: 'ПВК', result: 'ожидает НК', requestName: 'ПВК до ТО' }] }
+it.each([true, false])('preliminary rejection stays visible and authoritative in either project mode (enabled=%s)', enabled => {
+  const row: WeldRow = { ...rejected, rkResult: 'ожидает НК', rkConclusion: null, pstoRequired: 'да', preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'вырез' }, { id: 2, weldJointId: 1, method: 'ПВК', result: 'ожидает НК', requestName: 'ПВК до ТО' }] }
   render(<ProgramResultSummary row={row} />)
-  expect(screen.getByText(`УЗК: ${enabled ? 'нет потребности' : 'ожидает заявку'}`)).toBeVisible()
+  expect(screen.getByText('УЗК: нет потребности')).toBeVisible()
   expect(screen.getByText('РК: вырез')).toBeVisible()
-  expect(buildProgramHistory(row).sections[0].controls[1].result).toBe(enabled ? 'нет потребности' : 'ожидает НК')
+  expect(buildProgramHistory(row).sections[0].controls[1].result).toBe('нет потребности')
 })
 it('does not inherit rejection from another joint', () => {
   render(<><ProgramResultSummary row={rejected} /><ProgramResultSummary row={{ ...rejected, id: 2, joint: 'F2', rkResult: 'годен' }} /></>)

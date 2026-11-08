@@ -1,3 +1,4 @@
+import { useCustomDocumentNames } from '@/lib/custom-document-settings'
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
@@ -22,6 +23,7 @@ export function useHomeDocumentController({
   setShowMenuOpen,
   welderStamps,
 }: UseHomeDocumentControllerOptions) {
+  const customNames = useCustomDocumentNames()
   const [documentPreviewRequest, setDocumentPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
   const closeDocumentPreview = useCallback(() => setDocumentPreviewRequest(null), [])
   const [documentConnectionsReference, openDocumentConnections] = useState<SystemDocumentReference | null>(null)
@@ -35,7 +37,7 @@ export function useHomeDocumentController({
     type: DocumentGenerationRequest['type'],
     rows: WeldRow[],
   ) => {
-    const documentLabel = getGeneratedDocumentProfile(type).formationLabel
+    const documentLabel = getGeneratedDocumentProfile(type, customNames).formationLabel
     if (rows.length === 0) {
       setMessage(`Нет стыков для формирования ${documentLabel}.`)
       return
@@ -43,7 +45,7 @@ export function useHomeDocumentController({
     setDocumentGenerationRequest({ id: Date.now(), type, rows })
     setGenerationMenuOpen(false)
     setShowMenuOpen(false)
-  }, [setGenerationMenuOpen, setMessage, setShowMenuOpen])
+  }, [setGenerationMenuOpen, setMessage, setShowMenuOpen, customNames])
 
   const handleDocumentGenerationRequest = useCallback((requestId: number) => {
     setDocumentGenerationRequest((current) => (current?.id === requestId ? null : current))

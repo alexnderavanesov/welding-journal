@@ -40,6 +40,7 @@ import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { buildChainActualityGroups } from '@/lib/chain-actuality'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
   formatSaveCheckBlockReason,
@@ -195,7 +196,7 @@ export async function loadServerWeldValidationContext(
     : DEFAULT_OTHER_SETTINGS
   const controlProcessSettings = settingsByKey.has(PROJECT_SETTING_KEYS.controlProcesses)
     ? normalizeControlProcessSettings(settingsByKey.get(PROJECT_SETTING_KEYS.controlProcesses)) : DEFAULT_CONTROL_PROCESS_SETTINGS
-  const programRules = await loadProgramRuleContext(db, lineScopeRows, controlProcessSettings.preHeatTreatmentLnkEnabled)
+  const programRules = await loadProgramRuleContext(db, lineScopeRows, controlProcessSettings.preHeatTreatmentMode)
   return {
     programRules,
     controlProcessSettings: settingsByKey.has(PROJECT_SETTING_KEYS.controlProcesses)
@@ -266,13 +267,33 @@ export function prepareServerWeldRecords({
     importMode,
     allowPstoLineLifecycleMove,
   })
+  // Resolve new namesakes and R/W against the same stable physical identities
+  // used by the card. Y roots remain independent. This also covers imports.
+  const additions = records.filter(record => !record.id || !previousRows.has(Number(record.id)))
+  const additionRows = additions.map((record, index) => ({ ...record, id: -(index + 1) } as WeldRow))
+  const existing = context.programRules?.rows ?? []
+  const inherited = new Map<number, boolean | null>()
+  if (additionRows.length && existing.length) {
+    for (const group of buildChainActualityGroups([...existing, ...additionRows], context.systemIndexSettings).groups) {
+      const stored = group.rows.filter(row => row.id > 0)
+      if (!stored.length) continue
+      const required = stored.some(row => row.preHeatTreatmentRequired === true) ? true
+        : stored.every(row => row.preHeatTreatmentRequired === false) ? false : null
+      for (const row of group.rows) if (row.id < 0) inherited.set(-row.id - 1, required)
+    }
+  }
+  additions.forEach((record, index) => {
+    record.preHeatTreatmentRequired = inherited.has(index) ? inherited.get(index)!
+      : record.preHeatTreatmentRequired ?? (context.controlProcessSettings.preHeatTreatmentMode === 'allPsto'
+        ? (isControlEnabledValue(record.pstoRequired) ? true : null) : false)
+  })
   records.forEach((record) => {
     record.hasVik = 'да'
     if (isTConnectionType(record.connectionType)) record.wdi = null
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined
     if (previous) clearRequestsForRemovedControlAssignments(record, previous)
     const policyRow = record as WeldRow
-    policyRow.preHeatTreatmentLnkEnabled = context.controlProcessSettings.preHeatTreatmentLnkEnabled
+    policyRow.preHeatTreatmentMode = context.controlProcessSettings.preHeatTreatmentMode
     record.finalStatus = calculateFinalStatus(record)
   })
   const systemWdi = isSystemWdiMode(context.otherSettings)
@@ -350,7 +371,6 @@ function applyPstoLineAssignments({
       identityChanged &&
       targetAssigned &&
       previous &&
-      context.controlProcessSettings.preHeatTreatmentLnkEnabled &&
       hasPrimaryLnkHistoryBeforePstoAssignment(previous as unknown as WeldRow)
     ) {
       throw buildPstoLineAssignmentError({
@@ -528,8 +548,7 @@ export function validateServerWeldRecords({
         allowSystemJointName: allowSystemJointNames,
         inheritedControlAssignmentSource: previous ? undefined : inheritedControlAssignmentSource,
         allowPrimaryLnkStageDebt:
-          context.controlProcessSettings.preHeatTreatmentLnkEnabled &&
-          context.controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
+          true,
         systemIndexSettings: context.systemIndexSettings,
       },
     )
@@ -714,7 +733,7 @@ export function getSystemWorkflowStageTransitionReason(
 ) {
   record = {
     ...record,
-    preHeatTreatmentLnkEnabled: context.controlProcessSettings.preHeatTreatmentLnkEnabled,
+    preHeatTreatmentMode: context.controlProcessSettings.preHeatTreatmentMode,
   } as WeldInput
   const preControlAssignmentReason = getControlAssignmentRemovalReason(record, previous)
   if (preControlAssignmentReason) return preControlAssignmentReason
@@ -748,7 +767,7 @@ export function getSystemWorkflowStageTransitionReason(
     }
   }
 
-  if (isControlEnabledValue(record.pstoRequired) || requiresPostHeatTreatmentCompletion(record)) {
+  if (String(record.pstoRequired ?? '').trim().toLowerCase() === 'да' || requiresPostHeatTreatmentCompletion(record)) {
     for (const method of LNK_METHODS) {
       if (!isPreHeatTreatmentLnkMethodCode(method.code)) continue
       const startsRequest = !hasText(previous?.[method.requestKey]) && hasText(record[method.requestKey])
@@ -760,7 +779,7 @@ export function getSystemWorkflowStageTransitionReason(
         isFinalLnkResultValue(record[method.resultKey])
       )
       if (!startsRequest && !startsResult) continue
-      if (isControlEnabledValue(record.pstoRequired)) {
+      if (String(record.pstoRequired ?? '').trim().toLowerCase() === 'да') {
         const lineReason = getFullyAssignedPstoLineReason(record, context)
         if (lineReason) return lineReason
       }
@@ -784,7 +803,7 @@ function getFullyAssignedPstoLineReason(
   const state = context.pstoLineAssignments.get(getPstoLineIdentityKey(identity))
   if (state?.programState) {
     const required = getPstoChainDecision(state, record.joint, context.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS)?.required ?? state.programState === 'assigned'
-    return (required || hasPstoExecutionHistory(record)) && isControlEnabledValue(record.pstoRequired) ? '' : 'Для этой цепочки ПСТО не назначено. Проверьте программу ПСТО и исключения линии.'
+    return (required || hasPstoExecutionHistory(record)) && String(record.pstoRequired ?? '').trim().toLowerCase() === 'да' ? '' : 'Для этой цепочки ПСТО не назначено. Проверьте программу ПСТО и исключения линии.'
   }
   if (!state || state.rowCount === 0 || state.assignedCount !== state.rowCount) {
     const label = [identity.projectTitle, identity.subtitleCode, identity.line].filter(Boolean).join(' · ')

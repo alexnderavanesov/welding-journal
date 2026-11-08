@@ -41,8 +41,8 @@ describe('LNK result navigation', () => {
     expect(getPendingLnkResultMethods(row).map((method) => method.code)).toEqual(['РК'])
   })
 
-  it('uses permissive stage settings only when they are explicitly provided', () => {
-    const staged = {
+  it('allows manual early navigation with or without explicit process settings', () => {
+    const staged = { preHeatTreatmentMode: 'allPsto' as const,
       ...row,
       pstoRequired: 'да',
       hasRk: 'да',
@@ -51,10 +51,10 @@ describe('LNK result navigation', () => {
       rkResult: 'ожидает НК',
     }
 
-    expect(getPendingLnkResultMethods(staged).map((method) => method.code)).not.toContain('РК')
+    expect(getPendingLnkResultMethods(staged).map((method) => method.code)).toContain('РК')
     expect(getPendingLnkResultMethods(staged, {
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+      preHeatTreatmentMode: 'allPsto' as const,
+
     }).map((method) => method.code)).toContain('РК')
   })
 })

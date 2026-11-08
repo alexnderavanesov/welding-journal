@@ -346,7 +346,7 @@ async function readSummaryContext(context: JournalReadContext, members: WeldRow[
 // for the existing independent LNK/PSTO physical-connection summarizers.
 const stageFields = [...new Set([
   ...LNK_METHODS.flatMap(method => [method.enabledKey, method.resultKey, method.requestKey, method.requestDateKey]),
-  'pstoRequired', 'pstoRequest', 'pstoRequestDate', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram',
+  'preHeatTreatmentRequired', 'pstoRequired', 'pstoRequest', 'pstoRequestDate', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram',
   'tvmtRequest', 'tvmtRequestDate', 'tvmtResult', 'tvmtConclusion', 'tvmtConclusionDate',
 ] as const)]
 const stageProjection = Object.fromEntries(stageFields.map(key => [key, weldJoints[key]]))

@@ -108,11 +108,11 @@ describe('filterWeldRowsByColumns', () => {
 
   it('treats legacy negative assignment spellings as an empty assignment', () => {
     const rows = [
-      row({ joint: 'S1', pstoRequired: 'Да' }),
-      row({ joint: 'S2', pstoRequired: 'да' }),
-      row({ joint: 'S3', pstoRequired: '1' }),
-      row({ joint: 'S4', pstoRequired: 'Нет' }),
-      row({ joint: 'S5', pstoRequired: '0' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, joint: 'S1', pstoRequired: 'Да' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, joint: 'S2', pstoRequired: 'да' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, joint: 'S3', pstoRequired: '1' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, joint: 'S4', pstoRequired: 'Нет' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, joint: 'S5', pstoRequired: '0' }),
     ]
 
     expect(rows.map((candidate) => getWeldColumnFilterRowText(candidate, 'pstoRequired'))).toEqual([

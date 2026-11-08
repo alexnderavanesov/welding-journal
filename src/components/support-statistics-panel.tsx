@@ -1,14 +1,21 @@
-import { useMemo } from 'react'
-import type { ColDef } from 'ag-grid-community'
+import { useMemo, useState } from 'react'
+import type { ColDef, GridApi } from 'ag-grid-community'
 import { ReadOnlyGrid } from './read-only-grid'
+import { Button } from './ui/button'
+import { SUPPORT_WELDER_FILTER } from './support-welder-column-filter'
 import { formatSupportLength, SUPPORT_STATISTICS_NOTE, SUPPORT_WELDER_STATISTICS_NOTE, type SupportWelderStatisticsRow, type SupportStatisticsMonth, type SupportStatisticsSummary } from '@/lib/support-statistics'
 
 const countFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
 const percentFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 })
 const welderRowId = ({ data }: { data: SupportWelderStatisticsRow }) => data.stamp
+const welderDefaultColumn: ColDef<SupportWelderStatisticsRow> = { filter: SUPPORT_WELDER_FILTER, filterParams: { buttons: [] }, sortable: false }
 
-type Props = { summary: SupportStatisticsSummary; onOpenRows?: (ids: number[], message?: string) => void }
-export function SupportStatisticsPanel({ summary, onOpenRows }: Props) {
+type Props = { summary: SupportStatisticsSummary; onOpenRows?: (ids: number[], message?: string) => void
+  onWelderRowsChange?: (rows: SupportWelderStatisticsRow[]) => void }
+export function SupportStatisticsPanel({ summary, onOpenRows, onWelderRowsChange }: Props) {
+  const [welderApi, setWelderApi] = useState<GridApi<SupportWelderStatisticsRow> | null>(null)
+  const [shownWelders, setShownWelders] = useState(summary.welders?.length ?? 0)
+  const [filtered, setFiltered] = useState(false)
   const open = (ids: number[], label: string) => { if (ids.length) onOpenRows?.(ids, `Статистика опор · ${label}`) }
   const columns = useMemo<ColDef<SupportStatisticsMonth>[]>(() => [
     { field: 'month', headerName: 'Месяц', minWidth: 115, flex: 1 },
@@ -21,12 +28,15 @@ export function SupportStatisticsPanel({ summary, onOpenRows }: Props) {
   ], [onOpenRows])
   const welderColumns = useMemo<ColDef<SupportWelderStatisticsRow>[]>(() => [
     { field: 'stamp', headerName: 'Клеймо', pinned: 'left', minWidth: 190, flex: 1.4, cellClass: 'statistics-cell',
+      filterValueGetter: ({ data }) => data ? [data.stamp, data.welderName].filter(Boolean).join(' — ') : '',
       cellRenderer: ({ data }: { data?: SupportWelderStatisticsRow }) => data ? <div className="flex h-full flex-col justify-center leading-5"><span className="font-semibold text-slate-900">{data.stamp}</span><span className="truncate text-xs text-slate-500">{data.welderName}</span></div> : null },
     ...([['total', 'Всего'], ['good', 'Годен'], ['waitingRequest', 'Ожидает заявку'], ['waitingControl', 'Ожидает НК'], ['rejected', 'Не годен']] as const).map(([field, headerName]) => ({
       field, headerName, minWidth: 125, flex: 1, cellClass: `statistics-cell statistics-number ${field === 'good' ? 'text-emerald-700' : field === 'rejected' ? 'text-rose-700' : ''}`,
       valueFormatter: ({ value }: { value: number }) => countFormat.format(value),
+      filterValueGetter: ({ data }: { data?: SupportWelderStatisticsRow }) => data ? countFormat.format(data[field]) : '',
     })),
     { field: 'defectPercent', headerName: '% брака', minWidth: 135, flex: 1, cellClass: 'statistics-cell statistics-number',
+      filterValueGetter: ({ data }) => data ? `${percentFormat.format(data.defectPercent)}%` : '',
       cellRenderer: ({ data }: { data?: SupportWelderStatisticsRow }) => data ? <span>{percentFormat.format(data.defectPercent)}% <span className="text-xs text-slate-400">из {countFormat.format(data.good + data.rejected)}</span></span> : null },
   ], [])
   return <div className="space-y-4" data-testid="support-statistics">
@@ -41,7 +51,14 @@ export function SupportStatisticsPanel({ summary, onOpenRows }: Props) {
     <section className="rounded-md border border-slate-200 bg-white" data-testid="support-welder-statistics">
       <h3 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800">Сварщики — опоры</h3>
       <p className="px-4 py-3 text-xs leading-relaxed text-slate-500">{SUPPORT_WELDER_STATISTICS_NOTE}</p>
-      {summary.welders?.length ? <ReadOnlyGrid label="Статистика сварщиков по опорам" pageScroll rowData={summary.welders} columnDefs={welderColumns} getRowId={welderRowId} rowHeight={54} />
+      {summary.welders?.length ? <><ReadOnlyGrid label="Статистика сварщиков по опорам" columnFilters enableFilterHandlers defaultColDef={welderDefaultColumn}
+        pageScroll rowData={summary.welders} columnDefs={welderColumns} getRowId={welderRowId} rowHeight={54}
+        onDisplayedRowsChange={onWelderRowsChange} onGridReady={event => setWelderApi(event.api)}
+        onModelUpdated={event => { setShownWelders(event.api.getDisplayedRowCount()); setFiltered(event.api.isColumnFilterPresent()) }} />
+        <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2 text-xs text-slate-500">
+          <span>Показано сварщиков: {shownWelders} из {summary.welders.length}</span>
+          {filtered ? <Button variant="ghost" size="sm" onClick={() => welderApi?.setFilterModel(null)}>Сбросить фильтры</Button> : null}
+        </div></>
         : <p className="p-6 text-sm text-slate-500">В выбранном периоде и срезе нет сваренных опор с фактическим клеймом.</p>}
     </section>
   </div>

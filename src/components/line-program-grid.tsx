@@ -156,7 +156,7 @@ function Grid<T>(props: Props<T>) {
       if (node) decorate(element, node, api)
     }
   }, [api, props.rowAttributes, props.getRowClass, rows, decorate])
-  useProgramPageScroll(root, api, pageScroll)
+  useProgramPageScroll(root, api, pageScroll, undefined, { ignoreOffscreenViewportScroll: kind === 'joints' })
   useProgramDomOrder(root)
   const save = useCallback((grid: GridApi<T>) => {
     if (restoring.current || grid.isDestroyed()) return
@@ -218,7 +218,13 @@ function Grid<T>(props: Props<T>) {
     popupParent.addEventListener('keydown', escape, true)
     return () => popupParent.removeEventListener('keydown', escape, true)
   }, [popupParent, api])
-  const getRowHeight = useCallback(({ node }: { node: IRowNode<T> }) => node.group ? 36 : undefined, [])
+  const getRowHeight = useCallback(({ node }: { node: IRowNode<T> }) => {
+    // A density change resets all row heights, including measured details.
+    // Keep their last known height until AG's detail ResizeObserver measures the new
+    // content; its initial 1px estimate would collapse the page and lose scroll.
+    if (node.detail && node.rowHeight != null) return node.rowHeight
+    return kind === 'lines' && node.group ? 36 : undefined
+  }, [kind])
   const columnMenu = useCallback<NonNullable<AgGridReactProps<T>['getColumnMenuItems']>>(params => {
     if (kind !== 'lines' || !params.api.getRowGroupColumns().length || params.source !== 'columnMenu') return params.defaultItems
     const toggleGroups = (expanded: boolean) => params.api.forEachNode(node => {
@@ -270,7 +276,7 @@ function Grid<T>(props: Props<T>) {
       <AgGridReact<T> theme={(kind === 'lines' ? OVERVIEW_THEMES : THEMES)[appearance.theme]} localeText={LOCALE} rowData={rows} columnDefs={columns} defaultColDef={kind === 'lines' ? DEFAULT_COLUMN : UNGROUPED_COLUMN}
         groupDisplayType="groupRows" groupRowRendererParams={GROUP_ROW} isGroupOpenByDefault={initiallyOpenGroup}
         initialState={initialState.current} getRowId={rowId} domLayout={virtual || pageScroll ? 'normal' : 'autoHeight'}
-        rowHeight={rowHeight} getRowHeight={kind === 'lines' ? getRowHeight : undefined} headerHeight={36} rowBuffer={5} animateRows={false} suppressScrollOnNewData ensureDomOrder={false} suppressRowTransform
+        rowHeight={rowHeight} getRowHeight={kind === 'lines' || props.detailRenderer ? getRowHeight : undefined} headerHeight={36} rowBuffer={5} animateRows={false} suppressScrollOnNewData ensureDomOrder={false} suppressRowTransform
         suppressRowHoverHighlight suppressColumnMoveAnimation suppressDragLeaveHidesColumns
         suppressGroupRowsSticky={pageScroll}
         masterDetail={!!props.detailRenderer} detailCellRenderer={props.detailRenderer ? detailMotion.renderer : undefined} detailRowAutoHeight

@@ -9,7 +9,7 @@ import {
 
 describe('PSTO cycle server state', () => {
   it('exposes primary and repeat storage as one ordered timeline', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 7,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-1',
@@ -54,7 +54,7 @@ describe('PSTO cycle server state', () => {
   })
 
   it('persists primary and repeat changes through one transaction boundary', async () => {
-    const primary = {
+    const primary = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-1',
@@ -63,7 +63,7 @@ describe('PSTO cycle server state', () => {
       finalStatus: 'ожидает НК',
       pstoRepeatCycles: [],
     } as unknown as WeldRow
-    const repeatOwner = {
+    const repeatOwner = { preHeatTreatmentMode: 'allPsto' as const,
       id: 2,
       pstoRequired: 'да',
       finalStatus: 'ожидает НК',

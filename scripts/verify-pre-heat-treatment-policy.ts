@@ -58,7 +58,7 @@ await db.transaction(async (tx) => {
     weldJointId: row.id, sequence: 2, pstoRequest: `REPEAT-${row.id}`, pstoRequestDate: '2026-07-13', pstoResult: 'ожидает ПСТО',
   })))
   for (const enabled of [true, false, true]) {
-    const value = JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: enabled })
+    const value = JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })
     await tx.insert(appSettings).values({ key: 'control-processes', value })
       .onConflictDoUpdate({ target: appSettings.key, set: { value } })
     const hydrated = await relations.attachHeatTreatmentControlRelations(rows, tx)
@@ -90,7 +90,7 @@ await db.transaction(async (tx) => {
   await persistence.savePstoCycleRowsInBatches(tx, [{ ...fresh, pstoRequest: 'NEW-P', pstoRequestDate: '2026-07-12' } as WeldRow])
   const [saved] = await tx.select().from(weldJoints).where(eq(weldJoints.id, fresh.id))
   assert.equal(saved.preHeatTreatmentLnkExempt, true)
-  await persistence.savePstoCycleRowsInBatches(tx, [{ ...rows[6], preHeatTreatmentLnkEnabled: false, preHeatTreatmentLnkExempt: true, pstoRequest: 'OFF-P' } as WeldRow])
+  await persistence.savePstoCycleRowsInBatches(tx, [{ ...rows[6], preHeatTreatmentMode: 'selected' as const, preHeatTreatmentLnkExempt: true, pstoRequest: 'OFF-P' } as WeldRow])
   const [offSaved] = await tx.select().from(weldJoints).where(eq(weldJoints.id, rows[6].id))
   assert.equal(offSaved.preHeatTreatmentLnkExempt, false)
   const plan = await tx.execute(sql`explain (analyze, format json) select ${policy.buildPreHeatTreatmentEnabledWhere()} from ${weldJoints} where ${inArray(weldJoints.id, ids)}`)

@@ -11,7 +11,7 @@ const fieldLabels: Record<string, string> = {
   requestName: 'Заявка', requestDate: 'Дата заявки', conclusion: 'Заключение', conclusionName: 'Заключение', conclusionDate: 'Дата заключения',
   defectDescription: 'Описание дефектов', rkExposureConfirmedDiameter: 'Подтверждённый диаметр для РК', sequence: 'Номер цикла',
   configurationIssue: 'Ошибка настройки программы', pstoAssignment: 'Назначение ПСТО', pstoCancellationBasis: 'Основание отмены ПСТО',
-  pstoExceptionBasis: 'Основание исключения ПСТО', preHeatTreatmentLnkExempt: 'Освобождение от НК до ТО',
+  pstoExceptionBasis: 'Основание исключения ПСТО', preHeatTreatmentLnkExempt: 'Освобождение от НК до ТО', preHeatTreatmentRequired: 'Требуется НК до ТО',
   pvkControlPercent: 'Объём ПВК, %', layeredControlAssigned: 'Послойный контроль назначен',
   rootJoint: 'Исходный стык цепочки', required: 'ПСТО требуется', basis: 'Основание', closedAt: 'Дата закрытия', closeReason: 'Причина закрытия',
   naksStamp: 'Клеймо НАКС', welderName: 'ФИО сварщика', internalStamp: 'Внутреннее клеймо', weldType: 'Способ сварки',
@@ -71,7 +71,7 @@ const accountLabels: Record<string, string> = {
   'account.invite.requested': 'Повтор приглашения', 'account.recovery.requested': 'Отправка восстановления',
 }
 const operationLabels: Record<string, string> = {
-  createWeldJoint: 'Создание стыка', createWeldJoints: 'Создание стыков', updateWeldJoint: 'Изменение стыка', updateWeldJoints: 'Изменение стыков',
+  saveJournalCellEdits: 'Ввод в ячейках журнала', pasteJournalCells: 'Вставка в ячейки журнала', createWeldJoint: 'Создание стыка', createWeldJoints: 'Создание стыков', updateWeldJoint: 'Изменение стыка', updateWeldJoints: 'Изменение стыков',
   deleteWeldJoint: 'Удаление стыка', deleteWeldJoints: 'Удаление стыков', deleteObsoleteRepeatedJoint: 'Удаление неактуального повторного стыка',
   importWeldJoints: 'Импорт стыков', massFillWeldJoints: 'Массовое заполнение стыков', replaceWeldJoints: 'Замена стыков при импорте',
   moveWeldJointChain: 'Перенос цепочки стыка', setChainActuality: 'Изменение актуальности цепочки',

@@ -1,4 +1,5 @@
 import type { WeldInput } from '@/lib/weld-fields'
+import type { TechnologyCardMaterials, TechnologyCardMaterialField } from './technology-card-materials'
 
 export const TECHNOLOGY_CARD_PSTO_OPTIONS = [
   { value: 'required', label: 'С ПСТО' },
@@ -8,7 +9,7 @@ export const TECHNOLOGY_CARD_PSTO_OPTIONS = [
 
 export type TechnologyCardPsto = typeof TECHNOLOGY_CARD_PSTO_OPTIONS[number]['value']
 
-export type TechnologyCardParameters = {
+export type TechnologyCardParameters = TechnologyCardMaterials & {
   name: string
   weldingMethods: string[]
   connectionType: string
@@ -36,7 +37,7 @@ export type TechnologyCardDraft = Omit<TechnologyCardParameters,
   thicknessTo: string
 }
 
-export type TechnologyCardWeld = Pick<WeldInput,
+export type TechnologyCardWeld = Pick<WeldInput, TechnologyCardMaterialField |
   'weldDate' | 'technologyCardNumber' | 'weldingMethod' | 'connectionType' |
   'materialGroup' | 'd1' | 'd2' | 't1' | 't2' | 'pstoRequired'>
 

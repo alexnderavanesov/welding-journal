@@ -1,5 +1,7 @@
 export const CONNECTION_RULES_HREF = '/account?tab=rules&section=connections'
+export const ASSIGNMENT_CALCULATIONS_HREF = '/account?tab=rules&section=assignments'
 export const CHECK_PARAMETERS_HREF = '/account?tab=rules&section=checks'
+export const ASSIGNMENT_WARNINGS_HREF = '/settings#rules-warnings'
 
 /** Compatibility redirect only; this URL no longer renders a registry tab. */
 export function isLegacyCheckParametersLocation(href: string) {
@@ -15,7 +17,8 @@ export function getReferenceTab(search: string): ReferenceTab {
   return value === 'specialists' || value === 'technologyCards' ? value : 'registry'
 }
 
-export type SystemRulesSection = 'connections' | 'checks'
+export type SystemRulesSection = 'connections' | 'checks' | 'assignments'
 export function getSystemRulesSection(search: string): SystemRulesSection {
-  return new URLSearchParams(search).get('section') === 'checks' ? 'checks' : 'connections'
+  const section = new URLSearchParams(search).get('section')
+  return section === 'checks' || section === 'assignments' ? section : 'connections'
 }

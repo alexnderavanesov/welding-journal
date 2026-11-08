@@ -117,7 +117,14 @@ test('журнал: текущая версия сохраняет видимы�
   await settings.getByRole('textbox', { name: 'Найти столбец или раздел' }).fill('D1')
   await settings.getByRole('checkbox', { name: 'D1', exact: true }).uncheck()
   await settings.getByRole('textbox', { name: 'Найти столбец или раздел' }).fill('')
-  await settings.getByRole('checkbox', { name: 'Раздел: Материалы', exact: true }).uncheck()
+  const materials = settings.getByRole('checkbox', { name: 'Раздел: Материалы', exact: true })
+  await expect(materials).toBeChecked({ indeterminate: true })
+  // A mixed section has checked=false; uncheck() alone is a Playwright no-op.
+  // Use the actual mixed → all → none interaction, preserving the other sections.
+  await materials.check()
+  await expect(materials).toBeChecked()
+  await materials.uncheck()
+  await expect(materials).not.toBeChecked()
   await page.keyboard.press('Escape')
   await expect(grid.locator('.ag-header-cell[col-id="d1"]')).toHaveCount(0)
   await expect(grid.locator('.ag-header-cell[col-id="element1"]')).toHaveCount(0)

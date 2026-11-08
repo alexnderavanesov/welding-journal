@@ -1,4 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 import { getLnkResultRestrictionReason, formatLnkResultRuleReason } from '@/lib/lnk-result-policy'
@@ -108,9 +110,10 @@ export function getSelectableVisibleLnkResultRows(
   methodKey: LnkResultDraftState['methodKey'],
   requestDate: string,
 ) {
-  return rows.filter((row) =>
-    canSelectLnkResultRow(row, requestName, methodKey, requestDate),
-  )
+  const methods = methodKey ? LNK_METHODS.filter(method => method.requestKey === methodKey) : LNK_METHODS
+  return rows.filter(row => methods.some(method =>
+    canSelectLnkResultRow(row, requestName, method.requestKey, requestDate) && isPrimaryLnkStageReady(row, method.code),
+  ))
 }
 
 export function canBulkToggleLnkResultRows({
@@ -212,9 +215,7 @@ export function getLnkResultSaveBlockReason({
         buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
         selectedRows,
         saveCheckSettings,
-        isPrimaryLnkStageDebtAllowed(controlProcessSettings)
-          ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
-          : undefined,
+        { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS },
       )
     : ''
   if (chronologyIssue) return chronologyIssue
@@ -244,19 +245,12 @@ export function getLnkResultRootCauseActions({
     buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
     saveCheckSettings,
   ).filter((issue) =>
-    !isPrimaryLnkStageDebtAllowed(controlProcessSettings) || issue.kind !== 'post-before-psto-cycle',
+    issue.kind !== 'post-before-psto-cycle',
   )
   if (issues.length === 0) return []
   const firstIssue = issues[0]!
   if (!saveBlockReason.includes(firstIssue.message) && !saveBlockReason.includes('ВИК')) return []
   return getLnkChronologyRootCauseActions(issues)
-}
-
-function isPrimaryLnkStageDebtAllowed(settings?: ControlProcessSettings) {
-  return Boolean(
-    settings?.preHeatTreatmentLnkEnabled &&
-    settings.allowPrimaryLnkBeforePreviousStagesComplete,
-  )
 }
 
 function findFirstLnkResultVikBeforeOtherDraftIssue(

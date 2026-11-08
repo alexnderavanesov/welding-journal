@@ -7,7 +7,7 @@ import { getDispatcherSettingIdsForSaveCheck } from './save-check-dispatcher-lin
 import { normalizeSaveCheckSettings, formatSaveCheckBlockReason } from './save-check-settings'
 import type { WeldRow } from './dispatcher-types'
 
-const base: WeldRow = { id: 1, joint: 'F1', line: 'L1', weldDate: '2026-08-01', preHeatTreatmentLnkEnabled: true }
+const base: WeldRow = { id: 1, joint: 'F1', line: 'L1', weldDate: '2026-08-01', preHeatTreatmentMode: 'allPsto' as const }
 
 describe('retired document-completeness diagnostics (former SP-11)', () => {
   it.each([
@@ -15,11 +15,11 @@ describe('retired document-completeness diagnostics (former SP-11)', () => {
     ['primary NK request', { hasVik: 'да', vikRequest: 'ВИК-1', vikRequestDate: '' }],
     ['pre-TO NK result', { preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'годен (отменен)' }] }],
     ['pre-TO NK request', { preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', requestDate: '2026-08-02' }] }],
-    ['PSTO result', { pstoRequired: 'да', pstoResult: 'проведено', pstoDate: '', heatTreatmentDiagram: '' }],
-    ['PSTO request', { pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '' }],
-    ['TVMT result', { pstoRequired: 'да', tvmtResult: 'годен', tvmtConclusion: '', tvmtConclusionDate: '' }],
-    ['TVMT request', { pstoRequired: 'да', tvmtRequestDate: '2026-08-03' }],
-    ['repeat cycle', { pstoRequired: 'отменен', pstoRepeatCycles: [{ id: 1, weldJointId: 1, sequence: 2,
+    ['PSTO result', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', pstoResult: 'проведено', pstoDate: '', heatTreatmentDiagram: '' }],
+    ['PSTO request', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '' }],
+    ['TVMT result', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', tvmtResult: 'годен', tvmtConclusion: '', tvmtConclusionDate: '' }],
+    ['TVMT request', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', tvmtRequestDate: '2026-08-03' }],
+    ['repeat cycle', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', pstoRepeatCycles: [{ id: 1, weldJointId: 1, sequence: 2,
       pstoResult: 'проведено', tvmtResult: 'не годен', pstoDate: '', heatTreatmentDiagram: '', tvmtConclusion: '', tvmtConclusionDate: '' }] }],
   ] satisfies Array<[string, Partial<WeldRow>]>)('does not diagnose missing requisites in %s or rewrite history', (_label, fields) => {
     const row = { ...base, ...fields }
@@ -60,7 +60,7 @@ describe('retired document-completeness diagnostics (former SP-11)', () => {
         tvmtRequest: 'ТВМТ-2', tvmtRequestDate: '', tvmtResult: 'годен', tvmtConclusionDate: '2026-08-07', tvmtConclusion: 'ТВМТ-2' }],
     }
     // Test the two independent calendars: the primary NK is not post-TO work.
-    expect(buildLnkChronologyCheckTasks([{ ...row, pstoRequired: 'нет', pstoDate: '', pstoResult: '', pstoRepeatCycles: [] }])).toEqual([])
+    expect(buildLnkChronologyCheckTasks([{ ...row, pstoRequired: 'нет', pstoDate: '', pstoResult: '', heatTreatmentDiagram: '', tvmtResult: '', tvmtConclusionDate: '', tvmtConclusion: '', tvmtRequest: '', tvmtRequestDate: '', pstoRepeatCycles: [] }])).toEqual([])
     expect(buildPstoChronologyCheckTasks([row])).toEqual([])
   })
 

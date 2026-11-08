@@ -4,7 +4,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 
 describe('pre-heat-treatment report values', () => {
   it('shows unfinished methods as no longer needed after a rejected pre-TO result', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       pstoRequired: 'да',
       hasRk: 'да',

@@ -358,7 +358,7 @@ async function seedLayeredControlJoint(joint = JOINT, stamp = STAMP) {
       on conflict (key) do update set value = excluded.value, updated_at = now()
     `, [CONTROL_SETTINGS_KEY, JSON.stringify({
       pvkGoodOnly: false,
-      preHeatTreatmentLnkEnabled: true,
+      preHeatTreatmentMode: 'allPsto',
     })])
     await client.query('delete from app_settings where key = $1', [LAYERED_INDEX_KEY])
     await client.query(`

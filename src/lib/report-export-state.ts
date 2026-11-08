@@ -3,13 +3,12 @@ import { getReportHiddenFieldKeys, shouldMergePstoSections } from '@/lib/report-
 import type { ActiveReport } from '@/lib/home-state'
 import {
   getLnkVisibleFieldSections,
-  type LnkVisibleFieldSectionOptions,
 } from '@/lib/lnk-visible-field-layout'
 
 export function getReportExportOptions(
   activeReport: ActiveReport,
   sheetName: string,
-  controlProcessSettings: Partial<LnkVisibleFieldSectionOptions> = {},
+  controlProcessSettings: Partial<import('./control-process-settings').ControlProcessSettings> = {},
 ) {
   const reportKind = isReportKind(activeReport) ? activeReport : 'weldingJournal'
   return {
@@ -17,7 +16,7 @@ export function getReportExportOptions(
       storageKey: activeReport,
       hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
       mergePstoSections: shouldMergePstoSections(activeReport),
-      sectionLayout: activeReport === 'lnk' ? getLnkVisibleFieldSections(controlProcessSettings) : undefined,
+      sectionLayout: activeReport === 'lnk' ? getLnkVisibleFieldSections() : undefined,
     }),
     readOnlyFieldKeys: getReportReadOnlyFieldKeys(reportKind),
     sheetName,

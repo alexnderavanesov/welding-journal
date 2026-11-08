@@ -1,4 +1,5 @@
 import { normalizeTechnologyCardName } from '@/lib/technology-card-name'
+import { TECHNOLOGY_CARD_MATERIAL_FIELDS, type TechnologyCardMaterials } from './technology-card-materials'
 import { normalizeDataListOption, type DataListSettings } from '@/lib/data-list-settings'
 import {
   TECHNOLOGY_CARD_PSTO_OPTIONS,
@@ -32,6 +33,12 @@ export function validateTechnologyCard(value: unknown, settings: DataListSetting
   const issues: TechnologyCardIssue[] = []
   const add = (field: TechnologyCardField, message: string) => issues.push({ field, message })
   const name = normalizeTechnologyCardName(source.name)
+  const materials: TechnologyCardMaterials = {}
+  for (const [field, label] of TECHNOLOGY_CARD_MATERIAL_FIELDS) {
+    const value = source[field]
+    if (value != null && typeof value !== 'string') add(field, `${label}: укажите текст.`)
+    materials[field] = typeof value === 'string' ? value.trim() : null
+  }
   if (!name) add('name', 'Укажите название технологической карты, например «ТК №12».')
 
   const readCodes = (field: 'weldingMethods' | 'materialGroups', options: string[]) => {
@@ -74,7 +81,7 @@ export function validateTechnologyCard(value: unknown, settings: DataListSetting
   const psto = TECHNOLOGY_CARD_PSTO_OPTIONS.find(option => option.value === source.psto)?.value
   if (!psto) add('psto', 'Выберите назначение ПСТО: с ПСТО, без ПСТО или не имеет значения.')
   return {
-    card: issues.length || !psto ? null : { name, weldingMethods, connectionType, materialGroups, ...dimensions, psto },
+    card: issues.length || !psto ? null : { name, weldingMethods, connectionType, materialGroups, ...dimensions, psto, ...materials },
     issues,
   }
 }

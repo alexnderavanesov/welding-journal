@@ -78,7 +78,7 @@ describe('PSTO line assignment', () => {
   })
 
   it('builds a validation baseline that preserves the main control while accepting assigned PSTO', () => {
-    const previous = makeRequestOnlyRow({
+    const previous = makeRequestOnlyRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoControlBasis: 'старое основание',
       pstoCancellationDate: '2026-08-01',
@@ -261,7 +261,7 @@ describe('PSTO line assignment', () => {
   })
 
   it('recognizes historical main control when a non-PSTO weld with primary LNK enters a PSTO line', () => {
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: null,
       pstoRequestDate: null,
@@ -274,18 +274,18 @@ describe('PSTO line assignment', () => {
       tvmtConclusion: null,
     }))).toBe(true)
 
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
     }))).toBe(false)
 
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'История ПСТО',
     }))).toBe(false)
   })
 
   it('does not let an obsolete exemption bypass line assignment safeguards', () => {
-    const row = makeRow({
+    const row = makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       ...{ preHeatTreatmentLnkExempt: true },
       vikRequest: 'Заявка ВИК основная',
@@ -296,7 +296,7 @@ describe('PSTO line assignment', () => {
   })
 
   it('recognizes RK coordinates as primary-stage data even without a document name', () => {
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: null,
       pstoRequestDate: null,
@@ -317,7 +317,7 @@ describe('PSTO line assignment', () => {
   })
 
   it('recognizes a simple defect description as primary-stage data', () => {
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: null,
       pstoRequestDate: null,
@@ -338,7 +338,7 @@ describe('PSTO line assignment', () => {
   })
 
   it('does not let BoQ or KS3 hide the existing main control', () => {
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: null,
       pstoRequestDate: null,
@@ -355,7 +355,7 @@ describe('PSTO line assignment', () => {
   })
 
   it('does not treat derived waiting labels as an existing primary LNK set', () => {
-    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({
+    expect(hasPrimaryLnkHistoryBeforePstoAssignment(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: null,
       pstoRequestDate: null,
@@ -376,7 +376,7 @@ describe('PSTO line assignment', () => {
 })
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1,
     pstoRequired: 'да',
     pstoRequest: 'Заявка ПСТО',

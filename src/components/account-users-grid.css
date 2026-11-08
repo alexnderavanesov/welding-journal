@@ -1,0 +1,15 @@
+.account-users-grid .read-only-grid-dialog { height: min(64vh, var(--account-users-grid-height)); min-height: 160px; }
+.account-users-grid .account-user-cell { padding: 14px 16px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+.account-users-grid .account-user-cell > .ag-cell-wrapper,
+.account-users-grid .account-user-cell .ag-cell-value { width: 100%; }
+
+/* Reserve a real viewport for the virtual list. Its absolutely positioned rows
+   must never determine an auto height or extend into the action buttons. */
+.account-users-filter.ag-filter-menu { width: 360px; overflow-x: hidden; }
+.account-users-filter .ag-filter-body-wrapper { flex: none; }
+.account-users-filter .ag-set-filter-list { flex: none; height: min(160px, 40dvh); overflow: hidden; }
+.account-users-filter .ag-virtual-list-viewport { height: 100%; max-height: 100%; }
+.account-users-filter .ag-set-filter-item-checkbox { min-width: 0; }
+.account-users-filter .ag-checkbox-label { flex: 1; min-width: 0; overflow: hidden; }
+.account-user-filter-value { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.account-users-filter .ag-filter-apply-panel { flex: none; position: relative; background: #f9fafb; }

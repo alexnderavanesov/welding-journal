@@ -29,7 +29,7 @@ describe('getEarlyCoilDecisionInvalidationReason', () => {
   })
 
   it('keeps the decision valid when a rejection moves from primary LNK to pre-TO LNK', () => {
-    const transferred = row({
+    const transferred = row({ preHeatTreatmentMode: 'allPsto' as const,
       ...previous,
       pstoRequired: 'да',
       hasRk: 'да',
@@ -46,7 +46,7 @@ describe('getEarlyCoilDecisionInvalidationReason', () => {
   })
 
   it('blocks removing the last rejection from pre-TO or duplicate control history', () => {
-    const preHeatTreatmentSource = row({
+    const preHeatTreatmentSource = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasRk: 'да',
       rkResult: null,

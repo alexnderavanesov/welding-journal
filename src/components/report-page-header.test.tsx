@@ -23,7 +23,7 @@ describe('ReportPageHeader', () => {
       width: 'calc(100vw - 104px)',
       maxWidth: 'calc(100vw - 104px)',
     })
-    expect(header).toHaveClass('border-b', 'bg-white/95')
+    expect(header).toHaveClass('bg-inherit')
     expect(header.querySelector('[data-report-header-actions]')).not.toHaveClass('basis-full')
   })
 

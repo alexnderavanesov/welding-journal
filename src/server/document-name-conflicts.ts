@@ -10,8 +10,14 @@ import { requireDb } from '@/db'
 import type { DocumentGroupingCommand } from '@/lib/document-grouping-command'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 
+export class DocumentNameOccupiedError extends WorkflowConflictError {
+  constructor(readonly reference: SystemDocumentReference) {
+    super('DOCUMENT_NAME_OCCUPIED', `Название «${reference.title}» уже занято документом этого вида и даты. Выберите другое имя или явно добавьте позиции в существующую заявку.`)
+  }
+}
+
 /** Cold index initialization takes its own locks before the mutation's row locks. */
-export async function prepareDocumentCreationIndex(command?: DocumentGroupingCommand) {
+export async function prepareDocumentCreationIndex(command?: DocumentGroupingCommand | boolean) {
   if (command) await requireDb().transaction(initializeSystemDocumentIndexesInTransaction)
 }
 
@@ -30,5 +36,5 @@ export async function assertNewDocumentNamesAvailable(tx: SystemDocumentSequence
   const identities = new Set(result.rows.map(row => documentOperationIdentity({ type: SYSTEM_DOCUMENT_TEMPLATE_PROFILES.find(p => `system:${p.id}` === row.type)!.documentType,
     title: String(row.title), date: String(row.date), methodCode: String(row.method ?? '') || undefined, sourceKind: row.source as SystemDocumentReference['sourceKind'],
   }, String(row.title))))
-  for (const reference of candidates) if (identities.has(documentOperationIdentity(reference, reference.title))) throw new WorkflowConflictError('DOCUMENT_NAME_OCCUPIED', `Название «${reference.title}» уже занято документом этого вида и даты. Выберите другое имя или явно добавьте позиции в существующую заявку.`)
+  for (const reference of candidates) if (identities.has(documentOperationIdentity(reference, reference.title))) throw new DocumentNameOccupiedError(reference)
 }

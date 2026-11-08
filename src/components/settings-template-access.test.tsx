@@ -4,13 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SettingsPage } from './settings-page'
 import { ConfirmActionProvider } from '@/lib/confirm-action-context'
 
-const mocks = vi.hoisted(() => ({ permissions: [] as string[], inventory: vi.fn(), remove: vi.fn(), reset: vi.fn() }))
+const mocks = vi.hoisted(() => ({ permissions: [] as string[], inventory: vi.fn(), remove: vi.fn(), reset: vi.fn(), options: vi.fn() }))
 vi.mock('@/lib/security-context', () => ({
   useAccess: () => ({ can: (permission: string) => mocks.permissions.includes(permission) }),
   useSecurityGuard: () => ({ requireSettingsChangePassword: async () => mocks.permissions.includes('templates.edit'), requireDeletePassword: async () => false }),
 }))
 vi.mock('@/lib/document-template-storage', async importOriginal => ({
-  ...await importOriginal<object>(), loadDocumentTemplateInventory: mocks.inventory, deleteDocumentTemplate: mocks.remove,
+  ...await importOriginal<object>(), loadDocumentTemplateInventory: mocks.inventory, deleteDocumentTemplate: mocks.remove, updateDocumentTemplateOptions: mocks.options,
 }))
 vi.mock('@/lib/generated-document-storage', async importOriginal => ({
   ...await importOriginal<object>(), loadGeneratedDocumentSequence: async () => ({ nextNumber: 7 }), resetGeneratedDocumentSequence: mocks.reset,
@@ -59,4 +59,30 @@ it('numbering permission allows its own reset without template editing', async (
   fireEvent.click(screen.getByRole('button', { name: 'Обнулить счетчик' }))
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Обнулить счетчик' }))
   await waitFor(() => expect(mocks.reset).toHaveBeenCalledWith('weldingJournal'))
+})
+
+it('stages document options, retains failed changes and keeps other document drafts when one is saved', async () => {
+  const template = { fileName: 'template.xlsx', fileType: 'xlsx', fileSize: 20, fileData: new ArrayBuffer(0), version: 'revision', uploadedAt: '2026-10-30' }
+  const templates = { weldingJournal: { ...template, id: 'weldingJournal' }, checklist: { ...template, id: 'checklist', fileName: 'checklist.xlsx' } }
+  mocks.inventory.mockResolvedValue({ templates, missing: {}, storageWarnings: {} })
+  await mount(['templates.edit'])
+  const options = () => screen.getByRole('checkbox', { name: /Учет официальных стыков/ })
+  fireEvent.click(options())
+  expect(mocks.options).not.toHaveBeenCalled()
+  const tab = screen.getByRole('button', { name: 'Документы' })
+  expect(within(tab).getByLabelText('Есть несохранённые изменения')).toBeVisible()
+  mocks.options.mockRejectedValueOnce(new Error('Ошибка сети'))
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить параметры документа' }))
+  await screen.findByText('Ошибка сети')
+  expect(screen.getByRole('button', { name: 'Сохранить параметры документа' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: /^Чек-лист/ }))
+  fireEvent.click(options())
+  mocks.options.mockImplementationOnce(async (_id, values) => ({ ...templates.checklist, options: values.checklist, version: 'new-revision' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить параметры документа' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Сохранить параметры документа' })).not.toBeInTheDocument())
+  expect(within(tab).getByLabelText('Есть несохранённые изменения')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: /^ЖСР/ }))
+  expect(screen.getByRole('button', { name: 'Сохранить параметры документа' })).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Сбросить изменения' }))
+  await waitFor(() => expect(within(tab).queryByLabelText('Есть несохранённые изменения')).not.toBeInTheDocument())
 })

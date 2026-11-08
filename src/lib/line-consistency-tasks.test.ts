@@ -148,9 +148,9 @@ describe('line consistency tasks', () => {
 
   it('creates a separate PSTO task regardless of line control percent', () => {
     const tasks = buildLineConsistencyTasks([
-      row({ id: 1, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: 'да' }),
-      row({ id: 2, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: '' }),
-      row({ id: 3, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: '' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: 'да' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: '' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 3, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: '' }),
     ])
 
     expect(tasks).toHaveLength(1)
@@ -166,24 +166,24 @@ describe('line consistency tasks', () => {
   it('does not create a PSTO task when every joint has PSTO or every joint has no PSTO', () => {
     expect(
       buildLineConsistencyTasks([
-        row({ id: 1, pstoRequired: 'да' }),
-        row({ id: 2, pstoRequired: 'да' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, pstoRequired: 'да' }),
       ]),
     ).toHaveLength(0)
 
     expect(
       buildLineConsistencyTasks([
-        row({ id: 1, pstoRequired: '' }),
-        row({ id: 2, pstoRequired: '' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: '' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, pstoRequired: '' }),
       ]),
     ).toHaveLength(0)
   })
 
   it('creates a PSTO task when assigned, cancelled and unassigned states are mixed', () => {
     const tasks = buildLineConsistencyTasks([
-      row({ id: 1, pstoRequired: 'да' }),
-      row({ id: 2, pstoRequired: 'отменен' }),
-      row({ id: 3, pstoRequired: '' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, pstoRequired: 'отменен' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 3, pstoRequired: '' }),
     ])
 
     expect(tasks).toEqual(expect.arrayContaining([
@@ -197,18 +197,18 @@ describe('line consistency tasks', () => {
   it('treats legacy enabled PSTO values as assigned for line consistency', () => {
     expect(
       buildLineConsistencyTasks([
-        row({ id: 1, pstoRequired: 'да' }),
-        row({ id: 2, pstoRequired: 'дополнительный' }),
-        row({ id: 3, pstoRequired: 'замена РК/УЗК' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, pstoRequired: 'да' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, pstoRequired: 'дополнительный' }),
+        row({ preHeatTreatmentMode: 'allPsto' as const, id: 3, pstoRequired: 'замена РК/УЗК' }),
       ]),
     ).toHaveLength(0)
   })
 
   it('does not compare PSTO between different project and subtitle line groups', () => {
     const tasks = buildLineConsistencyTasks([
-      row({ id: 1, projectTitle: 'P1', subtitleCode: '400', line: 'LIN-1', pstoRequired: 'да' }),
-      row({ id: 2, projectTitle: 'P2', subtitleCode: '400', line: 'LIN-1', pstoRequired: '' }),
-      row({ id: 3, projectTitle: 'P1', subtitleCode: '500', line: 'LIN-1', pstoRequired: '' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 1, projectTitle: 'P1', subtitleCode: '400', line: 'LIN-1', pstoRequired: 'да' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 2, projectTitle: 'P2', subtitleCode: '400', line: 'LIN-1', pstoRequired: '' }),
+      row({ preHeatTreatmentMode: 'allPsto' as const, id: 3, projectTitle: 'P1', subtitleCode: '500', line: 'LIN-1', pstoRequired: '' }),
     ])
 
     expect(tasks).toHaveLength(0)

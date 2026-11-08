@@ -30,10 +30,10 @@ import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 describe('prepareDispatcherReportRows', () => {
   it.each(['годен (отменен)', 'годен · назначение отменено'])('does not publish historical pre-TO incompleteness in the row index or virtual field: %s', result => {
     const rows: WeldRow[] = [
-      { id: 1, joint: 'F1', line: 'L', preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+      { id: 1, joint: 'F1', line: 'L', preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [
         { id: 10, weldJointId: 1, method: 'ВИК', result, conclusionName: null, conclusionDate: '2026-09-01' },
       ] },
-      { id: 2, joint: 'F2', line: 'L', preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+      { id: 2, joint: 'F2', line: 'L', preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [
         { id: 20, weldJointId: 2, method: 'ВИК', result: 'ожидает НК' },
       ] },
     ]
@@ -50,7 +50,7 @@ describe('prepareDispatcherReportRows', () => {
     const rows: WeldRow[] = [
       { id: 1, joint: 'F1', vikResult: 'вырез', rkResult: 'вырез' },
       { id: 2, joint: 'F2', vikResult: 'ремонт', d1: 57 },
-      { id: 3, joint: 'F3', preHeatTreatmentLnkEnabled: false,
+      { id: 3, joint: 'F3', preHeatTreatmentMode: 'selected' as const,
         preHeatTreatmentControls: [{ id: 30, weldJointId: 3, method: 'ПВК', result: 'вырез' }] },
     ]
     const tasks = buildLnkResultRuleCheckTasks(rows)
@@ -73,10 +73,10 @@ describe('prepareDispatcherReportRows', () => {
     expect(getDispatcherTaskActionSpecs(task)[0].id).toBe('restore-coil')
   })
   it.each([true, false])('carries only actual primary result debt through the persisted index to dispatcherTasks (pre-TO=%s)', (preHeatTreatmentLnkEnabled) => {
-    const requestOnly = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', vikRequest: '1503-2', vikRequestDate: '2026-03-15', vikResult: 'ожидает НК' } as WeldRow
+    const requestOnly = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', vikRequest: '1503-2', vikRequestDate: '2026-03-15', vikResult: 'ожидает НК' } as WeldRow
     const result = { ...requestOnly, id: 2, joint: 'F2', vikResult: 'годен', vikConclusionDate: '2026-03-25' } as WeldRow
     const rows = [requestOnly, result]
-    const tasks = buildPrimaryLnkStageDebtSystemWarnings(rows, { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled })
+    const tasks = buildPrimaryLnkStageDebtSystemWarnings(rows, { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: preHeatTreatmentLnkEnabled ? 'allPsto' : 'selected' })
     const index = buildDispatcherTaskCodeIndexRows(tasks, rows)
     expect(index).toEqual([{ rowId: 2, taskKey: 'code:СП-06', code: 'СП-06' }])
     expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(({ id, dispatcherTasks }) => ({ id, dispatcherTasks }))).toEqual([
@@ -170,7 +170,7 @@ describe('prepareDispatcherReportRows', () => {
       }),
     }))
     const tx = { select } as unknown as Parameters<typeof prepareDispatcherReportRows>[0]
-    const rows = [{ id: 7, joint: 'F7', pstoRequired: 'да' }] as unknown as Parameters<
+    const rows = [{ preHeatTreatmentMode: 'allPsto' as const, id: 7, joint: 'F7', pstoRequired: 'да' }] as unknown as Parameters<
       typeof prepareDispatcherReportRows
     >[1]
     const duplicates = [{

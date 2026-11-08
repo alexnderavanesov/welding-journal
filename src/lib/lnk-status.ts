@@ -95,7 +95,7 @@ export function hasPendingLnkRequestResult(row: WeldInput) {
 
 export function getAvailableLnkRequestMethods(
   row: WeldInput,
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   return getLnkRequestCandidateMethods(row).filter((method) =>
     canCreatePrimaryLnkRequest(row, method.code, settings),
@@ -205,6 +205,9 @@ export function getJointStatusLabel(row: WeldInput) {
   if (status === 'ожидает ремонт') return 'ожидает ремонт'
   if (status === 'ожидает заявку') return 'ожидает заявку'
   if (status === 'ожидает нк') return 'ожидает НК'
+  if (status === 'ожидает заявку до то') return 'ожидает заявку до ТО'
+  if (status === 'ожидает нк до то') return 'ожидает НК до ТО'
+  if (status === 'неактуальный') return 'неактуальный'
   if (!hasWeldDate(row)) return getPendingWeldStatusLabel(row)
   if (hasAnyEnabledLnkControl(row) && !hasAnyLnkRequest(row)) return 'ожидает заявку'
   if (hasPendingLnkRequestResult(row)) return 'ожидает НК'

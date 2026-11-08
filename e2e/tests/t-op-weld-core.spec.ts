@@ -127,7 +127,10 @@ test('ТК и допуск: одна группа и один способ по 
 for (const stage of ['primary', 'beforeHeatTreatment'] as const) test(`Т НК ${stage}: ВИК→ПВК→УЗК, ПВК только годен, D57 ремонт и атомарный отказ дубля РК`, async ({ page }) => {
   const pre = stage === 'beforeHeatTreatment'
   const process = (pvkGoodOnly: boolean) => withLineProgramFixture(db => db.query(`insert into app_settings(key,value) values('control-processes',$1)
-    on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS, pvkGoodOnly })]))
+    on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS,
+      // This matrix exercises method/result rules on an assigned preliminary
+      // stage; the selective default deliberately starts a new chain without it.
+      preHeatTreatmentMode: pre ? 'allPsto' : DEFAULT_CONTROL_PROCESS_SETTINGS.preHeatTreatmentMode, pvkGoodOnly })]))
   await process(false)
   if (pre) await withLineProgramFixture(db => db.query("update line_programs set psto_assignment='assigned' where project_title=$1 and line=$2", [project, scope.line]))
   const row = await create({ data: { ...base, joint: 'ОП-NK', hasPvk: 'да', hasUzk: 'да' } })

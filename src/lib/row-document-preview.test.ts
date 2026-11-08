@@ -12,7 +12,7 @@ it.each([
   ['pstoRequest', 'pstoRequestDate'], ['heatTreatmentDiagram', 'pstoDate'],
   ['tvmtRequest', 'tvmtRequestDate'], ['tvmtConclusion', 'tvmtConclusionDate'],
 ] as const)('uses the selected cycle identity for the title, file name and content of %s', async (field, dateField) => {
-  const row = {
+  const row = { preHeatTreatmentMode: 'allPsto' as const,
     id: 1, pstoRequired: 'да', [field]: 'Первичный документ', [dateField]: '2026-10-01',
     pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, [field]: 'Повтор/2', [dateField]: '2026-10-30' }],
   } as WeldRow

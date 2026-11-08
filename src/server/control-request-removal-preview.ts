@@ -3,7 +3,7 @@ import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints, weldJoints } from '@/db/schema'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import type { ControlRequestRemoval } from '@/lib/control-request-removal-preview'
+import { projectControlRequestRemovalPreview, type RestrictedControlRequestRemoval } from './control-request-removal-access'
 import { getClearedControlAssignments } from '@/lib/control-assignment-request-removal'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
 import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
@@ -15,6 +15,7 @@ import { buildNumberArrayMatch } from './weld-request-utils'
 import { assertSecurityScope } from './security-functions'
 import { loadPreviousWeldRows } from './weld-save-validation'
 import { assertExpectedInteractiveWeldVersions } from './weld-row-version'
+import { pendingActualityRequestKey, type PendingActualityRequest } from '@/lib/chain-actuality-requests'
 
 export type ControlRequestRemovalPreviewRequest = {
   records: WeldInput[]
@@ -30,6 +31,7 @@ export async function loadControlRequestRemovalPreview(
   records: readonly WeldInput[],
   previousRows: ReadonlyMap<number, WeldInput>,
   deleteIds: readonly number[] = [],
+  pendingRequests: readonly PendingActualityRequest[] = [],
 ) {
   const cleared = new Map(records.flatMap(record => {
     const previous = previousRows.get(Number(record.id))
@@ -38,8 +40,9 @@ export async function loadControlRequestRemovalPreview(
     return fields.length ? [[Number(record.id), new Set(fields)] as const] : []
   }))
   const deleted = new Set(deleteIds)
-  const ids = [...new Set([...cleared.keys(), ...deleted])]
-  if (!ids.length) return { removals: [] as ControlRequestRemoval[], token: hashJsonRecordTuple([]) }
+  const pendingKeys = new Set(pendingRequests.map(pendingActualityRequestKey))
+  const ids = [...new Set([...cleared.keys(), ...deleted, ...pendingRequests.map(position => position.rowId)])]
+  if (!ids.length) return { removals: [] as RestrictedControlRequestRemoval[], token: hashJsonRecordTuple([]) }
   const linked = await tx.select({ document: generatedDocuments }).from(generatedDocumentWeldJoints)
     .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
     .where(and(buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, ids), inArray(generatedDocuments.type, requestTypes)))
@@ -56,7 +59,7 @@ export async function loadControlRequestRemovalPreview(
     const bucket = primaryByDocument.get(documentId) ?? []
     bucket.push(row as WeldInput); primaryByDocument.set(documentId, bucket)
   }
-  const removals: ControlRequestRemoval[] = [], versions: unknown[] = []
+  const removals: RestrictedControlRequestRemoval[] = [], versions: unknown[] = []
   for (const document of documents) {
     const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
     const psto = document.type === 'system:pstoRequest'
@@ -65,16 +68,20 @@ export async function loadControlRequestRemovalPreview(
           method: psto ? 'ПСТО' : position.methodCode || metadata.methodCode || (document.type === 'system:tvmtRequest' ? 'ТВМТ' : ''),
           stage: position.kind === 'beforeHeatTreatment' ? 'до ТО' : `цикл ${position.sequence ?? 1}`,
           pre: position.kind === 'beforeHeatTreatment',
+          kind: position.kind, relationId: position.relationId, sequence: position.sequence ?? 1,
         }))
       : (primaryByDocument.get(document.id) ?? []).flatMap(row => {
-          if (psto) return text(row.pstoRequest) === document.title && text(row.pstoRequestDate) === (document.periodFrom ?? '') ? [{ rowId: Number(row.id), method: 'ПСТО', stage: '', pre: false }] : []
+          if (psto) return text(row.pstoRequest) === document.title && text(row.pstoRequestDate) === (document.periodFrom ?? '') ? [{ rowId: Number(row.id), method: 'ПСТО', stage: '', pre: false, kind: 'primary', relationId: Number(row.id), sequence: 1 }] : []
           return ALL_LNK_FIELD_METHODS.filter(method => (method.code === 'ТВМТ') === (document.type === 'system:tvmtRequest') &&
             text(row[method.requestKey]) === document.title && text(row[method.requestDateKey]) === (document.periodFrom ?? ''))
-            .map(method => ({ rowId: Number(row.id), method: method.code as string, stage: '', pre: false }))
+            .map(method => ({ rowId: Number(row.id), method: method.code as string, stage: '', pre: false, kind: 'primary', relationId: Number(row.id), sequence: 1 }))
         })
     positions.sort((a, b) => a.rowId - b.rowId || a.method.localeCompare(b.method) || a.stage.localeCompare(b.stage))
     const removed = positions.filter(position => {
       if (deleted.has(position.rowId)) return true
+      if (pendingKeys.has(pendingActualityRequestKey({ ...position,
+        stage: position.pre ? 'beforeHeatTreatment' : position.kind === 'pstoRepeat' || position.sequence > 1 ? 'repeat' : 'primary',
+      }))) return true
       const fields = cleared.get(position.rowId)
       if (!fields) return false
       if (fields.has('pstoRequired') && (position.pre || ['ПСТО', 'ТВМТ'].includes(position.method))) return true
@@ -82,7 +89,9 @@ export async function loadControlRequestRemovalPreview(
     })
     if (!removed.length) continue
     const labels = removed.map(position => `${previousRows.get(position.rowId)?.joint ?? position.rowId} · ${position.method}${position.stage ? ` · ${position.stage}` : ''}`).sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }))
-    removals.push({ documentId: document.id, title: document.title, date: document.periodFrom ?? '', positions: labels, remaining: positions.length - removed.length })
+    const accessAreas = [...new Set(positions.map(position => ['ПСТО', 'ТВМТ'].includes(position.method) ? 'psto' as const : 'lnk' as const))]
+    removals.push({ documentId: document.id, title: document.title, date: document.periodFrom ?? '', positions: labels,
+      remaining: positions.length - removed.length, accessAreas })
     versions.push([document.id, document.updatedAt.toISOString(), document.sourceMetadata, removed, positions.length])
   }
   return { removals, token: hashJsonRecordTuple([versions]) }
@@ -98,6 +107,7 @@ export async function assertControlRequestRemovalPreview(tx: SystemDocumentSeque
 }
 
 export async function previewControlRequestRemoval({ data }: { data: ControlRequestRemovalPreviewRequest }) {
+  const { accessContext } = await import('./access-store')
   await assertSecurityScope('edit')
   assertWeldImportRowLimit(data.records.length + (data.deleteIds?.length ?? 0))
   const ids = [...data.records.map(row => Number(row.id)), ...(data.deleteIds ?? [])]
@@ -108,6 +118,7 @@ export async function previewControlRequestRemoval({ data }: { data: ControlRequ
     // Only assignment values are relevant; no submitted result can suppress a position.
     const assignments = [...ALL_LNK_FIELD_METHODS.map(method => method.enabledKey), 'pstoRequired'] as const
     const records = data.records.map(row => ({ id: row.id, ...Object.fromEntries(assignments.filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])) }))
-    return loadControlRequestRemovalPreview(tx, records, previous, data.deleteIds)
+    const preview = await loadControlRequestRemovalPreview(tx, records, previous, data.deleteIds)
+    return projectControlRequestRemovalPreview(preview, accessContext.getStore()?.identity)
   })
 }

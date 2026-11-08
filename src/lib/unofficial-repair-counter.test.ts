@@ -15,7 +15,7 @@ describe('unofficial attempts do not consume the official repair limit', () => {
   it.each([false, true])('validates each eligible source independently of display deduplication (reverse=%s)', reverse => {
     const rows = [row(1, 'S1', { officiality: 'неофициальный', rkResult: 'ремонт' }),
       row(2, 'S1', { officiality: 'неофициальный', rkResult: 'вырез', weldDate: '2026-09-02' }),
-      row(3, 'S1', { officiality: 'неофициальный', pstoRequired: 'да', hasRk: 'да', preHeatTreatmentLnkEnabled: true,
+      row(3, 'S1', { officiality: 'неофициальный', pstoRequired: 'да', hasRk: 'да', preHeatTreatmentMode: 'allPsto' as const,
         preHeatTreatmentControls: [{ id: 31, weldJointId: 3, method: 'РК', result: 'ремонт' }] as WeldRow['preHeatTreatmentControls'] })]
     if (reverse) rows.reverse()
     expect(buildRepeatedJointTasks(rows).filter(task => task.kind === 'create')).toHaveLength(1)

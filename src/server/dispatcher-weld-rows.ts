@@ -1,4 +1,4 @@
-import { asc, desc } from 'drizzle-orm'
+import { asc, desc, type SQL } from 'drizzle-orm'
 import { weldJoints } from '@/db/schema'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import { normalizeJointChainPart } from '@/lib/joint-chain'
@@ -57,11 +57,16 @@ export async function visitDispatcherWeldRows(
   db: Pick<SystemDocumentSequenceTransaction, 'select' | 'execute'>,
   visit: (rows: Row[], scopeKeys: ReadonlySet<string>) => Promise<void>,
   onPhase?: (stage: string) => void,
+  scopeWhere?: SQL,
 ) {
   onPhase?.('plan-weld-batches')
-  const loadPlan = async () => planDispatcherWeldBatches(await db.select({ id: weldJoints.id,
+  const loadPlan = async () => {
+    const query = db.select({ id: weldJoints.id,
     projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode, line: weldJoints.line,
-  }).from(weldJoints).orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)))
+  }).from(weldJoints)
+    return planDispatcherWeldBatches(await (scopeWhere ? query.where(scopeWhere) : query)
+      .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)))
+  }
   const { batches, contexts } = await loadPlan()
   const visitBatch = async (batch: Scope[]) => {
     onPhase?.('read-weld-batch')

@@ -44,9 +44,6 @@ export function buildPstoContextualStageCorrection(
   if (targetStage !== 'primary' && targetStage !== 'beforeHeatTreatment') {
     throw new Error('Неизвестный целевой этап НК.')
   }
-  if (!processSettings.preHeatTreatmentLnkEnabled) {
-    throw new Error('Исправление этапа недоступно: НК до ТО выключен в настройках.')
-  }
   // Assignment, waiting labels and accounting fields alone are not a started cycle.
   if (hasPstoDocumentHistory(row) || (row.pstoRepeatCycles?.length ?? 0) > 0 ||
     [row.pstoResult, row.tvmtResult].some(value =>
@@ -54,7 +51,7 @@ export function buildPstoContextualStageCorrection(
     throw new Error('Исправление этапа невозможно: сохранены заявка или история ПСТО/ТВМТ. Сохраните исходные этапы НК.')
   }
 
-  const previous: WeldRow = { ...row, preHeatTreatmentLnkEnabled: true }
+  const previous: WeldRow = { ...row, preHeatTreatmentMode: processSettings.preHeatTreatmentMode }
   let next: WeldRow = { ...previous }
   const controls = row.preHeatTreatmentControls ?? []
   const primaryPackages = LNK_METHODS.map(method => readPrimaryPackage(row, method))

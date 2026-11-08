@@ -143,7 +143,7 @@ describe('buildStatisticsSummary', () => {
     const rows = [
       { id: 1, weldDate: '2026-07-01', pstoRequest: 'ПСТО-001', pstoRequestDate: '2026-07-01', pstoDate: '2026-07-02', pstoResult: 'проведено' },
       { id: 2, weldDate: '2026-07-01', pstoRequest: 'ПСТО-002', pstoRequestDate: '2026-07-01', pstoDate: '2026-07-02', pstoResult: 'проведено (отменен)' },
-      { id: 3, weldDate: '2026-07-01', pstoRequired: 'отменен', pstoRequest: 'ПСТО-003', pstoResult: 'отменен' },
+      { preHeatTreatmentMode: 'allPsto' as const, id: 3, weldDate: '2026-07-01', pstoRequired: 'отменен', pstoRequest: 'ПСТО-003', pstoResult: 'отменен' },
       { id: 4, weldDate: '2026-07-01', pstoDate: '2026-07-02', pstoResult: 'проведено' },
     ] as WeldRow[]
 
@@ -158,7 +158,7 @@ describe('buildStatisticsSummary', () => {
 
   it('keeps TVMT only in PSTO statistics and derives its need from completed PSTO', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
@@ -172,7 +172,7 @@ describe('buildStatisticsSummary', () => {
           result: 'годен',
         }],
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
@@ -208,12 +208,12 @@ describe('buildStatisticsSummary', () => {
 
   it('excludes cancelled untreated rows but keeps completed cancelled PSTO in TVMT demand', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         weldDate: '2026-07-01',
         pstoRequired: 'отменен',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         weldDate: '2026-07-01',
         pstoRequired: 'отменен',
@@ -222,7 +222,7 @@ describe('buildStatisticsSummary', () => {
         pstoResult: 'проведено',
         pstoDate: '2026-07-02',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 3,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
@@ -251,7 +251,7 @@ describe('buildStatisticsSummary', () => {
 
   it('does not count PSTO rows with no need in request and closure statistics', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
@@ -260,7 +260,7 @@ describe('buildStatisticsSummary', () => {
         pstoDate: '2026-07-02',
         pstoResult: 'проведено',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
@@ -269,7 +269,7 @@ describe('buildStatisticsSummary', () => {
         pstoDate: '2026-07-02',
         pstoResult: 'проведено',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 3,
         weldDate: '2026-07-01',
         finalStatus: 'не годен',
@@ -277,19 +277,19 @@ describe('buildStatisticsSummary', () => {
         pstoRequest: 'ПСТО-003',
         pstoResult: 'ожидает заявку',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 4,
         weldDate: '2026-07-01',
         pstoRequired: 'отменен',
         pstoRequest: 'ПСТО-004',
         pstoResult: 'отменен',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 5,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 6,
         weldDate: '2026-07-01',
         pstoRequired: 'да',
@@ -430,7 +430,7 @@ describe('buildStatisticsSummary', () => {
         weldDate: '2026-07-04',
         hasVik: 'да',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 4,
         weldDate: '2026-06-25',
         pstoRequired: 'да',
@@ -584,7 +584,7 @@ describe('buildStatisticsSummary', () => {
 
   it('counts request coverage by welded joint positions independently of WDI and request dates', () => {
     const rows = [
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 1,
         weldDate: '2026-07-10',
         wdi: '',
@@ -596,14 +596,14 @@ describe('buildStatisticsSummary', () => {
         pstoRequest: 'ПСТО-001',
         pstoRequestDate: '2026-06-29',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 2,
         weldDate: '2026-07-11',
         wdi: '0',
         hasVik: 'да',
         pstoRequired: 'да',
       },
-      {
+      { preHeatTreatmentMode: 'allPsto' as const,
         id: 3,
         weldDate: '2026-06-20',
         wdi: '12',

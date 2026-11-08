@@ -1,6 +1,6 @@
 import { RULE_SETTINGS_TABS, getRuleConnections, type RuleSettingsTab } from '@/lib/rule-settings-navigation'
 
-export function RuleSettingsTabs({ value, onChange, allowed }: { allowed?: readonly RuleSettingsTab[]; value: RuleSettingsTab; onChange: (tab: RuleSettingsTab) => void }) {
+export function RuleSettingsTabs({ value, onChange, allowed, dirtyTabs }: { dirtyTabs?: ReadonlySet<RuleSettingsTab>; allowed?: readonly RuleSettingsTab[]; value: RuleSettingsTab; onChange: (tab: RuleSettingsTab) => void }) {
   const tabs = RULE_SETTINGS_TABS.filter(tab => !allowed || allowed.includes(tab.id))
   return <div role="tablist" aria-label="Разделы правил и проверок" className="-mb-3 mt-2 flex gap-5 overflow-x-auto border-t border-slate-100 px-1">
     {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" id={`rules-tab-${tab.id}`}
@@ -17,6 +17,7 @@ export function RuleSettingsTabs({ value, onChange, allowed }: { allowed?: reado
       }}
       className={`flex shrink-0 items-center gap-2 border-b-2 py-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400 ${value === tab.id ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900'}`}>
       {tab.label}{'count' in tab ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500">{tab.count}</span> : null}
+      {dirtyTabs?.has(tab.id) ? <span className="h-2 w-2 rounded-full bg-amber-400" title="Есть несохраненные изменения" aria-label="Есть несохранённые изменения" /> : null}
     </button>)}
   </div>
 }

@@ -38,12 +38,12 @@ describe('getReportExportOptions', () => {
     expect(options.readOnlyFieldKeys.has('pstoRequired')).toBe(true)
   })
 
-  it('omits disabled process sections from the current LNK export', () => {
+  it('retains preliminary stage columns in selected mode exports', () => {
     const fieldKeys = getReportExportOptions('lnk', 'ЛНК', {
-      preHeatTreatmentLnkEnabled: false,
+      preHeatTreatmentMode: 'selected' as const,
     }).fields.map((field) => field.key)
 
-    expect(fieldKeys).not.toEqual(expect.arrayContaining([
+    expect(fieldKeys).toEqual(expect.arrayContaining([
       'preVikRequest',
       'preRkResult',
     ]))

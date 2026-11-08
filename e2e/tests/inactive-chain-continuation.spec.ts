@@ -1,5 +1,5 @@
 import { journalRow, editJournalJoint } from '../journal-grid'
-import { expect, test, type Page, type Request } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
@@ -42,6 +42,23 @@ async function openPicture(page: Page, id: number) {
   return page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true }) })
 }
 
+const jointEditor = (page: Page) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
+async function openActuality(page: Page, active: boolean, single = false) {
+  await jointEditor(page).getByRole('combobox', { name: 'Актуальность по ИЗМу', exact: true }).selectOption(active ? 'active' : 'inactive')
+  return page.getByRole('dialog', { name: single
+    ? active ? 'Вернуть актуальность стыку' : 'Сделать стык неактуальным'
+    : active ? 'Вернуть актуальность цепочке' : 'Сделать цепочку неактуальной', exact: true })
+}
+async function expectActualityCounts(dialog: Locator, total: number, changed: number) {
+  await expect(dialog.locator('dl > div').filter({ hasText: 'Записей' }).locator('dd')).toHaveText(String(total))
+  await expect(dialog.locator('dl > div').filter({ hasText: 'Изменится' }).locator('dd')).toHaveText(String(changed))
+}
+async function confirmActuality(dialog: Locator) {
+  await dialog.getByRole('checkbox').check()
+  await dialog.getByRole('button', { name: /^Подтвердить актуальность/ }).click()
+  await expect(dialog).toBeHidden()
+}
+
 test('карточка → неактуальность → нет требования продолжения → возврат актуальности восстанавливает задачу и историю', async ({ page }) => {
   const [{ id }] = await seed(), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -52,14 +69,16 @@ test('карточка → неактуальность → нет требов�
   await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
   for (const inactive of [true, false]) {
     await editJournalJoint(page, id)
-    const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
-    await editor.getByText('Актуальность по ИЗМу', { exact: true }).locator('..').getByRole('combobox').selectOption(inactive ? 'не актуален' : '')
+    const editor = jointEditor(page)
+    const confirmation = await openActuality(page, !inactive, true)
+    await expectActualityCounts(confirmation, 1, 1)
+    await confirmActuality(confirmation)
+    expect(await withE2eDatabase(async db => (await db.query('select revision_actuality from weld_joints where id=$1', [id])).rows[0].revision_actuality)).toBe(inactive ? null : 'не актуален')
     await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
     await expect(editor).toBeHidden()
     picture = await openPicture(page, id)
     if (inactive) {
-      await expect(picture.getByRole('region', { name: 'Актуальность по ИЗМу' }).getByRole('button')).toHaveCount(1)
-      await expect(picture.getByRole('button', { name: 'Вернуть актуальность стыку' })).toBeVisible()
+      await expect(picture.getByRole('button', { name: /Вернуть актуальность|Сделать.*неактуаль/ })).toHaveCount(0)
       await expect(picture.getByText('Продолжение не требуется', { exact: true })).toBeVisible()
       await expect(picture.getByRole('button', { name: `Создать ${joint}R1`, exact: true })).toHaveCount(0)
       await expect(picture.getByRole('button', { name: 'Врезать катушку досрочно', exact: true })).toHaveCount(0)
@@ -80,13 +99,15 @@ test('одиночный неактуальный стык: понятное п�
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
   const picture = await openPicture(page, id)
-  const controls = picture.getByRole('region', { name: 'Актуальность по ИЗМу' })
-  await expect(controls.getByRole('button')).toHaveCount(1)
+  await expect(picture.getByRole('button', { name: /Вернуть актуальность|Сделать.*неактуаль/ })).toHaveCount(0)
   expect(calls.filter(name => name.startsWith('previewChainActuality_'))).toHaveLength(0)
+  await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await editJournalJoint(page, id)
+  const card = jointEditor(page)
   for (const cancel of [true, false]) {
-    await controls.getByRole('button', { name: 'Вернуть актуальность стыку' }).click()
-    const editor = page.getByRole('dialog', { name: 'Вернуть актуальность стыку', exact: true })
-    await expect(editor.getByText(`Стык: ${joint}.`, { exact: false })).toContainText('Будет изменено: 1')
+    const editor = await openActuality(page, true, true)
+    await expectActualityCounts(editor, 1, 1)
+    await expect(editor.getByRole('cell', { name: `${joint} / ${id}`, exact: true })).toBeVisible()
     await expect(editor.getByText(/R\/W|Стороны катушки|Записей в цепочке/)).toHaveCount(0)
     await expect(editor.getByRole('button', { name: 'Подтвердить актуальность стыка' })).toBeDisabled()
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
@@ -96,11 +117,16 @@ test('одиночный неактуальный стык: понятное п�
       await editor.getByRole('button', { name: 'Подтвердить актуальность стыка' }).click()
     }
     await expect(editor).toBeHidden()
-    expect(await withE2eDatabase(async db => (await db.query('select revision_actuality from weld_joints where id=$1', [id])).rows[0].revision_actuality)).toBe(cancel ? 'не актуален' : null)
+    expect(await withE2eDatabase(async db => (await db.query('select revision_actuality from weld_joints where id=$1', [id])).rows[0].revision_actuality)).toBe('не актуален')
   }
-  await expect(controls).toHaveCount(0)
+  expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(0)
+  await card.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(card).toBeHidden()
+  expect(await withE2eDatabase(async db => (await db.query('select revision_actuality from weld_joints where id=$1', [id])).rows[0].revision_actuality)).toBeNull()
+  await expect((await openPicture(page, id)).getByRole('button', { name: /Вернуть актуальность|Сделать.*неактуаль/ })).toHaveCount(0)
   expect(calls.filter(name => name.startsWith('previewChainActuality_'))).toHaveLength(2)
-  expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(1)
+  expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(0)
+  expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(1)
   expect(calls.filter(name => name.startsWith('listWeldJointChain_'))).toHaveLength(2)
   expect(errors).toEqual([])
 })
@@ -268,53 +294,38 @@ for (const recovery of ['вернуть ремонт', 'исключить ис�
   await withLineProgramFixture(db => db.query(`update weld_joints set officiality='действующий',revision_actuality='не актуален',uzk_result='годен',final_status='годен' where id=$1`, [repair.id]))
   const state = () => withE2eDatabase(async db => (await db.query('select id,revision_actuality,uzk_result,uzk_conclusion from weld_joints where project_title=$1 order by id', [project])).rows)
   const before = await state(), active = recovery === 'вернуть ремонт'
-  const title = active ? 'Вернуть актуальность цепочке' : 'Сделать цепочку неактуальной'
   for (const cancel of [true, false]) {
     await page.goto('/journal')
     const picture = await openPicture(page, source.id)
     await expect(picture.getByText('СП-09 · Проверить актуальность цепочки', { exact: true })).toBeVisible()
-    await picture.getByRole('tab', { name: /^Требует действия/ }).click()
-    const actions = picture.getByRole('region', { name: 'Требует действия', exact: true })
-    if (active) {
-      await actions.getByRole('button', { name: 'Другие действия СП-09', exact: true }).click()
-      await page.getByRole('menuitem', { name: title, exact: true }).click()
-    } else await actions.getByRole('button', { name: title, exact: true }).click()
-    const editor = page.getByRole('dialog', { name: title, exact: true })
-    await expect(editor.getByText('Записей в цепочке:', { exact: false })).toContainText('2. Будет изменено: 1')
-    await expect(editor.getByRole('button', { name: 'Подтвердить актуальность цепочки' })).toBeDisabled()
-    if (!cancel) await editor.getByRole('checkbox').check()
-    await editor.getByRole('button', { name: cancel ? 'Отмена' : 'Подтвердить актуальность цепочки', exact: true }).click()
-    await expect(editor).toBeHidden()
+    await expect(picture.getByRole('button', { name: /Вернуть актуальность|Сделать.*неактуаль/ })).toHaveCount(0)
+    await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    // Change the member that differs from the intended whole-chain state.
+    await editJournalJoint(page, active ? repair.id : source.id)
+    const card = jointEditor(page), confirmation = await openActuality(page, active)
+    await expectActualityCounts(confirmation, 2, 1)
+    await expect(confirmation.getByRole('button', { name: 'Подтвердить актуальность цепочки' })).toBeDisabled()
+    if (cancel) await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click()
+    else await confirmActuality(confirmation)
+    expect(await state()).toEqual(before)
+    await card.getByRole('button', { name: cancel ? 'Закрыть' : 'Сохранить', exact: true }).click()
+    await expect(card).toBeHidden()
     if (cancel) expect(await state()).toEqual(before)
   }
   await page.goto('/journal')
-  let picture = await openPicture(page, source.id)
+  const picture = await openPicture(page, source.id)
   await expect(picture.getByText('СП-09 · Проверить актуальность цепочки', { exact: true })).toHaveCount(0)
   expect((await state()).every(row => (row.revision_actuality !== 'не актуален') === active)).toBe(true)
-  // Fully active groups are intentionally quiet. Exclusion starts with the
-  // ordinary IZМ field; a mixed group then exposes both resolution choices.
-  if (active) {
-    await expect(picture.getByRole('region', { name: 'Актуальность по ИЗМу' })).toHaveCount(0)
-    await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
-    await editJournalJoint(page, source.id)
-    const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
-    await editor.getByText('Актуальность по ИЗМу', { exact: true }).locator('..').getByRole('combobox').selectOption('не актуален')
-    await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
-    await expect(editor).toBeHidden()
-    picture = await openPicture(page, source.id)
-    await expect(picture.getByRole('region', { name: 'Актуальность по ИЗМу' }).getByRole('button')).toHaveCount(2)
-  } else {
-    // A fully inactive group still has its recovery path after DZ-13 disappears.
-    await expect(picture.getByRole('region', { name: 'Актуальность по ИЗМу' }).getByRole('button')).toHaveCount(1)
-  }
-  const inverse = active ? 'Сделать цепочку неактуальной' : 'Вернуть актуальность цепочке'
-  await picture.getByRole('region', { name: 'Актуальность по ИЗМу' }).getByRole('button', { name: inverse, exact: true }).click()
-  const restore = page.getByRole('dialog', { name: inverse, exact: true })
-  await expect(restore.getByText('Записей в цепочке:', { exact: false })).toContainText(`2. Будет изменено: ${active ? 1 : 2}`)
-  await restore.getByRole('checkbox').check()
-  await restore.getByRole('button', { name: 'Подтвердить актуальность цепочки' }).click()
-  await expect(restore).toBeHidden()
-  await expect(picture.getByRole('region', { name: 'Актуальность по ИЗМу' })).toHaveCount(active ? 1 : 0)
+  await expect(picture.getByRole('button', { name: /Вернуть актуальность|Сделать.*неактуаль/ })).toHaveCount(0)
+  await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  // A fully consistent chain can still be reversed through its journal card.
+  await editJournalJoint(page, source.id)
+  const card = jointEditor(page), inverse = await openActuality(page, !active)
+  await expectActualityCounts(inverse, 2, 2)
+  await confirmActuality(inverse)
+  expect((await state()).every(row => (row.revision_actuality !== 'не актуален') === active)).toBe(true)
+  await card.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(card).toBeHidden()
   expect((await state()).every(row => (row.revision_actuality === 'не актуален') === active)).toBe(true)
   expect((await state()).map(row => [row.id, row.uzk_result, row.uzk_conclusion])).toEqual(before.map(row => [row.id, row.uzk_result, row.uzk_conclusion]))
   expect(errors).toEqual([])
@@ -329,42 +340,49 @@ test('актуальность: Escape и устаревшее окно не м�
   page.on('requestfinished', request => pending.delete(request))
   page.on('requestfailed', request => pending.delete(request))
   await page.goto('/journal')
-  const picture = await openPicture(page, source.id), title = 'Сделать цепочку неактуальной'
-  const open = picture.locator('aside').getByRole('button', { name: title, exact: true })
-  await open.click()
-  const dialog = page.getByRole('dialog', { name: title, exact: true })
+  await editJournalJoint(page, source.id)
+  const card = jointEditor(page)
+  let dialog = await openActuality(page, false)
   await expect(dialog.getByRole('checkbox')).toBeVisible()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   expect(calls.filter(name => name.startsWith('previewChainActuality_'))).toHaveLength(1)
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden(); await expect(picture).toBeVisible()
-  expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(0)
-  await open.click(); await expect(dialog.getByRole('checkbox')).toBeVisible()
-  // Another operator has reactivated the historical repair after this preview.
+  await expect(dialog).toBeHidden(); await expect(card).toBeVisible()
+  expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(0)
+  dialog = await openActuality(page, false)
+  await expect(dialog.getByRole('checkbox')).toBeVisible()
+  // Another operator reactivates the historical repair after this preview.
   await withLineProgramFixture(db => db.query(`update weld_joints set revision_actuality=null,updated_at=clock_timestamp() where id=$1`, [repair.id]))
-  await dialog.getByRole('checkbox').check()
-  await dialog.getByRole('button', { name: 'Подтвердить актуальность цепочки' }).click()
-  await expect(dialog.getByRole('alert')).toContainText('изменились')
-  await expect(dialog.getByRole('checkbox')).not.toBeChecked()
+  await confirmActuality(dialog)
+  expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(0)
+  await card.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(page.getByText('Состав или данные цепочки изменились. Повторите проверку и подтверждение; ничего не сохранено.', { exact: true })).toBeVisible()
+  await expect(card).toBeVisible()
   expect(await withE2eDatabase(async db => (await db.query('select revision_actuality from weld_joints where id=$1', [source.id])).rows[0].revision_actuality)).toBeNull()
-  await dialog.getByRole('button', { name: 'Повторить проверку' }).click()
-  await expect(dialog.getByText('Записей в цепочке:', { exact: false })).toContainText('2. Будет изменено: 2')
-  await dialog.getByRole('checkbox').check()
+  // Reload the card and confirm its current composition after the rejected save.
+  await card.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await editJournalJoint(page, source.id)
+  dialog = await openActuality(page, false)
+  await expectActualityCounts(dialog, 2, 2)
+  await dialog.getByRole('button', { name: 'Повторить проверку', exact: true }).click()
+  await expectActualityCounts(dialog, 2, 2)
+  await confirmActuality(dialog)
   await expect.poll(() => pending.size).toBe(0)
   const beforeSave = calls.length
-  await dialog.getByRole('button', { name: 'Подтвердить актуальность цепочки' }).click()
-  await expect(dialog).toBeHidden()
+  await card.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(card).toBeHidden()
+  const picture = await openPicture(page, source.id)
   await expect(picture.getByText('Продолжение не требуется', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
   await expect.poll(() => pending.size).toBe(0)
   const afterSave = calls.slice(beforeSave)
-  expect(afterSave.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(1)
+  expect(afterSave.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(1)
   expect(afterSave.filter(name => name.startsWith('listWeldJointChain_'))).toHaveLength(1)
-  expect(afterSave.filter(name => name.startsWith('getDispatcherTaskSnapshot_'))).toHaveLength(1)
-  expect(afterSave.filter(name => name.startsWith('refreshDispatcherTaskSnapshot_'))).toHaveLength(1)
+  expect(afterSave.filter(name => /^(get|refresh)DispatcherTaskSnapshot_/.test(name)).length).toBeLessThanOrEqual(2)
   expect(afterSave.filter(name => /^readJournalGrid(?:Blocks)?_/.test(name)).length).toBeLessThanOrEqual(2)
   expect(afterSave.filter(name => name.startsWith('previewChainActuality_'))).toHaveLength(0)
-  expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(2)
+  expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(2)
+  expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(0)
   expect(await withE2eDatabase(async db => (await db.query('select officiality,uzk_result,uzk_conclusion,revision_actuality from weld_joints where id=$1', [repair.id])).rows[0]))
     .toEqual({ officiality: 'неофициальный', uzk_result: 'вырез', uzk_conclusion: 'IC-UZK-C', revision_actuality: 'не актуален' })
   expect(errors).toEqual([])

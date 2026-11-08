@@ -82,7 +82,7 @@ describe('СП-07: agreed mandatory result matrix', () => {
   it('collects main, pre-TO (even disabled history), and duplicate errors with their fields', () => {
     const row = {
       joint: 'F1', d1: 57, vikResult: 'вырез', rkResult: 'ремонт',
-      preHeatTreatmentLnkEnabled: false,
+      preHeatTreatmentMode: 'selected' as const,
       preHeatTreatmentControls: [{ method: 'ПВК', result: 'вырез' }],
       duplicateControls: [{ method: 'ВИК', result: 'вырез' }],
     } as WeldInput

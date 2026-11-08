@@ -15,7 +15,7 @@ const primary: WeldRow = { id: 1, joint: 'F1', connectionType: 'СШ', weldDate:
   hasRk: 'да', rkResult: 'ремонт', rkConclusionDate: '2026-09-11',
   hasUzk: 'да', uzkRequest: 'UZK', uzkRequestDate: '2026-09-09', uzkResult: 'ожидает НК' }
 const staged: WeldRow = { id: 2, joint: 'F2', connectionType: 'СШ', weldDate: '2026-09-01',
-  hasVik: 'да', hasRk: 'да', hasUzk: 'да', pstoRequired: 'да', preHeatTreatmentLnkEnabled: true,
+  hasVik: 'да', hasRk: 'да', hasUzk: 'да', pstoRequired: 'да', preHeatTreatmentMode: 'allPsto' as const,
   preHeatTreatmentControls: [
     { id: 1, weldJointId: 2, method: 'ВИК', requestName: 'VIK', requestDate: '2026-09-09', result: 'годен', conclusionDate: '2026-09-09', conclusionName: 'VIK-C' },
     { id: 2, weldJointId: 2, method: 'РК', requestName: 'RK', requestDate: '2026-09-09', result: 'ремонт', conclusionDate: '2026-09-11', conclusionName: 'RK-C' },

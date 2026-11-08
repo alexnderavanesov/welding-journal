@@ -13,13 +13,13 @@ import type { WeldInput } from '@/lib/weld-fields'
 
 describe('PSTO and TVMT cycle', () => {
   it('requires TVMT from PSTO assignment rather than the legacy TVMT flag', () => {
-    expect(getPstoTvmtWorkflowState({ pstoRequired: 'да', hasTvmt: null })).toBe('waiting-psto-request')
-    expect(getPstoTvmtWorkflowState({ pstoRequired: null, hasTvmt: 'да' })).toBe('not-required')
+    expect(getPstoTvmtWorkflowState({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', hasTvmt: null })).toBe('waiting-psto-request')
+    expect(getPstoTvmtWorkflowState({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: null, hasTvmt: 'да' })).toBe('not-required')
   })
 
   it('shows the pre-TO prerequisite instead of a misleading PSTO request status', () => {
     expect(getPstoCycleSummary(
-      { pstoRequired: 'да' } as WeldInput,
+      { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да' } as WeldInput,
       'ожидает заявку НК до ТО: ВИК',
     )).toBe('Основной · ожидает заявку НК до ТО: ВИК')
   })
@@ -41,13 +41,13 @@ describe('PSTO and TVMT cycle', () => {
   })
 
   it('keeps a performed cycle active after moving the joint to a line without PSTO', () => {
-    expect(getPstoTvmtWorkflowState({
+    expect(getPstoTvmtWorkflowState({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'Заявка ПСТО-001',
       pstoResult: 'проведено',
     } as WeldInput)).toBe('waiting-tvmt-request')
 
-    expect(getPstoTvmtWorkflowState({
+    expect(getPstoTvmtWorkflowState({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: null,
       pstoRequest: 'Заявка ПСТО-001',
       pstoResult: 'проведено',
@@ -69,7 +69,7 @@ describe('PSTO and TVMT cycle', () => {
   })
 
   it('does not open a new cycle after failed TVMT when the line assignment is cancelled', () => {
-    const cancelledAfterFailedTvmt = row({
+    const cancelledAfterFailedTvmt = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoResult: 'проведено',
       tvmtRequest: 'Заявка ТВМТ-001',
@@ -84,7 +84,7 @@ describe('PSTO and TVMT cycle', () => {
   })
 
   it('still lets a physically performed cycle reach its TVMT result after cancellation', () => {
-    const cancelledAfterPsto = row({
+    const cancelledAfterPsto = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoResult: 'проведено',
       tvmtRequest: null,
@@ -137,7 +137,7 @@ describe('PSTO and TVMT cycle', () => {
 })
 
 function row(values: WeldInput = {}): WeldInput {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1,
     pstoRequired: 'да',
     pstoRequest: 'Заявка ПСТО-001',

@@ -77,7 +77,7 @@ describe('server heat-treatment relation loading', () => {
       { id: 2, joint: 'F1R1', finalStatus: 'годен', vikResult: 'годен', programChainState: states[1] },
       // A checked left join can legitimately find no state for a legacy row.
       { id: 3, joint: 'F3', finalStatus: 'годен', vikResult: 'годен' },
-    ].map(row => ({ projectTitle: 'P', subtitleCode: 'C', line: 'L', weldDate: '2026-10-01', wdi: 12.345,
+    ].map(row => ({ preHeatTreatmentMode: 'allPsto' as const, projectTitle: 'P', subtitleCode: 'C', line: 'L', weldDate: '2026-10-01', wdi: 12.345,
       hasVik: 'да', hasRk: 'отменен', rkResult: 'ремонт', pstoRequired: 'да', pstoRequest: 'PRIMARY', pstoResult: 'проведено',
       tvmtRequest: 'TVMT', tvmtResult: 'годен', ...row })) as WeldRow[]
     const beforeControls = [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'ремонт', requestName: 'PRE-1' },
@@ -90,7 +90,7 @@ describe('server heat-treatment relation loading', () => {
       if (table === preHeatTreatmentControls) return beforeControls
       if (table === pstoRepeatCycles) return repeats
       if (table === weldJointProgramStates) return states
-      if (table === appSettings) return [{ value: JSON.stringify({ preHeatTreatmentLnkEnabled: true }) }]
+      if (table === appSettings) return [{ value: JSON.stringify({ preHeatTreatmentMode: 'allPsto' as const }) }]
       throw new Error('Unexpected relation table')
     } }) }) }) }
     const reference = prepareJournalPageRows(await attachHeatTreatmentControlRelations(structuredClone(source), db as never), report)

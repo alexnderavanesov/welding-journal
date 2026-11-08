@@ -17,11 +17,18 @@ function repair(id: number, root: number, source: number, status: string): WeldR
 const summarize = (rows: WeldRow[]) => createWeldGroupSummarizer(rows)(rows)
 const summarizePsto = (rows: WeldRow[]) => createWeldGroupSummarizer(rows, DEFAULT_SYSTEM_INDEX_SETTINGS, { heatTreatment: true })(rows)
 function pstoRow(id: number, changes: Partial<WeldRow> = {}): WeldRow {
-  return row(id, `S${id}`, 'годен', { finalStatus: undefined, pstoRequired: 'да', pstoRequest: `ПСТО-${id}`,
+  return row(id, `S${id}`, 'годен', { preHeatTreatmentMode: 'allPsto' as const, finalStatus: undefined, pstoRequired: 'да', pstoRequest: `ПСТО-${id}`,
     pstoResult: 'проведено', tvmtRequest: `ТВМТ-${id}`, tvmtResult: 'годен', ...changes })
 }
 
 describe('grouped physical connections (not journal record totals)', () => {
+  it('does not label inactive unfinished connections as good or hide active waits and rejections', () => {
+    const inactive = row(1, 'F1', 'неактуальный', { revisionActuality: 'не актуален' })
+    expect(summarize([inactive]).status).toBe('неактуальный')
+    expect(summarize([inactive, row(2, 'F2')]).status).toBe('неактуальный')
+    expect(summarize([inactive, row(2, 'F2', 'ожидает заявку')]).status).toBe('ожидает заявку')
+    expect(summarize([inactive, row(2, 'F2', 'не годен')]).status).toBe('не годен')
+  })
   it('counts a good repair chain once and uses root WDI, independently of row order', () => {
     const rows = [row(1, 'S1'), row(2, 'S2', 'не годен'), repair(3, 2, 2, 'не годен'), repair(4, 2, 3, 'годен')]
     expect(summarize(rows.reverse())).toMatchObject({ joints: 2, wdi: 20, status: 'годен', rejected: 0, partialChains: 0 })
@@ -137,7 +144,7 @@ describe('grouped physical connections (not journal record totals)', () => {
   it('keeps a bounded linear number of row visits for 200000 ordinary joints', () => {
     const rows = Array.from({ length: 200000 }, (_, i) => row(i + 1, `S${i + 1}`, 'годен', { line: `L${i % 1000}` }))
     expect(summarize(rows)).toMatchObject({ joints: 200000, lines: 1000, wdi: 2000000, status: 'годен' })
-    for (const item of rows) Object.assign(item, { pstoRequired: 'да', pstoRequest: 'ПСТО', pstoResult: 'проведено', tvmtRequest: 'ТВМТ', tvmtResult: 'годен' })
+    for (const item of rows) Object.assign(item, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', pstoRequest: 'ПСТО', pstoResult: 'проведено', tvmtRequest: 'ТВМТ', tvmtResult: 'годен' })
     expect(summarizePsto(rows)).toMatchObject({ joints: 200000, lines: 1000, wdi: 2000000, status: 'годен',
       pstoResult: { status: 'проведено', counts: { проведено: 200000 } }, tvmtResult: { status: 'годен', counts: { годен: 200000 } } })
   }, 20000)
@@ -183,7 +190,7 @@ describe('PSTO and TVMT group stage results', () => {
   })
   it('retains the existing pre-TO waiting prerequisites in both result columns', () => {
     const waiting = pstoRow(1, { pstoRequest: '', pstoResult: '', tvmtRequest: '', tvmtResult: '',
-      preHeatTreatmentLnkEnabled: true, hasVik: 'да' })
+      preHeatTreatmentMode: 'allPsto' as const, hasVik: 'да' })
     expect(summarizePsto([waiting])).toMatchObject({ pstoResult: { status: 'ожидает заявку НК до ТО' }, tvmtResult: { status: 'ожидает заявку НК до ТО' } })
     waiting.preHeatTreatmentControls = [{ id: 11, weldJointId: 1, method: 'ВИК', requestName: 'ВИК до ТО' }]
     expect(summarizePsto([waiting])).toMatchObject({ pstoResult: { status: 'ожидает НК до ТО' }, tvmtResult: { status: 'ожидает НК до ТО' } })
@@ -207,7 +214,7 @@ describe('PSTO and TVMT group stage results', () => {
     expect(summarizePsto([pstoRow(4, { finalStatus: 'ошибка' })])).toMatchObject({ status: 'ошибка', pstoResult: { status: 'проведено' }, tvmtResult: { status: 'годен' } })
   })
   it('does not let cancellation erase a current factual TVMT rejection or an unfinished performed cycle', () => {
-    const cancelled = pstoRow(1, { pstoRequired: 'отменен', tvmtResult: 'не годен' })
+    const cancelled = pstoRow(1, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', tvmtResult: 'не годен' })
     expect(summarizePsto([cancelled])).toMatchObject({ pstoResult: { status: 'проведено · назначение отменено' }, tvmtResult: { status: 'не годен', rejected: 1 } })
     cancelled.tvmtResult = ''
     expect(summarizePsto([cancelled]).tvmtResult?.status).toBe('ожидает ТВМТ')
@@ -217,13 +224,13 @@ describe('PSTO and TVMT group stage results', () => {
     expect(summarizePsto([cancelled]).tvmtResult?.status).toBe('ожидает заявку ТВМТ')
   })
   it.each(['отменен', null])('does not turn retained requests or waiting labels on an inactive line (%s) into unfinished work', pstoRequired => {
-    const item = pstoRow(1, { pstoRequired, pstoResult: 'ожидает', tvmtRequest: '', tvmtResult: 'ожидает ТВМТ' })
+    const item = pstoRow(1, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired, pstoResult: 'ожидает', tvmtRequest: '', tvmtResult: 'ожидает ТВМТ' })
     const status = pstoRequired === 'отменен' ? 'отменен' : 'не требуется'
     expect(summarizePsto([item])).toMatchObject({ pstoResult: { status }, tvmtResult: { status } })
   })
   it('does not label a mixed group of completed, cancelled and unnecessary stages as wholly completed', () => {
     const noNeed = pstoRow(3, { pstoResult: 'ожидает', tvmtRequest: '', tvmtResult: '', finalStatus: 'не годен' })
-    const cancelled = pstoRow(2, { pstoRequired: 'отменен', pstoRequest: '', pstoResult: '', tvmtRequest: '', tvmtResult: '' })
+    const cancelled = pstoRow(2, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', pstoRequest: '', pstoResult: '', tvmtRequest: '', tvmtResult: '' })
     expect(summarizePsto([pstoRow(1), cancelled, noNeed])).toMatchObject({
       pstoResult: { status: 'разные результаты', counts: { проведено: 1, отменен: 1, 'нет потребности': 1 } },
       tvmtResult: { status: 'разные результаты', counts: { годен: 1, отменен: 1, 'нет потребности': 1 } },

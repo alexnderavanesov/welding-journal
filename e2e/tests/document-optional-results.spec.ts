@@ -84,8 +84,8 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
   test(`UI requires names and dates for all groups despite stale optional settings: ${stage}`, async ({ page }) => {
     const isPre = stage === 'beforeHeatTreatment'
     await withE2eDatabase(async db => {
-      await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,psto_request,psto_request_date)
-        select $1,'OPTIONAL','OPTIONAL-L'||n,'F8800'||n,'2026-09-01','действующий','актуальная','да','да',
+      await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,pre_heat_treatment_required,psto_request,psto_request_date)
+        select $1,'OPTIONAL','OPTIONAL-L'||n,'F8800'||n,'2026-09-01','действующий','актуальная','да','да',true,
           case when $2::boolean then null else 'Optional unnamed PSTO request' end,
           case when $2::boolean then null else '2026-09-03'::date end
         from generate_series(1,2) n`, [project, isPre])

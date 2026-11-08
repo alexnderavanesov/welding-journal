@@ -7,9 +7,9 @@ export type DispatcherCalculationMetrics = ReturnType<typeof startDispatcherCalc
 
 // Strip the Node import from the dev client graph before module evaluation.
 // A window guard alone runs too late to protect a static Node import.
-export const startDispatcherCalculationMetrics = createServerOnlyFn(() => {
+export const startDispatcherCalculationMetrics = createServerOnlyFn((kind: 'full' | 'scoped' = 'full') => {
   if (typeof window !== 'undefined') return undefined
-  const diagnostics = channel('welding.dispatcher.full-calculation')
+  const diagnostics = channel(`welding.dispatcher.${kind}-calculation`)
   if (!diagnostics.hasSubscribers) return undefined
   const started = performance.now()
   const stages: Record<string, { milliseconds: number; visits: number }> = {}
@@ -25,7 +25,7 @@ export const startDispatcherCalculationMetrics = createServerOnlyFn(() => {
   }
   return {
     mark,
-    finish(outcome: 'completed' | 'failed') {
+    finish(outcome: 'completed' | 'discarded' | 'failed') {
       mark('finished')
       diagnostics.publish({ outcome, milliseconds: performance.now() - started, stages })
     },

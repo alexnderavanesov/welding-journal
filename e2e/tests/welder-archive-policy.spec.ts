@@ -216,8 +216,12 @@ test('сервер и импорт проверяют архив по итого
   const date = '2026-08-01'
   const input = { projectTitle: PROJECT, subtitleCode: 'ARCHIVE', line: 'ARC', joint: 'F8801', weldDate: date,
     connectionType: 'С17', weldingMethod: 'РАД', materialGroup: 'М01', d1: 108, d2: 108, t1: 6, t2: 6, stamp1K: ARCHIVED }
+  const originalInput = structuredClone(input)
   await expect(importWeldJoints({ data: { records: [input] } })).rejects.toThrow('архиве')
-  await importWeldJoints({ data: { records: [{ ...input, stamp1K: null, stamp1KFact: ARCHIVED }] } })
+  expect(input).toEqual(originalInput)
+  const factualInput = { ...input, stamp1K: null, stamp1KFact: ARCHIVED }
+  await importWeldJoints({ data: { records: [factualInput] } })
+  expect(factualInput).toEqual({ ...originalInput, stamp1K: null, stamp1KFact: ARCHIVED })
   await withLineProgramFixture(async db => { await db.query('update weld_joints set stamp_1_k=$2 where id=$1', [id, ARCHIVED]) })
   const version = await withE2eDatabase(async db => (await db.query('select xmin::text version from weld_joints where id=$1', [id])).rows[0].version)
   await expect(massFillWeldJoints({ data: { records: [{ id, weldDate: date }], expectedVersions: [{ id, version }] } })).rejects.toThrow('архиве')

@@ -177,7 +177,7 @@ describe('last-rejection and repeat-cycle deletion recovery', () => {
   })
 
   it('deleting the final repeat request permits a fresh cycle #2 but rejects the old cycle ID', () => {
-    const original = joint(17, 'S17', {
+    const original = joint(17, 'S17', { preHeatTreatmentMode: 'allPsto' as const,
       weldDate: '2026-08-01', pstoRequired: 'да', pstoRequest: 'P1', pstoRequestDate: '2026-08-02',
       pstoDate: '2026-08-03', heatTreatmentDiagram: 'D1', pstoResult: 'проведено',
       tvmtRequest: 'T1', tvmtRequestDate: '2026-08-04', tvmtResult: 'не годен',

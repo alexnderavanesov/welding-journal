@@ -80,7 +80,7 @@ export type JointNextAction = {
 
 type JointNextActionSettings = Pick<
   ControlProcessSettings,
-  'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'
+  'preHeatTreatmentMode'
 >
 
 export function buildJointNextActions(
@@ -88,8 +88,8 @@ export function buildJointNextActions(
   dispatcherTasks: readonly RepeatedJointTask[] = [],
   controlProcessSettings?: JointNextActionSettings,
 ): JointNextAction[] {
-  if (controlProcessSettings && row.preHeatTreatmentLnkEnabled !== controlProcessSettings.preHeatTreatmentLnkEnabled) {
-    row = { ...row, preHeatTreatmentLnkEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled }
+  if (controlProcessSettings && row.preHeatTreatmentMode !== controlProcessSettings.preHeatTreatmentMode) {
+    row = { ...row, preHeatTreatmentMode: controlProcessSettings.preHeatTreatmentMode }
   }
   const rowTasks = dispatcherTasks
     .filter((task) => isDispatcherTaskDirectlyRelatedToJoint(task, row))
@@ -349,11 +349,6 @@ function hasNonBlockingPrimaryStageWarning(
   row: WeldRow,
   controlProcessSettings?: JointNextActionSettings,
 ) {
-  if (
-    !isPreHeatTreatmentStageEnabled(row) ||
-    !controlProcessSettings?.allowPrimaryLnkBeforePreviousStagesComplete
-  ) return false
-
   return LNK_METHODS.some((method) =>
     isControlEnabledValue(row[method.enabledKey]) &&
     hasPrimaryLnkResultTrace(row, method.code) &&

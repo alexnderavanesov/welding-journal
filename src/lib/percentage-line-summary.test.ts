@@ -78,7 +78,7 @@ describe('buildPercentageLineSummaries', () => {
 
   it('counts only rejected RK/UZK before heat treatment for surcharge', () => {
     const rkRows = [
-      makeRow(1, {
+      makeRow(1, { preHeatTreatmentMode: 'allPsto' as const,
         joint: 'S1',
         pstoRequired: 'да',
         hasRk: 'да',
@@ -87,7 +87,7 @@ describe('buildPercentageLineSummaries', () => {
       ...Array.from({ length: 4 }, (_, index) => makeRow(index + 2, { joint: `S${index + 2}` })),
     ]
     const vikRows = rkRows.map((row, index) => index === 0
-      ? makeRow(1, {
+      ? makeRow(1, { preHeatTreatmentMode: 'allPsto' as const,
         joint: 'S1',
         pstoRequired: 'да',
         hasVik: 'да',

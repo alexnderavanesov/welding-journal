@@ -3,7 +3,7 @@ export const ACCESS_AREAS = {
   welding: 'Сварочный журнал', lnk: 'ЛНК', psto: 'ПСТО и ТВМТ',
   lines: 'Программа линий', references: 'Справочники', statistics: 'Статистика',
   documents: 'Документы', templates: 'Шаблоны документов',
-  checks: 'Проверки сохранения', dispatcher: 'Диспетчер и ДЗ', exceptions: 'Принятые исключения',
+  checks: 'Проверки сохранения', dispatcher: 'Диспетчер и ДЗ', assignmentWarnings: 'Предупреждения', exceptions: 'Принятые исключения',
   numbering: 'Заявки, заключения и нумерация', data: 'Настройки данных',
   wdi: 'Расчёт дюймов', processes: 'Процессы контроля', indexes: 'Системные индексы',
 } as const
@@ -24,7 +24,7 @@ export const AREA_ACTIONS: Record<AccessArea, readonly AccessAction[]> = {
   lnk: ['view', 'edit', 'delete', 'generate', 'export'], psto: ['view', 'edit', 'delete', 'generate', 'export'],
   lines: ['view', 'edit', 'delete', 'export'], references: ['view', 'edit', 'delete', 'export'], statistics: ['view', 'export'],
   documents: ['view', 'edit', 'delete', 'generate', 'export'], templates: ['view', 'edit', 'delete'],
-  checks: ['view', 'edit'], dispatcher: ['view', 'edit'], exceptions: ['view', 'edit'], numbering: ['view', 'edit'],
+  checks: ['view', 'edit'], dispatcher: ['view', 'edit'], assignmentWarnings: ['view', 'edit'], exceptions: ['view', 'edit'], numbering: ['view', 'edit'],
   data: ['view', 'edit'], wdi: ['view', 'edit'], processes: ['view', 'edit'], indexes: ['view', 'edit'],
 }
 export const PERMISSIONS: Permission[] = [
@@ -59,6 +59,8 @@ export const REPORT_ACCESS_AREAS: Record<string, AccessArea> = {
   welderStamps: 'references', statistics: 'statistics', documents: 'documents',
 }
 export const SETTING_ACCESS_AREAS: Record<string, AccessArea> = {
+  'custom-document-names': 'templates',
+  'assignment-warnings': 'assignmentWarnings',
   'control-processes': 'processes', 'data-list': 'data', dispatcher: 'dispatcher',
   'dispatcher-background': 'dispatcher', 'dispatcher-reminders': 'dispatcher',
   other: 'wdi', 'request-conclusion': 'numbering', 'save-check': 'checks', 'system-index': 'indexes',

@@ -7,8 +7,8 @@ const rows = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
 
 describe('current report output order', () => {
   const source = [
-    { id: 2, joint: 'S2', weldDate: '2026-10-01', hasVik: 'Да', pstoRequired: 'Да', lnkCreatedAt: '2026-10-01', pstoCreatedAt: '2026-10-01' },
-    { id: 1, joint: 'S1', weldDate: '2026-10-01', hasVik: 'Да', pstoRequired: 'Да', lnkCreatedAt: '2026-10-02', pstoCreatedAt: '2026-10-02' },
+    { preHeatTreatmentMode: 'allPsto' as const, id: 2, joint: 'S2', weldDate: '2026-10-01', hasVik: 'Да', pstoRequired: 'Да', lnkCreatedAt: '2026-10-01', pstoCreatedAt: '2026-10-01' },
+    { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'S1', weldDate: '2026-10-01', hasVik: 'Да', pstoRequired: 'Да', lnkCreatedAt: '2026-10-02', pstoCreatedAt: '2026-10-02' },
   ] as WeldRow[]
 
   it('keeps server-sorted LNK current output ahead of default and preserved modal order', () => {

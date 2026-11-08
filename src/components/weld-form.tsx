@@ -47,6 +47,7 @@ import {
 export type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-utils'
 
 type WeldFormProps = {
+  onOpenRoot?: (id: number) => void
   value: WeldDraft
   focusField?: WeldFieldKey
   returnPageScrollPosition?: PageScrollPosition
@@ -72,6 +73,7 @@ export type WeldFormPreSaveDecision = {
 }
 
 export function WeldForm({
+  onOpenRoot,
   value,
   focusField,
   returnPageScrollPosition,
@@ -183,7 +185,7 @@ export function WeldForm({
         const preview = await previewControlRequestRemoval({ data: { records: [draft], expectedVersions: getExpectedWeldRowVersions([value as WeldRow]) } })
         if (latestDraft.current !== draft) { setImmediateSaveBlockReason('Черновик изменился во время проверки заявок. Повторите сохранение.'); return }
         token = preview.token
-        removalText = formatControlRequestRemovals(preview.removals)
+        removalText = formatControlRequestRemovals(preview.removals, preview.hiddenRemovalCount)
       } catch (error) { setImmediateSaveBlockReason(error instanceof Error ? error.message : String(error)); return }
       finally { checkingRef.current = false; setCheckingRequests(false) }
     }
@@ -314,6 +316,8 @@ export function WeldForm({
 
       <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0">
         <WeldFormSections
+          allowTechnologyCardAutoAssignment={!String(value.weldDate ?? '').trim()}
+          onOpenRoot={onOpenRoot}
           fieldsByGroup={fieldsByGroup}
           collapsedSections={collapsedSections}
           draft={draft}

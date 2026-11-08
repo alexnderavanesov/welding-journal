@@ -8,6 +8,7 @@ import { FieldHelp } from '@/components/field-help'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { useDataListSettings } from '@/lib/data-list-settings'
 import { isTConnectionType } from '@/lib/connection-type'
+import { TECHNOLOGY_CARD_MATERIAL_FIELDS } from '@/lib/technology-card-materials'
 import { createEmptyTechnologyCardDraft, validateTechnologyCard } from '@/lib/technology-card-validation'
 import { TECHNOLOGY_CARD_PSTO_OPTIONS, type TechnologyCardDraft, type TechnologyCardIssue, type TechnologyCardRecord } from '@/lib/technology-card-types'
 
@@ -95,7 +96,15 @@ export function TechnologyCardEditor({ card, busy, message, onClose, onSave }: {
             </div>
             <p className="mt-2 text-xs text-slate-500">От и до включительно · меньшие D и T стыка</p>
           </section>
-          {card && <p className="flex items-start gap-2 text-xs leading-5 text-slate-500"><History aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />После переименования нажмите «Проверить и назначить ТК» в реестре, чтобы обновить название в подходящих заваренных стыках.</p>}
+          <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4" aria-label="Сварочные материалы">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Сварочные материалы</h2>
+            <div className="grid gap-3 sm:grid-cols-2">{TECHNOLOGY_CARD_MATERIAL_FIELDS.map(([field, label]) =>
+              <label key={field} className="block space-y-1.5 text-sm font-medium text-slate-700">{label}
+                <Input value={draft[field] ?? ''} onChange={event => update(field, event.target.value)} aria-invalid={invalid(field)} />
+              </label>)}</div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">Заполненные значения переносятся в стык при подборе ТК. В стыке их можно исправить вручную. Пустые поля карты не стирают уже внесённые материалы и сертификаты.</p>
+          </section>
+          {card && <p className="flex items-start gap-2 text-xs leading-5 text-slate-500"><History aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />После изменения нажмите «Проверить и назначить ТК» в реестре: проверьте предложенные названия и материалы, затем примените их к выбранным стыкам.</p>}
           {!!issues.length && <ul role="alert" className="list-disc space-y-1 rounded-lg bg-rose-50 py-3 pl-8 pr-3 text-sm text-red-700">{issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>}
           {message && <p role="alert" className="text-sm text-red-700">{message}</p>}
         </fieldset>

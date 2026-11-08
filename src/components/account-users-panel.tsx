@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BriefcaseBusiness, Eye, MoreHorizontal, RefreshCw, Search, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
 import { Button } from './ui/button'
@@ -6,15 +6,16 @@ import { Input } from './ui/input'
 import { AccessDialog } from './access-dialog'
 import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import { PermissionEditor } from './permission-editor'
-import { FieldHelp } from './field-help'
 import { useAccess } from '@/lib/security-context'
 import { ACCESS_PROFILES, PERMISSIONS, canManageAccount, type Permission } from '@/lib/access-permissions'
-import { formatAccountActivityTime } from '@/lib/account-activity-label'
+import type { AccountListUser } from '@/lib/account-user-labels'
 import * as accounts from '@/server/account-api'
 
-type Account = Awaited<ReturnType<typeof accounts.listAccounts>>[number]
+type Account = AccountListUser
 type AccountAction = { user: Account; kind: 'invite' | 'recovery' | 'delete' }
-export const accountRoleLabel = (role: string) => role === 'owner' ? 'Владелец системы' : role === 'admin' ? 'Администратор' : 'Пользователь'
+export { accountRoleLabel } from '@/lib/account-user-labels'
+const AccountUsersGrid = lazy(() => import('./account-users-grid'))
+const EMPTY_USERS: Account[] = []
 
 export function UsersPanel() {
   const { identity } = useAccess(), queryClient = useQueryClient()
@@ -38,22 +39,37 @@ export function UsersPanel() {
   const current = selected ? users.data?.find(user => user.id === selected.id) : undefined
   const stale = !!selected && (!current || current.revision !== selected.revision)
   const editable = editor === 'new' || !!(identity && selected && current && canManageAccount(identity, current) && canManageAccount(identity, selected))
-  const visible = users.data?.filter(user => `${user.name} ${user.email} ${user.title}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) ?? []
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true); setMessage(''); setFailed(false)
     try {
       const result = await action() as { sent?: boolean; message?: string } | undefined
+      // Close the saved draft before publishing success or refreshing its revision:
+      // dialog messages are errors, and the refreshed account makes that draft stale.
+      setEditor(null); setPending(null)
       setMessage(result?.sent === false ? result.message ?? 'Изменения сохранены, но письмо не отправлено.' : result?.sent ? 'Письмо подготовлено и передано отправителю.' : 'Сохранено.')
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      setEditor(null); setPending(null)
     } catch (error) {
       setFailed(true); setMessage(error instanceof Error ? error.message : 'Не удалось выполнить действие.')
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
     } finally { setBusy(false) }
   }
-  function openEditor(user: Account | 'new', onlyTitle = false) { setMessage(''); setTitleOnly(onlyTitle); setEditor(user) }
+  const openEditor = useCallback((user: Account | 'new', onlyTitle = false) => { setMessage(''); setTitleOnly(onlyTitle); setEditor(user) }, [])
   const closeEditor = () => { if (!busy) setEditor(null) }
+  const renderActions = useCallback((user: Account) => {
+    const managed = identity && canManageAccount(identity, user)
+    return <div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={busy} onClick={() => openEditor(user)}>{managed ? <ShieldCheck className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{managed ? 'Настроить права' : 'Посмотреть права'}</Button>
+      {managed ? <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0" aria-label={`Действия пользователя: ${user.name}`} aria-haspopup="menu" aria-expanded={menu?.anchorElement?.getAttribute('data-account-id') === user.id} data-account-id={user.id} disabled={busy} onClick={event => {
+        const anchor = event.currentTarget, rect = anchor.getBoundingClientRect()
+        const choose = (kind: AccountAction['kind']) => { setMessage(''); setPending({ user, kind }) }
+        setMenu({ x: rect.right - 224, y: rect.bottom + 4, anchorElement: anchor, heading: user.name, items: [
+          { id: 'title', icon: BriefcaseBusiness, label: 'Изменить должность', onSelect: () => openEditor(user, true) },
+          { id: 'link', icon: RefreshCw, label: user.status === 'pending' ? 'Повторить приглашение' : 'Восстановить доступ', onSelect: () => choose(user.status === 'pending' ? 'invite' : 'recovery') },
+          { id: 'delete', icon: Trash2, label: 'Удалить', danger: true, onSelect: () => choose('delete') },
+        ] })
+      }}><MoreHorizontal aria-hidden="true" className="h-4 w-4" /></Button> : null}
+    </div>
+  }, [identity, busy, menu, openEditor])
   return <section className="space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div><h2 className="text-lg font-semibold text-slate-900">Сотрудники и доступ</h2><p className="mt-1 text-sm text-slate-500">Выберите пользователя, чтобы посмотреть или настроить его права. Должность на них не влияет.</p></div>
@@ -67,31 +83,11 @@ export function UsersPanel() {
         <Button variant="ghost" className="ml-auto" disabled={busy || users.isFetching} onClick={() => void users.refetch()}><RefreshCw className={`h-4 w-4 ${users.isFetching ? 'animate-spin' : ''}`} />Обновить список</Button>
       </div>
       {users.error ? <p role="alert" className="p-4 text-sm text-rose-700">Не удалось загрузить пользователей. Обновите список.</p> : null}
-      {users.isPending ? <p className="p-8 text-center text-sm text-slate-500">Загружаем пользователей…</p> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm">
-        <thead className="bg-slate-50 text-xs font-medium text-slate-500"><tr><th className="px-5 py-3">Пользователь</th><th className="px-4 py-3">Уровень доступа</th><th className="px-4 py-3"><span className="inline-flex items-center gap-1.5">Статус аккаунта<FieldHelp label="Что означает статус аккаунта">Активирован — пользователь задал пароль и может входить в систему с выданными правами. Ожидает активации — приглашение ещё не принято. Присутствие на сайте показано отдельно в столбце «Активность».</FieldHelp></span></th><th className="px-4 py-3"><span className="inline-flex items-center gap-1.5">Активность<FieldHelp label="Как определяется активность">Онлайн — пользователь работал на сайте в последние 3 минуты и ещё не вышел. Учитываются все устройства. Недавняя активность показана как «3 минуты назад»; точное время по Москве — при наведении. Список обновляется раз в 2 минуты; после закрытия вкладки статус может измениться с задержкой до 5 минут. Кнопка «Обновить список» запрашивает данные сразу.</FieldHelp></span></th><th className="px-5 py-3">Действия</th></tr></thead>
-        <tbody>{visible.map(user => {
-          const managed = identity && canManageAccount(identity, user)
-          return <tr key={user.id} className="border-t border-slate-100 align-top hover:bg-slate-50/70">
-            <td className="px-5 py-4"><p className="font-medium text-slate-800">{user.name}{identity?.id === user.id ? <span className="ml-2 text-xs font-normal text-slate-400">Это вы</span> : null}</p><p className="mt-1 text-slate-500">{user.email}</p>{user.title ? <p className="mt-1 text-xs text-slate-400">{user.title}</p> : null}</td>
-            <td className="px-4 py-4"><span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${user.role === 'user' ? 'bg-slate-100 text-slate-600' : 'bg-sky-50 text-sky-700'}`}>{accountRoleLabel(user.role)}</span><p className="mt-2 text-xs text-slate-500">{user.role === 'user' ? `${user.permissions.length} разрешений` : 'Все рабочие права'}</p></td>
-            <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'active' ? 'text-emerald-700' : 'text-amber-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${user.status === 'active' ? 'bg-emerald-500' : 'bg-amber-400'}`} />{user.status === 'active' ? 'Активирован' : 'Ожидает активации'}</span>{user.linkExpiresAt ? <p className="mt-2 max-w-40 text-xs leading-5 text-slate-400">Ссылка до {new Date(user.linkExpiresAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК</p> : null}</td>
-            <td className="px-4 py-4"><AccountActivity user={user} available={!users.isError} now={now} /></td>
-            <td className="px-5 py-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={busy} onClick={() => openEditor(user)}>{managed ? <ShieldCheck className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{managed ? 'Настроить права' : 'Посмотреть права'}</Button>
-              {managed ? <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0" aria-label={`Действия пользователя: ${user.name}`} aria-haspopup="menu" aria-expanded={menu?.anchorElement?.getAttribute('data-account-id') === user.id} data-account-id={user.id} disabled={busy} onClick={event => {
-                const anchor = event.currentTarget, rect = anchor.getBoundingClientRect()
-                const choose = (kind: AccountAction['kind']) => { setMessage(''); setPending({ user, kind }) }
-                setMenu({ x: rect.right - 224, y: rect.bottom + 4, anchorElement: anchor, heading: user.name, items: [
-                  { id: 'title', icon: BriefcaseBusiness, label: 'Изменить должность', onSelect: () => openEditor(user, true) },
-                  { id: 'link', icon: RefreshCw, label: user.status === 'pending' ? 'Повторить приглашение' : 'Восстановить доступ', onSelect: () => choose(user.status === 'pending' ? 'invite' : 'recovery') },
-                  { id: 'delete', icon: Trash2, label: 'Удалить', danger: true, onSelect: () => choose('delete') },
-                ] })
-              }}><MoreHorizontal aria-hidden="true" className="h-4 w-4" /></Button> : null}</div>
-            </td>
-          </tr>
-        })}</tbody>
-      </table>{!visible.length && !users.error ? <p className="p-8 text-center text-sm text-slate-500">Пользователи не найдены.</p> : null}</div>}
+      {users.isPending ? <p className="p-8 text-center text-sm text-slate-500">Загружаем пользователей…</p> : <Suspense fallback={<p className="p-8 text-center text-sm text-slate-500">Загружаем таблицу…</p>}>
+        <AccountUsersGrid users={users.data ?? EMPTY_USERS} selfId={identity?.id} available={!users.isError} now={now} search={search} renderActions={renderActions} />
+      </Suspense>}
     </div>
-    <ContextActionMenu menu={menu} autoFocus onClose={() => { setMenu(null); if (menu?.anchorElement instanceof HTMLElement) menu.anchorElement.focus({ preventScroll: true }) }} />
+    <ContextActionMenu menu={menu} autoFocus onClose={() => { setMenu(null); if (menu?.anchorElement instanceof HTMLElement && !document.querySelector('[aria-modal="true"]')) menu.anchorElement.focus({ preventScroll: true }) }} />
     {editor ? <UserAccessDialog key={editor === 'new' ? 'new' : `${editor.id}-${editor.revision}`} user={selected} editable={editable} stale={stale} busy={busy} titleOnly={titleOnly}
       owner={identity?.role === 'owner'} message={message} onClose={closeEditor} onReload={current ? () => { setMessage(''); setEditor(current) } : undefined}
       onSave={data => { if (stale || !editable) return; void run(() => selected ? accounts.changeAccount({ data: { id: selected.id, revision: selected.revision, role: data.role, permissions: data.permissions, title: data.title } }) : accounts.inviteAccount({ data })) }} /> : null}
@@ -99,15 +95,6 @@ export function UsersPanel() {
       <p className="text-sm leading-6 text-slate-600">{pending.kind === 'delete' ? 'Аккаунт будет удалён, а его сеансы завершены. Рабочие данные и история действий сохранятся.' : 'На почту пользователя будет отправлена новая ссылка. Прежняя ссылка перестанет действовать.'}</p>{message ? <p role="alert" className="mt-4 text-sm text-rose-700">{message}</p> : null}
     </AccessDialog> : null}
   </section>
-}
-
-function AccountActivity({ user, available, now }: { user: Account; available: boolean; now: number }) {
-  if (!available) return <span className="text-xs text-slate-400">Нет связи</span>
-  if (user.online) return <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Онлайн</span>
-  if (!user.lastActiveAt) return <span className="text-xs text-slate-400" title={user.status === 'pending' ? undefined : 'Активность появится после следующего открытия сайта.'}>{user.status === 'pending' ? 'Ещё не входил' : 'Нет данных'}</span>
-  const time = formatAccountActivityTime(user.lastActiveAt, now)
-  if (!time) return <span className="text-xs text-slate-400">Нет данных</span>
-  return <div className="text-xs leading-5 text-slate-500"><p>Был(а) на сайте</p><time className="whitespace-nowrap" dateTime={time.iso} title={time.exact} aria-label={`${time.label}; ${time.exact}`}>{time.label}</time></div>
 }
 
 function UserAccessDialog({ user, editable, stale, busy, owner, titleOnly, message, onClose, onReload, onSave }: {

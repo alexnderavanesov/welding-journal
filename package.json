@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite dev --host 127.0.0.1 --port 3000",
     "dev:local": "vite dev --host 127.0.0.1 --port 3000",
-    "build": "vite build && node scripts/verify-server-function-manifest.mjs",
+    "build": "vite build && node scripts/verify-server-function-manifest.mjs && node scripts/verify-client-runtime.mjs",
     "start": "node .output/server/index.mjs",
     "maintenance:dispatcher": "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/maintenance/dispatcher-refresh',{method:'POST',headers:{authorization:'Bearer '+process.env.MAINTENANCE_TOKEN}}).then(async r=>{console.log(await r.text());if(!r.ok)process.exit(1)})\"",
     "maintenance:normalize-control-assignments": "node --import tsx scripts/normalize-control-assignment-values.ts",
@@ -58,6 +58,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "saxes": "6.0.0",
+    "seroval": "1.6.11",
     "tailwind-merge": "^2.5.5",
     "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },

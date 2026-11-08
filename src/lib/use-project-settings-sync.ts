@@ -1,4 +1,6 @@
+import { applyRemoteCustomDocumentNames } from '@/lib/custom-document-settings'
 import { useEffect, useRef } from 'react'
+import { applyRemoteAssignmentWarningSettings } from '@/lib/assignment-warning-settings'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listAppSettingsSnapshot, saveAppSetting, type AppSettingValue } from '@/server/app-settings'
 import { applyRemoteControlProcessSettings } from '@/lib/control-process-settings'
@@ -37,6 +39,8 @@ type ProjectSettingSyncEntry = {
 }
 
 const PROJECT_SETTING_SYNC_ENTRIES: ProjectSettingSyncEntry[] = [
+  { key: PROJECT_SETTING_KEYS.customDocumentNames, applyRemote: applyRemoteCustomDocumentNames },
+  { key: PROJECT_SETTING_KEYS.assignmentWarnings, applyRemote: applyRemoteAssignmentWarningSettings },
   {
     key: PROJECT_SETTING_KEYS.controlProcesses,
     applyRemote: applyRemoteControlProcessSettings,

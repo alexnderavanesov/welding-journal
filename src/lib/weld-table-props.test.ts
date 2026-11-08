@@ -8,7 +8,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 describe('createWeldTableProps joint history routing', () => {
   it.each(['pstoRequest', 'heatTreatmentDiagram', 'tvmtRequest', 'tvmtConclusion'] as const)(
     'opens the cycle actually displayed in the %s cell, even after a repeat starts', field => {
-      const row = {
+      const row = { preHeatTreatmentMode: 'allPsto' as const,
         id: 1, pstoRequired: 'да', [field]: 'Первичный документ',
         systemDocumentIds: { [field]: 202 },
         pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, [field]: 'Повторный документ' }],

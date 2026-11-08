@@ -82,6 +82,20 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
 }
 
 describe('LnkRequestManagerDialog', () => {
+  it('offers stage viewing only for the active request context without invoking mutation actions', () => {
+    const onStageChange = vi.fn(), onRenameRequest = vi.fn(), onDeleteRequest = vi.fn(), onClearPosition = vi.fn()
+    const { rerenderDialog } = renderDialog({ onRenameRequest, onDeleteRequest, onClearPosition })
+    expect(screen.queryByRole('group', { name: 'Этап контроля ЛНК' })).not.toBeInTheDocument()
+    rerenderDialog({ onStageChange })
+    expect(screen.getByRole('group', { name: 'Этап контроля ЛНК' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'До ТО' }))
+    expect(onStageChange).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Изменить этап контроля' })).not.toBeInTheDocument()
+    expect(onRenameRequest).not.toHaveBeenCalled()
+    expect(onDeleteRequest).not.toHaveBeenCalled()
+    expect(onClearPosition).not.toHaveBeenCalled()
+  })
+
   it('opens add-position flow for the exact selected request', () => {
     const { onAddPositions } = renderDialog()
 

@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { editJournalJoint } from '../journal-grid'
 
 test('отмена ошибочной катушки: транзакция, устаревший расчёт, повтор и ограниченное число SQL', async () => {
   const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/verify-coil-restoration.ts'], {
@@ -76,18 +77,24 @@ for (const final of ['original', 'renamed-repair', 'mixed-actuality'] as const) 
       await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click()
       await page.keyboard.press('Escape')
       await expect(workspace).toBeHidden()
-      // The chain can be outside the first server block on a large database.
-      // Find its line through the operator's search before opening the picture.
+      // Actuality is now confirmed and saved from the journal card. Restore the
+      // inactive member of this legacy mixed chain through that operator path.
+      await page.goto('/journal')
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(lineName)
-      await page.locator(`.ag-row[row-id="${rootId}"]`).getByRole('button', { name: 'S1991', exact: true }).click()
-      const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Картина стыка S1991', exact: true }) })
-      await picture.locator('aside').getByRole('button', { name: 'Вернуть актуальность цепочке', exact: true }).click()
+      await editJournalJoint(page, 'S1991R1')
+      const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
+      await editor.getByRole('combobox', { name: 'Актуальность по ИЗМу', exact: true }).click()
+      await page.getByRole('option', { name: 'Актуален', exact: true }).click()
       const actuality = page.getByRole('dialog', { name: 'Вернуть актуальность цепочке', exact: true })
-      await expect(actuality.getByText('Записей в цепочке:', { exact: false })).toContainText('3. Будет изменено: 1')
+      await expect(actuality.locator('dl > div').filter({ hasText: 'Записей' }).locator('dd')).toHaveText('3')
+      await expect(actuality.locator('dl > div').filter({ hasText: 'Изменится' }).locator('dd')).toHaveText('1')
       await actuality.getByRole('checkbox').check()
       await actuality.getByRole('button', { name: 'Подтвердить актуальность цепочки' }).click()
       await expect(actuality).toBeHidden()
-      await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
+      expect(await withE2eDatabase(async db => (await db.query("select revision_actuality from weld_joints where project_title=$1 and joint='S1991R1'", [project])).rows[0].revision_actuality)).toBe('не актуален')
+      await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await expect(editor).toBeHidden()
+      expect(await withE2eDatabase(async db => (await db.query("select count(*)::int as n from weld_joints where project_title=$1 and revision_actuality='не актуален'", [project])).rows[0].n)).toBe(0)
       expect(await withE2eDatabase(async db => (await db.query('select replaced_by_coil from weld_joint_program_states where weld_joint_id=$1', [rootId])).rows[0].replaced_by_coil)).toBe(true)
       await page.getByLabel('Диспетчер задач', { exact: true }).getByRole('button', { name: 'Открыть диспетчер' }).click()
       await workspace.getByRole('textbox', { name: 'Поиск задач диспетчера' }).fill('СП-09')

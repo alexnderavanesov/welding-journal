@@ -1,5 +1,7 @@
-import { Info } from 'lucide-react'
+import { useState } from 'react'
+import { Info, PanelsTopLeft, Table2 } from 'lucide-react'
 import { WelderStampCheckExample } from './welder-stamp-check-example'
+import { WelderStampCheckReferenceTable } from './welder-stamp-check-reference-table'
 import { StampCheckColorLegend, WelderStampCheckVisual } from './welder-stamp-check-visual'
 import { type StampCheckExample } from '@/lib/welder-stamp-check-explanation'
 
@@ -61,6 +63,7 @@ const CHECK_GROUPS: Array<{ id: string; title: string; materials: string; checks
 ]
 
 export function WelderStampCheckParameters() {
+  const [view, setView] = useState<'visual' | 'table'>('visual')
   return (
     <section aria-labelledby="stamp-check-heading" className="min-w-0 space-y-5">
       <div>
@@ -68,7 +71,20 @@ export function WelderStampCheckParameters() {
         <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">Сначала определяем, какие размеры нужны для выбранного соединения. Затем проверяем их у каждого уникального официального клейма по подходящим допускам НАКС и, когда требуется, ДЛС.</p>
       </div>
 
+      <div role="group" aria-label="Вид параметров проверки" className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-sm text-slate-600">Вид:</span>
+        {([{ id: 'visual', label: 'Наглядный', icon: PanelsTopLeft }, { id: 'table', label: 'Табличный', icon: Table2 }] as const).map(({ id, label, icon: Icon }) => (
+          <button key={id} type="button" aria-pressed={view === id} aria-controls="stamp-check-view" onClick={() => setView(id)}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 ${view === id ? 'border-sky-300 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+            <Icon aria-hidden="true" className="h-4 w-4" />{label}
+          </button>
+        ))}
+      </div>
+
       <WelderStampCheckExample />
+
+      <div id="stamp-check-view" className="min-w-0">
+      {view === 'table' ? <WelderStampCheckReferenceTable /> : <div className="space-y-5">
 
       <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600">
         <p><strong className="text-slate-800">Как читать таблицу:</strong> у С/У D1/T1 — диаметр и толщина материала 1, D2/T2 — материала 2. У Т единственная группа материалов проверяется по D1/T1 трубы, D2/T2 не требуются. Все размеры в миллиметрах. А и Б — разные сварщики; у Т допустим только один.</p>
@@ -136,6 +152,8 @@ export function WelderStampCheckParameters() {
           <li><strong className="text-slate-800">Несвязанные исправления старой записи.</strong> Если официальный допуск перестал соответствовать, можно исправлять другие сведения при неизменных дате сварки, параметрах допуска и официальных клеймах. СП-02 остаётся видимым. Новые записи и изменения этих входных данных проходят полную проверку.</li>
         </ul>
       </aside>
+      </div>}
+      </div>
     </section>
   )
 }

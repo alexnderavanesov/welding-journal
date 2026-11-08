@@ -13,7 +13,7 @@ vi.mock('@/server/psto-repeat-workflow', () => ({ savePstoRepeatWorkflow: vi.fn(
 vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ pstoRequest: 5, pstoConclusion: 7 })) }))
 
 function makeFailedTvmtRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1,
     projectTitle: 'Проект А',
     subtitleCode: 'Шифр-1',

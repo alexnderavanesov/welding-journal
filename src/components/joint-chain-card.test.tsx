@@ -5,8 +5,18 @@ import { JointChainCard } from '@/components/joint-chain-card'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointChainCard', () => {
+  it.each(['ожидает заявку до ТО', 'ожидает НК до ТО', 'неактуальный'])(
+    'preserves the calculated final status %s in the chain badge', (finalStatus) => {
+      render(<JointChainCard index={0} isCurrent onOpenRow={vi.fn()} row={{
+        id: 91, joint: 'F91', weldDate: '2026-11-01', pstoRequired: 'да',
+        hasVik: 'да', vikResult: 'годен', finalStatus,
+      } as WeldRow} />)
+      expect(screen.getByText(finalStatus, { selector: 'span' })).toBeVisible()
+    },
+  )
+
   it('explains the PSTO workflow, main LNK stage, and final joint status in order', () => {
-    const row = {
+    const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 13,
       projectTitle: 'Риформинг',
       subtitleCode: '73281024/4152-330-ТКМ5',
@@ -62,7 +72,7 @@ describe('JointChainCard', () => {
   it('marks every downstream stage as not needed after rejected pre-TO control', () => {
     render(
       <JointChainCard
-        row={{
+        row={{ preHeatTreatmentMode: 'allPsto' as const,
           id: 14,
           projectTitle: 'Риформинг',
           subtitleCode: '73281024/4152-330-ТКМ5',

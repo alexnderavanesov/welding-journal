@@ -114,7 +114,7 @@ export async function applySpecialistAssignments(input: AssignDocumentSpecialist
     })
 }
 
-async function loadSelectedSpecialists(tx: SystemDocumentSequenceTransaction, selections: SpecialistSelection[]) {
+export async function loadSelectedSpecialists(tx: SystemDocumentSequenceTransaction, selections: SpecialistSelection[]) {
   const ids = [...new Set(selections.flatMap(selection => [selection.first, selection.second]).filter((id): id is number => typeof id === 'number'))]
   const records = ids.length ? await tx.select().from(specialists).where(buildNumberArrayMatch(specialists.id, ids)).orderBy(asc(specialists.id)).for('share') : []
   return new Map(records.map(record => [record.id, record]))
@@ -138,7 +138,7 @@ export async function assignCreatedDocumentSpecialists(tx: SystemDocumentSequenc
     references.push(reference); referencesByTitle.set(reference.title, references)
   }
   const targets = assignments.map(assignment => {
-    const references = referencesByTitle.get(assignment.title) ?? []
+    const references = (referencesByTitle.get(assignment.title) ?? []).filter(reference => !assignment.date || reference.date === assignment.date)
     if (references.length !== 1) throw new Error('Назначение специалиста не соответствует создаваемому заключению.')
     const reference = references[0]!
     const type = `system:${getSystemDocumentTemplateId(reference)}`

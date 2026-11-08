@@ -1,3 +1,5 @@
+import { CUSTOM_DOCUMENT_TYPES, DEFAULT_CUSTOM_DOCUMENT_NAMES } from './custom-document-types'
+import { normalizeParticipantKinds, type ParticipantFieldKey, type ParticipantKind, type TemplateParticipant } from './document-template-participants'
 import { type WeldInput } from '@/lib/weld-fields'
 import type { SpecialistTemplateFieldKey } from './document-specialists'
 import { type TemplateStampNameFieldKey } from '@/lib/welder-stamp-names'
@@ -7,7 +9,7 @@ import {
   type WeldingJournalDocumentSplitMode,
 } from '@/lib/welding-journal-document-splitting'
 import type { DocumentTemplateNameConfig } from '@/lib/document-template-name'
-import { LAYERED_CONTROL_DOCUMENT_TYPES, type GeneratedDocumentType } from '@/lib/generated-document-types'
+import { LAYERED_CONTROL_DOCUMENT_TYPES, type GeneratedDocumentType, type ManualGeneratedDocumentType } from '@/lib/generated-document-types'
 import { getLayeredControlDocumentProfile } from '@/lib/layered-control-documents'
 import {
   CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
@@ -46,6 +48,7 @@ export const DOCUMENT_TEMPLATE_TYPES = [
     label: 'ЗНИ',
     description: 'Запрос на инспекцию по выбранным стыкам.',
   },
+  ...CUSTOM_DOCUMENT_TYPES.map(id => ({ id, label: DEFAULT_CUSTOM_DOCUMENT_NAMES[id], description: 'Собственный шаблон по выбранным стыкам. Название и оформление задаются в настройках.' })),
   ...CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
   ...LAYERED_CONTROL_DOCUMENT_TYPES.map((id) => {
     const profile = getLayeredControlDocumentProfile(id)
@@ -85,13 +88,10 @@ export type WeldingJournalTemplateOptions = {
   splitMode: WeldingJournalDocumentSplitMode
 }
 
-export type DocumentTemplateOptions = {
-  weldingJournal?: WeldingJournalTemplateOptions
-  checklist?: WeldingJournalTemplateOptions
-  zni?: WeldingJournalTemplateOptions
-}
+export type DocumentTemplateOptions = Partial<Record<ManualGeneratedDocumentType, WeldingJournalTemplateOptions>>
 
 export type DocumentTemplateFieldKey =
+  | ParticipantFieldKey
   | SpecialistTemplateFieldKey
   | keyof WeldInput
   | '__index'
@@ -108,7 +108,7 @@ export type DocumentTemplateFieldKey =
 
 export type DocumentTemplateBindingMode = 'row' | 'summary'
 
-export type DocumentTemplateRepeatMode = 'rows' | 'groups'
+export type DocumentTemplateRepeatMode = 'rows' | 'groups' | 'participants'
 
 export type DocumentTemplateBindingScope = 'document' | 'group'
 
@@ -150,6 +150,7 @@ export type DocumentTemplateConstructorConfig = {
   repeatRow?: number
   repeatRowEnd?: number
   repeatMode?: DocumentTemplateRepeatMode
+  participantKinds?: ParticipantKind[]
   repeatGroupBy?: DocumentTemplateFieldKey
   bindings: DocumentTemplateCellBinding[]
   nameConfig?: DocumentTemplateNameConfig
@@ -180,7 +181,7 @@ export function normalizeDocumentTemplateConstructorConfig(
   const collapsedJointGrouping =
     config.repeatMode === 'groups' && config.repeatGroupBy === 'joint'
   const repeatMode =
-    config.repeatMode === 'groups' && !collapsedJointGrouping ? 'groups' : 'rows'
+    config.repeatMode === 'participants' ? 'participants' : config.repeatMode === 'groups' && !collapsedJointGrouping ? 'groups' : 'rows'
   const isInsideRepeatBlock = (binding: DocumentTemplateCellBinding) => {
     if (!repeatRow || !repeatRowEnd) return false
     const bindingRow = decodeCellReference(binding.cell)?.row ?? 0
@@ -215,6 +216,7 @@ export function normalizeDocumentTemplateConstructorConfig(
     repeatRow,
     repeatRowEnd,
     repeatMode,
+    participantKinds: repeatMode === 'participants' ? normalizeParticipantKinds(config.participantKinds) : undefined,
     repeatGroupBy: repeatMode === 'groups' ? normalizeField(config.repeatGroupBy) : undefined,
     nameConfig: config.nameConfig
       ? {
@@ -417,6 +419,8 @@ export type TemplateSystemField =
 
 export type WeldingJournalTemplateContext = {
   welderStamps?: WelderStampRecord[]
+  participants?: TemplateParticipant[]
+  participant?: TemplateParticipant
   systemDocument?: SystemDocumentTemplateContext
 }
 

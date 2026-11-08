@@ -112,7 +112,7 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'weldingJournalNote',
   'jsrDocument',
   'checklistDocument',
-  'zniDocument',
+  'zniDocument', 'custom1Document', 'custom2Document',
   'boq',
   'ks3',
   'createdAt',

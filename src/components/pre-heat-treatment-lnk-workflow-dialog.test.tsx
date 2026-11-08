@@ -12,7 +12,7 @@ vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDe
 vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ lnkRequest: 10, lnkConclusionVik: 20, lnkConclusionRk: 30, 'lnkRequest:beforeHeatTreatment': 110, 'lnkConclusionVik:beforeHeatTreatment': 120, 'lnkConclusionRk:beforeHeatTreatment': 130 })) }))
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return {
+  return { preHeatTreatmentMode: 'allPsto' as const,
     id: 1,
     projectTitle: 'Проект А',
     subtitleCode: 'Шифр-1',
@@ -89,6 +89,17 @@ async function renderDialog(mode: 'request' | 'result', row: WeldRow) {
 }
 
 describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
+  it.each(['request', 'result'] as const)('excludes disabled selected rows before %s counts, search and selection', async mode => {
+    const rows = [1, 2, 3, 4, 5].map(id => makeRow({ id, joint: `F${id}`, hasRk: null,
+      preHeatTreatmentMode: 'selected', preHeatTreatmentRequired: id !== 5,
+      ...(mode === 'result' ? { preHeatTreatmentControls: [{ id, weldJointId: id, method: 'ВИК', requestName: 'R', requestDate: '2026-08-01' }] } : {}),
+    }))
+    await renderDialogRows(mode, rows, new Set([1, 2, 3, 4, 5]), 'ВИК')
+    expect(screen.queryByRole('checkbox', { name: /F5$/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('checkbox', { name: /Выбрать стык/ })).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'Выбрано: 4' })).toBeInTheDocument()
+  })
+
   it('keeps the result draft when the operator picks the already selected method', async () => {
     const row = makeRow({ id: 1, joint: 'F1', preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', requestName: 'REQ-1', requestDate: '2026-08-20' }] })
     await renderDialogRows('result', [row], new Set([1]), 'ВИК')
@@ -300,9 +311,9 @@ describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
   })
 
   it('does not allow a pre-heat-treatment request on a line without PSTO', async () => {
-    await renderDialog('request', makeRow({ pstoRequired: '', pstoDate: null }))
+    await renderDialog('request', makeRow({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: '', pstoDate: null }))
 
-    expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeDisabled()
+    expect(screen.queryByRole('checkbox', { name: /Выбрать стык/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Создать заявку до ТО' })).toBeDisabled()
   })
 

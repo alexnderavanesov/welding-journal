@@ -288,13 +288,13 @@ function addWelderStat(
     if (jointType === 'f') row.fGood += value
     if (jointType === 's') row.sGood += value
   }
-  if (status === 'ожидает заявку') {
+  if ((status === 'ожидает заявку' || status === 'ожидает заявку до ТО')) {
     row.waitingRequestRowIdSet.add(sourceRow.id)
     row.waitingRequest += value
     if (jointType === 'f') row.fWaitingRequest += value
     if (jointType === 's') row.sWaitingRequest += value
   }
-  if (status.toLowerCase() === 'ожидает нк') {
+  if (['ожидает нк', 'ожидает нк до то'].includes(status.toLowerCase())) {
     row.waitingControlRowIdSet.add(sourceRow.id)
     row.waitingControl += value
     if (jointType === 'f') row.fWaitingControl += value
@@ -334,8 +334,8 @@ function addWelderDetail(row: WelderStatisticsDraftRow, sourceRow: WeldRow, valu
   }
   group.total += value
   if (status === 'годен') group.good += value
-  if (status === 'ожидает заявку') group.waitingRequest += value
-  if (status.toLowerCase() === 'ожидает нк') group.waitingControl += value
+  if ((status === 'ожидает заявку' || status === 'ожидает заявку до ТО')) group.waitingRequest += value
+  if (['ожидает нк', 'ожидает нк до то'].includes(status.toLowerCase())) group.waitingControl += value
   if (status === 'не годен') group.rejected += value
   row.materialGroupMap.set(materialGroup, group)
 }

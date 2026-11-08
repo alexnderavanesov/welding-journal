@@ -41,12 +41,12 @@ try {
   })))
   const beforeHistory = await db.select().from(preHeatTreatmentControls).where(inArray(preHeatTreatmentControls.weldJointId, ids))
   for (const enabled of [true, false, true]) {
-    const value = JSON.stringify({ ...(previous[0] ? JSON.parse(previous[0].value) : {}), preHeatTreatmentLnkEnabled: enabled })
+    const value = JSON.stringify({ ...(previous[0] ? JSON.parse(previous[0].value) : {}), preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })
     await db.insert(appSettings).values({ key, value }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } })
     const beforeRead = statements
     const rows = await program.loadLineProgramRows(db, identity)
     assert.equal(statements - beforeRead, 6, 'Policy and stable chain state use bounded batched reads')
-    assert(rows.every((row) => row.preHeatTreatmentLnkEnabled === enabled))
+    assert(rows.every((row) => row.preHeatTreatmentMode === (enabled ? 'allPsto' : 'selected')))
     const calculation = calculateLineProgram(rows, 30, 10)[0]
     assert.equal(calculation.common.required, 8)
     assert.equal(calculation.rejectedRowIds.length, 1)

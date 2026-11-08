@@ -84,6 +84,29 @@ it('filters the entire bounded list and closes stale search results when availab
   expect(screen.getByRole('combobox', { name: 'Клеймо' })).toHaveValue('0')
 })
 
+it('can search groups in the wide field picker without selecting until confirmed', () => {
+  render(<Select searchable searchGroups popupSize="wide" aria-label="Поле" defaultValue="project">
+    <optgroup label="Общее"><option value="project">Проект</option></optgroup>
+    <optgroup label="ФИО по официальному клейму">
+      <option value="blocked" disabled>Облицовка_1 ФИО сварщика</option>
+      <option value="root">Корень_1 ФИО сварщика</option>
+    </optgroup>
+  </Select>)
+  const select = screen.getByRole('combobox', { name: 'Поле' })
+  fireEvent.click(select)
+  const search = screen.getByRole('combobox', { name: 'Поиск: Поле' })
+  fireEvent.change(search, { target: { value: 'ОФИЦИАЛЬНОМУ' } })
+  expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(2)
+  expect(select).toHaveValue('project')
+  fireEvent.keyDown(search, { key: 'Enter' })
+  expect(select).toHaveValue('root')
+  fireEvent.click(select)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Поиск: Поле' }), { target: { value: 'Проект' } })
+  expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(1)
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Поиск: Поле' }), { key: 'Escape' })
+  expect(select).toHaveValue('root')
+})
+
 it('can clear a selected last stamp when the empty option is outside the virtual viewport', () => {
   render(<Select searchable aria-label="Клеймо" defaultValue="1999"><option value="">Пусто</option>
     {Array.from({ length: 2000 }, (_, i) => <option key={i} value={i}>Клеймо {i}</option>)}

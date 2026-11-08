@@ -70,7 +70,6 @@ export async function preparePstoLineMoveRecordInTransaction({
     !actuallyChanged || !targetLineAssigned || !targetIdentity.projectTitle || !targetIdentity.subtitleCode || !targetIdentity.line
   )) throw new Error('Перенос основного НК в НК до ТО доступен только при смене линии на линию с назначенной ПСТО.')
   const preservesPrimaryHistory = (
-    processSettings.preHeatTreatmentLnkEnabled &&
     identityChanged &&
     targetLineAssigned &&
     hasPrimaryLnkHistoryBeforePstoAssignment(previous)

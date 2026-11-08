@@ -10,13 +10,13 @@ import type {
 import { buildJointNextActions } from '@/lib/joint-next-actions'
 
 const STRICT_CONTROL_PROCESS_SETTINGS = {
-  preHeatTreatmentLnkEnabled: true,
-  allowPrimaryLnkBeforePreviousStagesComplete: false,
+  preHeatTreatmentMode: 'allPsto' as const,
+
 }
 
 const PERMISSIVE_CONTROL_PROCESS_SETTINGS = {
-  preHeatTreatmentLnkEnabled: true,
-  allowPrimaryLnkBeforePreviousStagesComplete: true,
+  preHeatTreatmentMode: 'allPsto' as const,
+
 }
 
 describe('joint next actions', () => {
@@ -211,14 +211,14 @@ describe('joint next actions', () => {
   })
 
   it('guides a PSTO weld through pre-TO request and result first', () => {
-    const waitingRequest = row({ pstoRequired: 'да', hasVik: 'да', hasRk: 'да' })
+    const waitingRequest = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', hasVik: 'да', hasRk: 'да' })
     expect(buildJointNextActions(waitingRequest)[0]).toMatchObject({
       kind: 'preLnkRequest',
       description: 'Ожидают заявки: ВИК, РК.',
       methodCode: 'ВИК',
     })
 
-    const waitingResult = row({
+    const waitingResult = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       preHeatTreatmentControls: [{
@@ -237,7 +237,7 @@ describe('joint next actions', () => {
   })
 
   it('opens the initial PSTO request after good pre-TO controls', () => {
-    const current = row({
+    const current = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       preHeatTreatmentControls: [{
@@ -260,7 +260,7 @@ describe('joint next actions', () => {
   })
 
   it('ends this joint workflow after rejected pre-TO control instead of requesting PSTO', () => {
-    const current = row({
+    const current = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoResult: 'ожидает заявку',
       hasVik: 'да',
@@ -286,7 +286,7 @@ describe('joint next actions', () => {
   it('skips a disabled pre-TO stage but preserves the PSTO to TVMT to primary LNK order', () => {
     const beforePsto = row({
       pstoRequired: 'да',
-      preHeatTreatmentLnkEnabled: false,
+      preHeatTreatmentMode: 'selected' as const,
       hasVik: 'да',
     })
     expect(buildJointNextActions(beforePsto)[0]).toMatchObject({
@@ -307,14 +307,14 @@ describe('joint next actions', () => {
   })
 
   it('does not call pre-TO control completed when no pre-TO methods are assigned', () => {
-    expect(buildJointNextActions(row({ pstoRequired: 'да' }))[0]).toMatchObject({
+    expect(buildJointNextActions(row({ preHeatTreatmentMode: 'allPsto', pstoRequired: 'да' }))[0]).toMatchObject({
       kind: 'pstoRequest',
       description: 'НК до ТО не требуется по текущим назначениям. Можно начать цикл термообработки.',
     })
   })
 
   it('guides every physical cycle stage and opens a repeat after failed TVMT', () => {
-    const requestedPsto = row({
+    const requestedPsto = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-1',
       pstoRequestDate: '2026-08-02',
@@ -376,7 +376,7 @@ describe('joint next actions', () => {
   })
 
   it('opens primary control only after good TVMT and completed pre-TO control', () => {
-    const completedPhysicalCycle = row({
+    const completedPhysicalCycle = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       preHeatTreatmentControls: [{
@@ -407,7 +407,7 @@ describe('joint next actions', () => {
   })
 
   it('backfills a late PSTO assignment without replacing the preserved primary control', () => {
-    const preservedPrimary = row({
+    const preservedPrimary = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Фактическая заявка ВИК',
@@ -418,11 +418,7 @@ describe('joint next actions', () => {
       finalStatus: 'ожидает заявку',
     })
 
-    expect(buildJointNextActions(preservedPrimary)[0]).toMatchObject({
-      kind: 'preLnkRequest',
-      title: 'Создать заявку НК до ТО',
-      methodCode: 'ВИК',
-    })
+    expect(buildJointNextActions(preservedPrimary)[0]).toMatchObject({ kind: 'complete', tone: 'warning' })
 
     const withPreRequest = row({
       ...preservedPrimary,
@@ -435,10 +431,7 @@ describe('joint next actions', () => {
         result: 'ожидает НК',
       }],
     })
-    expect(buildJointNextActions(withPreRequest)[0]).toMatchObject({
-      kind: 'preLnkResult',
-      title: 'Внести результат НК до ТО',
-    })
+    expect(buildJointNextActions(withPreRequest)[0]).toMatchObject({ kind: 'complete', tone: 'warning' })
 
     const completedHistory = row({
       ...preservedPrimary,
@@ -467,7 +460,7 @@ describe('joint next actions', () => {
   })
 
   it('keeps the missing previous stage as the next step in strict mode', () => {
-    const primaryStartedEarly = row({
+    const primaryStartedEarly = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Основная заявка ВИК',
@@ -482,7 +475,7 @@ describe('joint next actions', () => {
   })
 
   it('does not skip physical stages or warn about an early request alone', () => {
-    const primaryStartedEarly = row({
+    const primaryStartedEarly = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Основная заявка ВИК',
@@ -498,7 +491,7 @@ describe('joint next actions', () => {
   })
 
   it('continues with the next primary request after an intentional stage skip', () => {
-    const primaryStartedEarly = row({
+    const primaryStartedEarly = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       hasRk: 'да',
@@ -517,7 +510,7 @@ describe('joint next actions', () => {
   })
 
   it('shows that primary results are recorded without hiding the remaining SP-01 debt', () => {
-    const primaryCompletedEarly = row({
+    const primaryCompletedEarly = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Основная заявка ВИК',
@@ -536,7 +529,7 @@ describe('joint next actions', () => {
   })
 
   it('does not skip ahead until the user has actually started primary control', () => {
-    const noPrimaryTrace = row({
+    const noPrimaryTrace = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
     })
@@ -548,7 +541,7 @@ describe('joint next actions', () => {
   })
 
   it('backfills required pre-TO before adding the first PSTO result, even for an existing request', () => {
-    const legacyRow = row({
+    const legacyRow = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       hasVik: 'да',
       pstoRequest: 'Заявка ПСТО-1',
@@ -564,7 +557,7 @@ describe('joint next actions', () => {
   })
 
   it('finishes a physically started cycle after line cancellation', () => {
-    const afterPsto = row({
+    const afterPsto = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       pstoRequest: 'Заявка ПСТО-1',
       pstoRequestDate: '2026-08-02',
@@ -604,7 +597,7 @@ describe('joint next actions', () => {
   })
 
   it('does not start a PSTO cycle for a cancelled line without execution history', () => {
-    const current = row({
+    const current = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'отменен',
       hasVik: 'да',
     })
@@ -633,7 +626,7 @@ describe('joint next actions', () => {
   })
 
   it('does not let a chronology check hide an available physical action', () => {
-    const current = row({
+    const current = row({ preHeatTreatmentMode: 'allPsto' as const,
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-1',
       pstoRequestDate: '2026-08-02',

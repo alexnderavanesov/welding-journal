@@ -29,7 +29,7 @@ describe('PSTO dialog rows', () => {
   })
 
   it('does not rerender an unchanged request row when the parent callback changes', () => {
-    const row = { id: 1, joint: 'F1', pstoRequired: 'да' } as WeldRow
+    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', pstoRequired: 'да' } as WeldRow
     const onOpenContextMenu = vi.fn()
     const { rerender } = render(
       <PstoRequestRow row={row} selected={false} disabled={false} disabledReason="" onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />,
@@ -43,7 +43,7 @@ describe('PSTO dialog rows', () => {
   })
 
   it('shows the actual reason when a PSTO request is not yet available', () => {
-    const row = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да' } as WeldRow
+    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да' } as WeldRow
 
     render(
       <PstoRequestRow

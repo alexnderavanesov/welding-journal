@@ -82,7 +82,7 @@ describe('search-first complete-line loading', () => {
     const workspace = await screen.findByTestId('program-joint-scroll')
     await waitFor(() => expect(workspace.querySelector('[data-joint="ОП1"]')).toBeVisible())
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(mocks.rows).toHaveBeenCalledWith({ data: { id: 1, family: 'supports' } })
+    expect(mocks.rows).toHaveBeenCalledWith({ data: { id: 1, family: 'supports', transport: 'line-program-rows-v1' }, signal: expect.any(AbortSignal) })
   })
 
   const summary = (value = line) => ({ ...value, overview: summarizeLineProgram([sample], value) })

@@ -59,7 +59,7 @@ describe('assignment removal persists exact request positions', () => {
     expect(db.updates).toEqual([]); expect(db.deletes).toEqual([])
   })
   it('preserves a validated whole-package stage transfer instead of treating it as deletion of facts', async () => {
-    const previous = { ...base, pstoRequired: 'да' }
+    const previous = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да' }
     const next = { ...previous, pstoRequired: null, rkRequest: 'A1', rkResult: 'годен', rkConclusion: 'C1' }
     const db = transaction([{ ...pre, result: 'годен', conclusionName: 'C1' }])
     await persistRemovedControlAssignmentRequests(db.tx, [next], new Map([[1, previous]]), { transferredPreControlIds: [11] })
@@ -67,7 +67,7 @@ describe('assignment removal persists exact request positions', () => {
     expect(db.updates.some(item => item.table === preHeatTreatmentControls)).toBe(false)
   })
   it('keeps recorded pre-NK and its requests when a validated line move only changes the derived PSTO assignment', async () => {
-    const previous = { ...base, pstoRequired: 'да', pstoRequest: 'P1' }
+    const previous = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', pstoRequest: 'P1' }
     const next = { ...previous, pstoRequired: null, line: 'TARGET' }
     const db = transaction([{ ...pre, result: 'годен', conclusionName: 'C1' }], [document(101, [position(11)])])
     await persistRemovedControlAssignmentRequests(db.tx, [next], new Map([[1, previous]]), { preserveRecordedControlHistoryRowIds: new Set([1]) })
@@ -75,7 +75,7 @@ describe('assignment removal persists exact request positions', () => {
     expect(db.updates).toEqual([]); expect(db.deletes).toEqual([]); expect(db.statements).toEqual([])
   })
   it('still protects freshly loaded method facts and removes safe method requests during that validated move', async () => {
-    const previous = { ...base, pstoRequired: 'да' }
+    const previous = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да' }
     const next = { ...previous, pstoRequired: null, line: 'TARGET', hasRk: null }
     const db = transaction([{ ...pre, result: 'годен', conclusionName: 'C1' }])
     const options = { preserveRecordedControlHistoryRowIds: new Set([1]) }
@@ -86,7 +86,7 @@ describe('assignment removal persists exact request positions', () => {
     expect(safe.deletes.filter(item => item.table === generatedDocuments).map(item => item.params)).toEqual([[[101]]])
   })
   it.each([{ pstoDate: '2026-11-01' }, { heatTreatmentDiagram: 'Д1' }])('rejects new actual PSTO requisites without its result and diagnoses stored contradictions: %o', facts => {
-    const row = { ...base, pstoRequired: 'да', pstoRequest: 'P1', pstoRequestDate: '2026-11-01', ...facts }
+    const row = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', pstoRequest: 'P1', pstoRequestDate: '2026-11-01', ...facts }
     expect(getSystemDocumentIntegrityReason(row, undefined)).toContain('без результата «проведено»')
     expect(getControlAvailabilityReportHistoryIssues(row).some(issue => /результат.*проведено/.test(issue.message))).toBe(true)
     expect(getSystemDocumentIntegrityReason({ ...row, responsible: 'Иванов' }, row as never)).toBe('')

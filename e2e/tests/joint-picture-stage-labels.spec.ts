@@ -10,7 +10,7 @@ test.beforeEach(async () => {
     settings = (await db.query("select value,updated_at from app_settings where key='control-processes'")).rows
     await db.query(`insert into app_settings(key,value) values ('control-processes',$1)
       on conflict(key) do update set value=excluded.value,updated_at=now()`,
-    [JSON.stringify({ preHeatTreatmentLnkEnabled: true, allowPrimaryLnkBeforePreviousStagesComplete: false })])
+    [JSON.stringify({ preHeatTreatmentMode: 'allPsto',  })])
   })
 })
 
@@ -83,16 +83,19 @@ test('назначенное ПСТО различает сварку, заяв�
   }
 })
 
-test('выключенный НК до ТО сохраняет заключение и не создаёт ожидание этого этапа', async ({ page }) => {
+test('legacy chain without pre-TO requirement preserves its conclusion and factual rejection', async ({ page }) => {
   await seed('F978', 'да', true, 'ремонт')
   await withE2eDatabase(async db => {
-    await db.query("update app_settings set value=$1,updated_at=now() where key='control-processes'", [JSON.stringify({ preHeatTreatmentLnkEnabled: false })])
+    await db.query("update app_settings set value=$1,updated_at=now() where key='control-processes'", [JSON.stringify({ preHeatTreatmentMode: 'selected' })])
   })
   const { pre, psto } = await picture(page, 'F978')
-  await expect(pre.getByText('НК до ТО отключён в настройках', { exact: true })).toBeVisible()
+  await expect(pre.getByText('НК до ТО для цепочки не требуется', { exact: true })).toBeVisible()
   await expect(pre.getByRole('button', { name: 'ВИК-заключение-F978', exact: true })).toBeVisible()
   await expect(pre.getByText('ремонт', { exact: true })).toBeVisible()
-  await expect(psto.getByText('Ожидает заявку ПСТО', { exact: true })).toBeVisible()
+  // Cancelling the requirement never turns an existing rejected result into
+  // permission to start PSTO or the primary control stage.
+  await expect(psto.getByText('ПСТО не требуется: НК до ТО имеет негодный результат', { exact: true })).toBeVisible()
+  await expect(psto.getByText('Ожидает заявку ПСТО', { exact: true })).toHaveCount(0)
 })
 
 test('цикл показывает ожидание ПСТО, заявки ТВМТ, результата ТВМТ и затем фактический результат', async ({ page }) => {

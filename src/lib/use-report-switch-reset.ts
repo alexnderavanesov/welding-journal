@@ -10,6 +10,7 @@ import {
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { ActiveReport, HeatTreatmentFieldEditingState, RkExposureEditingState } from '@/lib/home-state'
 import { resetPageScrollPosition } from '@/lib/page-scroll-position'
+import { getRuleSettingsTarget } from '@/lib/rule-settings-navigation'
 
 type SetState<T> = Dispatch<SetStateAction<T>>
 
@@ -89,6 +90,9 @@ export function useReportSwitchReset({
     if (previousReportRef.current !== activeReport) {
       previousReportRef.current = activeReport
       frameId = window.requestAnimationFrame(() => {
+        // The settings panel owns scrolling to a rule. A late report reset
+        // (including access initialization) must not cancel that movement.
+        if (activeReport === 'settings' && getRuleSettingsTarget(window.location.hash)) return
         resetPageScrollPosition()
       })
       replayLatestHighlight()

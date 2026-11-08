@@ -4,8 +4,8 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
 import { getPstoStageCompletionNextAction } from '@/lib/workflow-root-cause-navigation'
 
-const disabled = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: false }
-const primaryResult = {
+const disabled = { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'selected' as const }
+const primaryResult = { preHeatTreatmentMode: 'allPsto' as const,
   id: 701, joint: 'F701', pstoRequired: 'да', hasVik: 'да',
   vikRequest: '1503-2', vikRequestDate: '2026-03-15',
   vikResult: 'годен', vikConclusion: 'V-701', vikConclusionDate: '2026-03-25',
@@ -48,7 +48,7 @@ describe('SP-01 with the pre-TO stage disabled', () => {
   it.each([false, true])('a request or waiting status alone is not a skipped stage (pre-TO=%s)', (enabled) => {
     for (const result of [null, 'ожидает НК', 'ожидает заявку']) {
       const row = { ...primaryResult, vikResult: result, vikConclusion: null, vikConclusionDate: null }
-      expect(buildPrimaryLnkStageDebtSystemWarnings([row], { ...disabled, preHeatTreatmentLnkEnabled: enabled })).toEqual([])
+      expect(buildPrimaryLnkStageDebtSystemWarnings([row], { ...disabled, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })).toEqual([])
     }
   })
 
@@ -57,26 +57,26 @@ describe('SP-01 with the pre-TO stage disabled', () => {
   })
 
   it('still requires TVMT for a performed cycle after cancellation, but not a new cycle after failed TVMT', () => {
-    const historical = { ...primaryResult, ...pstoDone, pstoRequired: 'отменено' }
+    const historical = { preHeatTreatmentMode: 'allPsto' as const, ...primaryResult, ...pstoDone, pstoRequired: 'отменено' }
     expect(buildPrimaryLnkStageDebtSystemWarnings([historical], disabled)[0]?.details).toContain('ожидает заявку ТВМТ')
     expect(buildPrimaryLnkStageDebtSystemWarnings([{ ...historical, tvmtRequest: 'T-701', tvmtResult: 'не годен' }], disabled)).toEqual([])
   })
 
-  it('ignores stale enabled metadata and rejected pre-TO history without changing stored data', () => {
-    const row = { ...primaryResult, preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+  it('keeps rejection authoritative in selected mode instead of suggesting missing stages', () => {
+    const row = { ...primaryResult, preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [
       { id: 1, weldJointId: 701, method: 'ВИК', result: 'вырез' },
     ] }
-    expect(buildPrimaryLnkStageDebtSystemWarnings([row], disabled)[0]?.details).toContain('ожидает заявку ПСТО')
+    expect(buildPrimaryLnkStageDebtSystemWarnings([row], disabled)).toEqual([])
     expect(buildPrimaryLnkStageDebtSystemWarnings([{ ...row, ...cycleDone }], disabled)).toEqual([])
-    expect(row.preHeatTreatmentLnkEnabled).toBe(true)
+    expect(row.preHeatTreatmentMode).toBe('allPsto')
     expect(row.preHeatTreatmentControls[0].result).toBe('вырез')
   })
 
   it('clears after the current cycle completes, but enabling pre-TO restores its own requirements', () => {
-    const row = { ...primaryResult, ...cycleDone, preHeatTreatmentLnkEnabled: false }
+    const row = { ...primaryResult, ...cycleDone, preHeatTreatmentMode: 'selected' as const }
     expect(buildPrimaryLnkStageDebtSystemWarnings([row])).toEqual([])
     expect(buildPrimaryLnkStageDebtSystemWarnings([row], disabled)).toEqual([])
-    expect(buildPrimaryLnkStageDebtSystemWarnings([row], DEFAULT_CONTROL_PROCESS_SETTINGS)[0]?.details).toContain('заявка ВИК до ТО')
+    expect(buildPrimaryLnkStageDebtSystemWarnings([row], { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' })[0]?.details).toContain('заявка ВИК до ТО')
     expect(buildPrimaryLnkStageDebtSystemWarnings([{ ...row, tvmtResult: 'не годен', pstoRepeatCycles: [
       { id: 90, weldJointId: 701, sequence: 2, ...cycleDone },
     ] }], disabled)).toEqual([])

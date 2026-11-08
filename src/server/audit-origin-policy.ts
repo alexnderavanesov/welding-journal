@@ -1,3 +1,5 @@
+import { JOURNAL_INLINE_FIELDS } from '@/lib/journal-inline-edit'
+import { TECHNOLOGY_CARD_MATERIAL_FIELDS } from '@/lib/technology-card-materials'
 import type { AuditFieldOrigin } from '@/lib/audit-value'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
 import { WELD_MUTATION_FIELD_KEYS } from './weld-mutation-policy'
@@ -46,7 +48,8 @@ const directWeldFields: Record<string, Set<string>> = {
   updateLnkDefectDescription: fields('vikDefectDescription lnkDefectDescription uzkDefectDescription pvkDefectDescription'),
   applyLnkOfficialityChange: fields('officiality'), setChainActuality: fields('revisionActuality'),
   updateSystemWeldJoint: fields('joint'),
-  applyTechnologyCardAssignmentBatch: fields('technologyCardNumber'),
+  applyTechnologyCardAssignmentBatch: new Set(['technologyCardNumber', ...TECHNOLOGY_CARD_MATERIAL_FIELDS.map(([field]) => field)]),
+  saveJournalCellEdits: new Set(JOURNAL_INLINE_FIELDS), pasteJournalCells: new Set(JOURNAL_INLINE_FIELDS),
   changeLayeredControl: fields('layeredControlAssigned'),
   applyLineProgramControl: fields('hasRk hasUzk hasPvk hasVik'),
   savePstoLineAssignment: fields('pstoRequired pstoControlBasis pstoCancellationDate pstoExceptionBasis'),
@@ -72,9 +75,11 @@ export function createAuditOriginResolver(operation: string, input: unknown, set
   const weldDelete = ['deleteWeldJoint', 'deleteWeldJoints', 'deleteObsoleteRepeatedJoint'].includes(operation)
   const psto = ['savePstoRepeatWorkflow', 'correctPstoCycleStage', 'correctPstoTvmtAndRemoveLaterCycles'].includes(operation)
   const pre = ['savePreHeatTreatmentLnkWorkflow', 'correctPreHeatTreatmentLnkResult', 'savePreHeatTreatmentLnkResultEdits', 'updatePreHeatTreatmentRkExposure'].includes(operation)
+  const fill = operation === 'savePreHeatTreatmentFill' || Boolean(object(data.preHeatTreatmentConfirmation).fill)
+  const fillOptions = object(operation === 'savePreHeatTreatmentFill' ? data.options : object(data.preHeatTreatmentConfirmation).fill)
   const documentEdit = ['assignDocumentSpecialists', 'changeSystemDocumentDate'].includes(operation)
   const documentDateFields = getDocumentDateFields(object(data.reference))
-  const known = Boolean(simple || direct || weldSave || weldDelete || psto || pre || documentEdit || operation === 'createWeldJoints')
+  const known = Boolean(simple || direct || weldSave || weldDelete || psto || pre || fill || documentEdit || operation === 'createWeldJoints')
   const scope = data.mutationScope === 'lnk' ? lnkFields : data.mutationScope === 'psto' ? pstoFields : weldingFields
   // Server preparation can fill/replace fields on the original import objects.
   // Capture only the accepted scope's submitted values before that happens;
@@ -108,9 +113,21 @@ export function createAuditOriginResolver(operation: string, input: unknown, set
     if (!known) return undefined // New/unclassified workflows stay neutral, never guessed.
     if (technical.has(key) || resultIsAutomatic(key, before, after)) return 'automatic'
     const row = after ?? before ?? {}
+    if (fill && entity === 'pre_heat_treatment_controls') {
+      const action = key.startsWith('request') ? 'request' : 'result'
+      const override = object(object(fillOptions.overrides)[`${row.weldJointId}:${action}:${action === 'request' ? 'all' : row.method}`])
+      if (key === 'result') return 'user'
+      if (key.endsWith('Name')) return override.name !== undefined ? 'user' : 'automatic'
+      if (key.endsWith('Date')) return override.date !== undefined ? 'user' : 'automatic'
+      return 'automatic'
+    }
+    if (operation === 'savePreHeatTreatmentFill') return entity === 'generated_documents' && key === 'specialists' ? 'user' : 'automatic'
     if (entity === 'generated_documents' && key === 'specialists' && list(object(data.documentGrouping).specialists).length) return 'user'
     if (weldSave) {
+      if (entity === 'weld_joints' && key === 'preHeatTreatmentRequired' && typeof object(data.preHeatTreatmentConfirmation).required === 'boolean') return Number(row.id) === Number(data.id) ? 'user' : 'automatic'
       if (entity !== 'weld_joints' || key === 'hasVik') return 'automatic'
+      if (key === 'revisionActuality' && ['updateWeldJoint', 'moveWeldJointChain'].includes(operation) &&
+        object(data.chainActualityConfirmation).confirmed === true) return 'user'
       if (!after && removed.has(Number(row.id))) return 'user'
       const submitted = byId.get(Number(row.id)) ?? (!before ? byIdentity.get(jointIdentity(row)) : undefined)
       if (!submitted) return 'automatic'

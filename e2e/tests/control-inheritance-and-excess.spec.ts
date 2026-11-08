@@ -252,7 +252,9 @@ test('неактуальность официального родителя н�
     rk_result='ремонт',rk_request='INH-OLD-R',rk_request_date='2026-09-01',rk_conclusion='INH-OLD-RC',rk_conclusion_date='2026-09-01'
     where id=$1`, [source.id]))
   const [child] = await continuation({ data: { source: (await versions([source.id]))[0], targetJoints: ['F8401R1'] } })
-  await update({ data: { id: source.id, expectedVersion: (await versions([source.id]))[0].version, revisionActuality: 'не актуален' } })
+  // A legacy mixed chain still needs this regression. The current card changes
+  // actuality for the whole chain and no longer permits this single-row state.
+  await withLineProgramFixture(db => db.query("update weld_joints set revision_actuality='не актуален' where id=$1", [source.id]))
   const before = await snapshot(child.id)
   for (const hasRk of [null, 'дополнительный', 'отменен']) {
     await expect(update({ data: { id: child.id, expectedVersion: (await versions([child.id]))[0].version, hasRk, rkControlBasis: 'Попытка изменения' } })).rejects.toThrow(/унаследован/)

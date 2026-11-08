@@ -21,7 +21,7 @@ for (const report of ['/psto', '/lnk']) test(`СП-06 при выключенн�
       await client.query(`insert into app_settings (key, value) values ('control-processes', $1)
         on conflict (key) do update set value = excluded.value`, [JSON.stringify({
         ...DEFAULT_CONTROL_PROCESS_SETTINGS, ...JSON.parse(previousSetting?.value ?? '{}'),
-        preHeatTreatmentLnkEnabled: false, allowPrimaryLnkBeforePreviousStagesComplete: false,
+        preHeatTreatmentMode: 'selected',
       })])
       settingsChanged = true
       const inserted = await client.query<{ id: number }>(`insert into weld_joints (

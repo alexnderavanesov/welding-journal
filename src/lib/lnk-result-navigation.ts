@@ -54,7 +54,7 @@ export function getLnkResultNavigationEntries(row: WeldRow) {
 
 export function getPendingLnkResultMethods(
   row: WeldRow,
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   return LNK_METHODS.filter((method) => {
     const requestName = String(row[method.requestKey] ?? '').trim()

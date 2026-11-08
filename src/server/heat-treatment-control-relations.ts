@@ -103,7 +103,7 @@ async function attachCurrentPolicy<Row extends HeatTreatmentControlRelationsCarr
     settings = normalizeControlProcessSettings(value)
   }
   for (const row of rows) {
-    row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled
+    row.preHeatTreatmentMode = settings.preHeatTreatmentMode
   }
   return rows
 }

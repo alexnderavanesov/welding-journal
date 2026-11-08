@@ -414,6 +414,20 @@
       "when": 1793742432076,
       "tag": "0058_pink_invaders",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793973159872,
+      "tag": "0059_special_moondragon",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794081102834,
+      "tag": "0060_strong_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

@@ -35,7 +35,7 @@ describe('filterLnkRequestRows', () => {
   })
 
   it('allows selecting an early request independently of the permissive result mode', () => {
-    const staged = {
+    const staged = { preHeatTreatmentMode: 'allPsto' as const,
       id: 3,
       projectTitle: 'Проект',
       line: 'L3',
@@ -47,8 +47,8 @@ describe('filterLnkRequestRows', () => {
     expect(filterLnkRequestRows([staged], 'f3')).toEqual([staged])
     expect(countLnkRequestTargets([staged], ['vikRequest'])).toBe(1)
     expect(countLnkRequestTargets([staged], ['vikRequest'], {
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
+      preHeatTreatmentMode: 'allPsto' as const,
+
     })).toBe(1)
   })
 })

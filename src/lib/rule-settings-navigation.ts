@@ -6,6 +6,7 @@ export const RULE_SETTINGS_TABS = [
   { id: 'system', label: 'Системные правила', count: SYSTEM_RULE_CATALOG.length },
   { id: 'input', label: 'Защиты ввода', count: SAVE_CHECK_SETTING_ITEMS.length },
   { id: 'tasks', label: 'Задачи диспетчера', count: DISPATCHER_SETTING_GROUPS.reduce((count, group) => count + group.items.length, 0) },
+  { id: 'warnings', label: 'Предупреждения', count: 2 },
   { id: 'exceptions', label: 'Принятые исключения' },
   { id: 'parameters', label: 'Параметры' },
 ] as const

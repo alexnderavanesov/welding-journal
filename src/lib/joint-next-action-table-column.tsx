@@ -20,7 +20,7 @@ export function getJointNextActionTableColumns({
   dispatcherTasksByRow?: ReadonlyMap<number, RepeatedJointTask[]>
   dispatcherTasksPending?: boolean
   dispatcherTasksError?: string
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>
   onRunNextAction?: (row: WeldRow, action: JointNextAction) => void
   onOpenOverview?: (row: WeldRow) => void
 }): WeldTableExtraColumn[] {

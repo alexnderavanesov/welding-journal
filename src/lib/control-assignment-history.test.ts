@@ -23,7 +23,7 @@ describe('assignment removal and cancellation are distinct operations', () => {
   it.each(['primary', 'preheat', 'duplicate'])('keeps a rejected %s control in dispatcher and persisted row filters after cancellation', stage => {
     const row: WeldRow = { ...base, projectTitle: 'P', subtitleCode: 'S', line: 'L', weldDate: '2026-09-01', hasRk: 'отменен',
       ...(stage === 'primary' ? { rkResult: 'ремонт', rkConclusion: 'ЗНК' } :
-        stage === 'preheat' ? { pstoRequired: 'отменен', preHeatTreatmentControls: [{ ...pre, result: 'ремонт', conclusionName: 'ЗНК' }] } :
+        stage === 'preheat' ? { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', preHeatTreatmentControls: [{ ...pre, result: 'ремонт', conclusionName: 'ЗНК' }] } :
         { duplicateControls: [{ ...pre, method: 'РК', result: 'ремонт', conclusion: 'ЗНК', conclusionDate: '2026-09-02', controlDate: '2026-09-02' }] }),
     }
     const tasks = buildRepeatedJointTasks([row]).filter(task => task.kind === 'create')
@@ -55,9 +55,9 @@ describe('assignment removal and cancellation are distinct operations', () => {
     { pstoResult: 'проведено', heatTreatmentDiagram: 'ДИАГРАММА' },
     { tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-ЗНК' },
   ])('protects PSTO assignment across all its stages: %o', history => {
-    const row: WeldRow = { ...base, pstoRequired: 'да', ...history }
-    expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: null }, row)).toContain('ПСТО')
-    expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: 'отменен' }, row)).toContain('нельзя отменить')
+    const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', ...history }
+    expect(getControlAssignmentRemovalReason({ preHeatTreatmentMode: 'allPsto' as const, ...row, pstoRequired: null }, row)).toContain('ПСТО')
+    expect(getControlAssignmentRemovalReason({ preHeatTreatmentMode: 'allPsto' as const, ...row, pstoRequired: 'отменен' }, row)).toContain('нельзя отменить')
   })
   it('protects TVMT history in a repeat without blocking an unrelated RK assignment', () => {
     const row = { ...base, hasTvmt: 'да', pstoRepeatCycles: [{ ...cycle, tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-2' }] }
@@ -77,7 +77,7 @@ describe('assignment removal and cancellation are distinct operations', () => {
     expect(restoreActiveLnkCancelledResults({ ...report, hasRk: 'да' }).rkResult).toBe(result)
   })
   it('keeps cancelled PSTO factual after report preparation and dispatcher recalculation', () => {
-    const row: WeldRow = { id: 1, joint: 'F1', hasVik: 'да', weldDate: '2026-08-01',
+    const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, id: 1, joint: 'F1', hasVik: 'да', weldDate: '2026-08-01',
       pstoRequired: 'отменен', pstoRequest: 'ПСТО', pstoResult: 'проведено', tvmtRequest: 'ТВМТ', tvmtResult: 'не годен',
       preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', requestName: 'ВИК до ТО', result: 'годен' }],
       pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'Повтор' }],
@@ -87,14 +87,14 @@ describe('assignment removal and cancellation are distinct operations', () => {
     expect(report[0].finalStatus).toBe('ожидает заявку') // primary VIK still needs its request; not a new PSTO cycle
     expect(prepareReportRows(report)[0]).toMatchObject({ pstoResult: report[0].pstoResult, finalStatus: report[0].finalStatus })
     expect(prepareReportRowsInPlace([structuredClone(row)])[0].finalStatus).toBe(report[0].finalStatus)
-    expect(restoreActivePstoCancelledResult({ ...report[0], pstoRequired: 'да' }).pstoResult).toBe('проведено')
+    expect(restoreActivePstoCancelledResult({ preHeatTreatmentMode: 'allPsto' as const, ...report[0], pstoRequired: 'да' }).pstoResult).toBe('проведено')
   })
   it('uses cancelled, not waiting (cancelled), when there is no result', () => {
     expect(getCancelledLnkResultDisplay('ожидает НК')).toBe('отменен')
     expect(getCancelledPstoResultDisplay('ожидает заявку')).toBe('отменен')
   })
   it('preserves the performed assignment and required repeat when future line work is cancelled', () => {
-    const row: WeldRow = { ...base, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoResult: 'проведено', heatTreatmentDiagram: 'ДИАГРАММА-1', tvmtRequest: 'ТВМТ-1', tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-ЗНК',
+    const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const, ...base, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoResult: 'проведено', heatTreatmentDiagram: 'ДИАГРАММА-1', tvmtRequest: 'ТВМТ-1', tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-ЗНК',
       preHeatTreatmentControls: [{ ...pre, requestName: 'ДО-1', result: 'годен', conclusionName: 'ДО-ЗНК' }], pstoRepeatCycles: [{ ...cycle, pstoRequest: 'ПОВТОР-2', pstoResult: 'ожидает' }] }
     const next = buildPstoCancelledRow({ row, cancellationDate: '2026-09-28', cancellationBasis: 'Решение' })
     expect(next).toEqual(row)

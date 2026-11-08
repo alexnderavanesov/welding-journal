@@ -17,7 +17,7 @@ import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 const settings = DEFAULT_SAVE_CHECK_SETTINGS
 const base: WeldRow = {
   id: 626, joint: 'F52', weldDate: '2026-07-01', pstoRequired: 'да', hasVik: 'да',
-  preHeatTreatmentLnkEnabled: true, pstoRequest: 'P1', pstoRequestDate: '2026-07-02',
+  preHeatTreatmentMode: 'allPsto' as const, pstoRequest: 'P1', pstoRequestDate: '2026-07-02',
   pstoDate: '2026-07-10', pstoResult: 'проведено', heatTreatmentDiagram: 'D1',
 }
 const control = { id: 1, weldJointId: 626, method: 'ВИК', requestName: 'PRE', requestDate: '2026-07-07' }

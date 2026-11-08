@@ -8,8 +8,33 @@ import { getWeldFormSaveBlockReason } from './weld-form-save-reasons'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from './save-check-settings'
 import { normalizeWeldInput } from './weld-record-transforms'
 import { buildRepeatedJointDraft } from './repeated-joint-draft'
+import { JOURNAL_INLINE_FIELDS } from './journal-inline-edit'
+import type { WeldInput } from './weld-fields'
 
 describe('Т/ОП: mandatory physical shape independent of optional name settings', () => {
+  const legacy: WeldInput = { id: 7, joint: 'ОП-8', connectionType: 'Т1', materialGroup: 'М01 + М05', weldingMethod: 'РАД+РД' }
+  it.each([...JOURNAL_INLINE_FIELDS])('allows unrelated %s corrections of stored composition without hiding diagnostics', field => {
+    for (const value of ['1', null]) {
+      const next = { ...legacy, [field]: value }
+      expect(getWeldFormSaveBlockReason(next, legacy)).toBeNull()
+      expect(getSupportJointRuleIssues(next)).toHaveLength(2)
+    }
+  })
+  it.each(['materialGroup', 'weldingMethod', 'connectionType', 'weldDate', 'd1', 't1', 'stamp1K', 'weldLength', 'joint', 'line', 'projectTitle', 'subtitleCode'] as const)(
+    'still validates legacy composition when %s changes', field => {
+      const next = { ...legacy, [field]: field === 'connectionType' ? 'Т3' : field === 'materialGroup' ? 'М01 + М11' : '1' }
+      expect(getSupportJointRuleIssues(next, legacy).some(issue => issue.fieldKeys.includes('materialGroup'))).toBe(true)
+    },
+  )
+  it('does not exempt new/copied supports, new violations or other SP-13 checks', () => {
+    expect(getSupportJointRuleIssues(legacy)).toHaveLength(2)
+    expect(getSupportJointRuleIssues({ ...legacy, id: undefined }, legacy)).toHaveLength(2)
+    expect(getSupportJointRuleIssues({ ...legacy, id: 8 }, legacy)).toHaveLength(2)
+    expect(getSupportJointRuleIssues(legacy, { ...legacy, id: undefined })).toHaveLength(2)
+    expect(getSupportJointRuleIssues(legacy, { ...legacy, materialGroup: 'М01', weldingMethod: 'РД' })).toHaveLength(2)
+    expect(getWeldFormSaveBlockReason({ ...legacy, stamp2KFact: 'A' }, legacy)).toContain('с индексом 2')
+    expect(getWeldFormSaveBlockReason({ ...legacy, materialGroup: 'М01', weldingMethod: 'РД' }, legacy)).toBeNull()
+  })
   it('rejects both material heterogeneity and combined methods, including an unsaved C → T draft', () => {
     const row = { joint: 'ОП1', connectionType: 'Т4', materialGroup: 'М01 + М05', weldingMethod: 'РАД+РД' }
     const issues = getSupportJointRuleIssues(row, { ...row, joint: 'S1', connectionType: 'С17' })

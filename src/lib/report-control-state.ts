@@ -109,7 +109,7 @@ export function hasCompletedLnkRequestPosition(row: WeldInput, method: (typeof L
 
 export function canCreateLnkRequest(
   row: WeldInput,
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
 ) {
   const rejected = hasRejectedLnkResult(row)
   return LNK_METHODS.some((method) =>

@@ -26,7 +26,7 @@ describe('PSTO workflow line guard', () => {
     }
   })
   it('checks a large multi-line document with one weld read and batched program reads, never per joint', async () => {
-    const selected = Array.from({ length: 1_001 }, (_, index) => ({
+    const selected = Array.from({ length: 1_001 }, (_, index) => ({ preHeatTreatmentMode: 'allPsto' as const,
       id: index + 1,
       joint: `J${index + 1}`,
       projectTitle: 'Project',
@@ -44,7 +44,7 @@ describe('PSTO workflow line guard', () => {
   })
 
   it('allows a workflow only when every weld on the line has PSTO assigned', () => {
-    const selected = [{
+    const selected = [{ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       projectTitle: 'Проект',
@@ -61,7 +61,7 @@ describe('PSTO workflow line guard', () => {
   })
 
   it('blocks legacy partial line assignment before starting a profile workflow', () => {
-    const selected = [{
+    const selected = [{ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       projectTitle: 'Проект',
@@ -80,7 +80,7 @@ describe('PSTO workflow line guard', () => {
   })
 
   it('does not include duplicate-control records in line completeness', () => {
-    const selected = [{
+    const selected = [{ preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       projectTitle: 'Проект',
@@ -100,7 +100,7 @@ describe('PSTO workflow line guard', () => {
   })
 
   it('allows only a performed weld to finish its retained history outside an active PSTO line', () => {
-    const performed = {
+    const performed = { preHeatTreatmentMode: 'allPsto' as const,
       id: 1,
       joint: 'F1',
       projectTitle: 'Проект',
@@ -130,7 +130,7 @@ describe('PSTO workflow line guard', () => {
   })
 
   it('allows a cancelled weld with physical execution history to finish but does not start an untreated one', () => {
-    const cancelledPerformed = {
+    const cancelledPerformed = { preHeatTreatmentMode: 'allPsto' as const,
       id: 3,
       joint: 'F3',
       projectTitle: 'Проект',

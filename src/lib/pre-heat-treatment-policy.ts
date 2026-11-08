@@ -1,10 +1,18 @@
 import type { WeldInput } from '@/lib/weld-fields'
+import { isControlEnabledValue } from './control-availability-values'
 
-export type PreHeatTreatmentPolicyRow = WeldInput & {
-  /** Current server setting, not a user-editable or persisted weld field. */
-  preHeatTreatmentLnkEnabled?: boolean
+export type PreHeatTreatmentMode = 'selected' | 'allPsto'
+
+export function isPreHeatTreatmentRequiredByMode(row: WeldInput, mode = row.preHeatTreatmentMode) {
+  return mode === 'allPsto' || row.preHeatTreatmentRequired === true
 }
 
+export type PreHeatTreatmentPolicyRow = WeldInput
+
 export function isPreHeatTreatmentStageEnabled(row: PreHeatTreatmentPolicyRow) {
-  return row.preHeatTreatmentLnkEnabled !== false
+  return isPreHeatTreatmentRequiredByMode(row)
+}
+
+export function isPreHeatTreatmentApplicable(row: PreHeatTreatmentPolicyRow) {
+  return isPreHeatTreatmentStageEnabled(row) && isControlEnabledValue(row.pstoRequired)
 }

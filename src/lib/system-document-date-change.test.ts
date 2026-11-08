@@ -262,7 +262,7 @@ describe('system document date change', () => {
   })
 
   it('lets the server revalidation reject a newly introduced contradiction before persistence', () => {
-    const currentRows = [row(5, {
+    const currentRows = [row(5, { preHeatTreatmentMode: 'allPsto' as const,
       weldDate: '2026-08-10',
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО',

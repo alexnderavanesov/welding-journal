@@ -13,6 +13,105 @@ vi.mock('./weld-page-refresh', () => ({ subscribeWeldPageRefresh: mocks.subscrib
 const resultAt = (revision: number): JournalGridResult => ({ rows: [], rowCount: 200000, revision })
 const block = { groupBy: [], route: [], start: 0, end: 100 }
 const childBlock = { ...block, groupBy: ['line' as const], route: ['L'] }
+
+it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)('opens fresh %s rows after leaving the report while another client saves', async report => {
+  let revision = 1
+  mocks.read.mockImplementation(async ({ data }) => {
+    if (data.revision !== undefined && data.revision !== revision) throw new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
+    return { ...resultAt(revision), rows: [{ id: revision }] }
+  })
+  mocks.summary.mockImplementation(async () => ({ total: revision, acceptedWdiTotal: revision }))
+  const columnFilters = { line: 'L', search: 'стык' }, sort = { fieldKey: 'joint' as const, direction: 'desc' as const }
+  const view = renderHook(({ enabled }) => useJournalServerQuery({ report: enabled ? report : 'weldingJournal', enabled, columnFilters, sort }),
+    { wrapper, initialProps: { enabled: true } })
+  try {
+    await act(async () => { await view.result.current.source.load(childBlock) })
+    act(() => view.result.current.source.rowsChanged([{ id: 1 }]))
+    const previous = view.result.current.source
+    const capturedSnapshot = previous.getSnapshot!()
+    view.rerender({ enabled: false })
+    revision = 2
+    view.rerender({ enabled: true })
+    expect(view.result.current.rowsReady).toBe(false)
+    expect(view.result.current.source.identity).not.toBe(previous.identity)
+    await act(async () => { await view.result.current.source.load(childBlock) })
+    expect(mocks.read.mock.lastCall![0].data).toMatchObject({ report, columnFilters, sort, revision: undefined })
+    expect(view.result.current.rowsReady).toBe(false)
+    act(() => view.result.current.source.rowsChanged([{ id: 2 }]))
+    expect(view.result.current.rows).toEqual([{ id: 2 }])
+    expect(view.result.current.totalCount).toBe(2)
+    expect(view.result.current.source.updatesAvailable).toBe(false)
+    expect(view.result.current.source.revisionExpired).toBe(false)
+    expect(capturedSnapshot).toEqual({ revision: 1, columnFilters })
+  } finally { view.unmount() }
+})
+
+it.each(['reply', 'revision-error'] as const)('ignores a late block %s from a previous visit to the same report', async outcome => {
+  const view = renderHook(({ enabled }) => useJournalServerQuery({ enabled, columnFilters: {}, sort: null }), { wrapper, initialProps: { enabled: true } })
+  try {
+    await act(async () => { await view.result.current.source.load(block) })
+    act(() => view.result.current.source.rowsChanged([{ id: 1 }]))
+    const previous = view.result.current.source
+    let resolve!: (result: JournalGridResult) => void, reject!: (error: Error) => void
+    mocks.read.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no }))
+    const old = previous.load({ ...block, start: 100, end: 200 }).catch(error => error)
+    view.rerender({ enabled: false }); view.rerender({ enabled: true })
+    mocks.read.mockResolvedValueOnce(resultAt(2))
+    await act(async () => { await view.result.current.source.load(block) })
+    act(() => view.result.current.source.rowsChanged([{ id: 2 }]))
+    const current = view.result.current.source.identity
+    await act(async () => {
+      if (outcome === 'reply') resolve(resultAt(1))
+      else reject(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.'))
+      expect((await old).name).toBe('AbortError')
+    })
+    act(() => {
+      previous.rowsChanged([{ id: 1 }])
+      previous.recoverRevision?.(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.'))
+    })
+    expect(view.result.current.source.identity).toBe(current)
+    expect(view.result.current.rows).toEqual([{ id: 2 }])
+    expect(view.result.current.source.updatesAvailable).toBe(false)
+  } finally { view.unmount() }
+})
+
+it('ignores an expired counter from a previous visit and clears the old update notice on return', async () => {
+  let reject!: (error: Error) => void
+  mocks.summary.mockImplementationOnce(() => new Promise((_resolve, no) => { reject = no }))
+  const view = renderHook(({ enabled }) => useJournalServerQuery({ enabled, columnFilters: {}, sort: null }), { wrapper, initialProps: { enabled: true } })
+  try {
+    await act(async () => { await view.result.current.source.load(block) })
+    act(() => view.result.current.source.rowsChanged([{ id: 1 }]))
+    act(() => view.result.current.source.recoverRevision?.(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')))
+    expect(view.result.current.source.revisionExpired).toBe(true)
+    view.rerender({ enabled: false }); view.rerender({ enabled: true })
+    expect(view.result.current.source.updatesAvailable).toBe(false)
+    mocks.read.mockResolvedValueOnce(resultAt(2))
+    mocks.summary.mockResolvedValueOnce({ total: 2, acceptedWdiTotal: 2 })
+    await act(async () => { await view.result.current.source.load(block) })
+    act(() => view.result.current.source.rowsChanged([{ id: 2 }]))
+    await act(async () => { reject(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')) })
+    expect(view.result.current.rowsReady).toBe(true)
+    expect(view.result.current.totalCount).toBe(2)
+    expect(view.result.current.source.updatesAvailable).toBe(false)
+    expect(view.result.current.summaryError).toBeUndefined()
+  } finally { view.unmount() }
+})
+
+it('starts a new visit even when the intervening report has not loaded any blocks', async () => {
+  const view = renderHook(({ report }: { report: 'weldingJournal' | 'lnk' }) => useJournalServerQuery({ report, enabled: true, columnFilters: {}, sort: null }),
+    { wrapper, initialProps: { report: 'weldingJournal' } })
+  try {
+    await act(async () => { await view.result.current.source.load(block) })
+    act(() => view.result.current.source.rowsChanged([{ id: 1 }]))
+    const previous = view.result.current.source.identity
+    view.rerender({ report: 'lnk' }); view.rerender({ report: 'weldingJournal' })
+    expect(view.result.current.rowsReady).toBe(false)
+    expect(view.result.current.source.identity).not.toBe(previous)
+    await act(async () => { await view.result.current.source.load(block) })
+    expect(mocks.read.mock.lastCall![0].data.revision).toBeUndefined()
+  } finally { view.unmount() }
+})
 it('keeps each snapshot reader on its captured filters while reading the current revision', async () => {
   const { result, rerender, unmount } = renderHook(({ line }) =>
     useJournalServerQuery({ enabled: true, columnFilters: { line }, sort: null }), { wrapper, initialProps: { line: 'A' } })
