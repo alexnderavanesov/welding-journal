@@ -4,6 +4,7 @@ import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vite'
 import type { Plugin } from 'vite'
 import { devTransportCancellation } from './scripts/vite-dev-transport.ts'
+import { pdfAssets } from './scripts/vite-pdf-assets.ts'
 
 function tanstackClientRpcDevCompatibility(): Plugin {
   return {
@@ -48,5 +49,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [tanstackClientRpcDevCompatibility(), tanstackStart({ start: { entry: './start.ts' } }), nitro(), react(), devTransportCancellation()],
+  plugins: [tanstackClientRpcDevCompatibility(), tanstackStart({ start: { entry: './start.ts' } }), nitro(), react(), devTransportCancellation(), pdfAssets()],
 })

@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
-import { count, eq, or } from 'drizzle-orm'
+import { count, eq, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { dispatcherAcceptedWarnings, linePrograms, pstoChainExceptions, weldJoints } from '@/db/schema'
+import { dispatcherAcceptedWarnings, linePrograms, lineSchemeBundles, pstoChainExceptions, weldJoints } from '@/db/schema'
 import { normalizeLineProgramIdentity } from '@/lib/line-program'
 import { requirePermission } from './access-context'
 import { lineProgramWeldWhere } from './line-program-rename'
@@ -38,6 +38,8 @@ export async function deleteEmptyLineProgram(tx: SystemDocumentSequenceTransacti
   if (!line || line.updatedAt.toISOString() !== data.version || line.updatedAt.getTime() !== snapshot.updatedAt.getTime()) throw new Error('Программа линии изменена. Обновите список линий.')
   const check = await inspect(tx, line)
   if (check.reason) throw new Error(check.reason)
+  await tx.update(lineSchemeBundles).set({ projectTitle: line.projectTitle, subtitleCode: line.subtitleCode, line: line.line,
+    version: sql`${lineSchemeBundles.version} + 1` }).where(eq(lineSchemeBundles.lineProgramId, line.id))
   await tx.delete(dispatcherAcceptedWarnings).where(eq(dispatcherAcceptedWarnings.lineProgramId, line.id))
   await tx.delete(linePrograms).where(eq(linePrograms.id, line.id))
   await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([line], new Map()) })

@@ -1,0 +1,2 @@
+ALTER TABLE "line_scheme_annotations" DROP CONSTRAINT "line_scheme_annotations_color_check";--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD CONSTRAINT "line_scheme_annotations_color_check" CHECK ("line_scheme_annotations"."color" in ('#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#6b7280', '#475569', '#0284c7', '#7c3aed', '#0f766e'));

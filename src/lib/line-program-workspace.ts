@@ -23,7 +23,7 @@ export type ProgramBasisKey = typeof PROGRAM_BASIS_FIELDS[keyof typeof PROGRAM_B
 export type ProgramPatch = Partial<Record<ProgramMethod, ProgramAssignment>> & Partial<Record<ProgramBasisKey, string>>
 export type ProgramChange = { id: number; values: ProgramPatch }
 export type ProgramSlice = 'all' | 'covered' | 'missing' | 'reduction' | 'excess' | 'approved' | 'additional' | 'assigned' | 'results' | 'cancelled' | 'duplicates' | 'candidates'
-export type ProgramSelection = { stamp?: string; unassigned?: boolean; kind?: 'common' | 'pvk'; slice: ProgramSlice; status?: ProgramStatusFilter; search?: string; explanationList?: ProgramExplanationList; reveal?: number }
+export type ProgramSelection = { stamp?: string; unassigned?: boolean; kind?: 'common' | 'pvk'; slice: ProgramSlice; status?: ProgramStatusFilter; search?: string; explanationList?: ProgramExplanationList; reveal?: number; focusedJoint?: number }
 export function matchesProgramScope(row: WeldRow, scope: Pick<ProgramSelection, 'stamp' | 'unassigned'>) {
   if (!scope.stamp && !scope.unassigned) return true
   if (!isLineProgramControlRow(row)) return false

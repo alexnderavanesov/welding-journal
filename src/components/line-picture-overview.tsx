@@ -237,6 +237,13 @@ function LinePictureTaskGroup({
     setShowAll(false)
   }, [group.key])
 
+  const runAction: JointDispatcherTaskActionHandler = (taskRow, task, action) => {
+    // A quota opens the line overview at the joint chosen in the picture.
+    // Corrections (for example, a stamp) still target the task's own row.
+    const target = task.kind === 'percentage-line-control' && action.id === 'assign-percentage-controls' ? currentRow : taskRow
+    return onRunAction(target, task, action)
+  }
+
   return (
     <section className="overflow-hidden rounded-md border border-slate-200 bg-white" aria-label={`${group.code} ${group.title}`}>
       <button
@@ -271,7 +278,7 @@ function LinePictureTaskGroup({
               presentation="line"
               isCurrentRow={isDispatcherTaskDirectlyRelatedToJoint(task, currentRow)}
               isHighlighted={task.key === highlightedTaskKey}
-              onRunAction={onRunAction}
+              onRunAction={runAction}
             />
           ))}
           {hiddenTaskCount > 0 ? (

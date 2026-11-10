@@ -130,6 +130,45 @@ describe('document grid session', () => {
     act(() => result.current.capture())
     expect(readDocumentGridSession('view')).toMatchObject({ firstRow: 237, rowId: 'document:238', top: 13289, offset: 17, left: 70 })
   })
+  it.each(['before', 'after'] as const)('captures a child block arriving %s scroll end before the registry unmounts', order => {
+    let scheduled: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { scheduled = callback; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => { scheduled = undefined })
+    const flush = () => act(() => { const callback = scheduled; scheduled = undefined; callback?.(0) })
+    const { frame, viewport } = visibleFrame('group:237', 237), element = viewport.querySelector('.ag-row')!
+    const reference = { current: frame as HTMLDivElement | null }
+    type Data = { id: string }
+    const root = { id: 'group:249', rowIndex: 249, rowTop: 249 * 56, data: { id: 'group:249' }, level: 0, parent: null }
+    let node = { id: 'group:237', rowIndex: 237, rowTop: 237 * 56, data: { id: 'group:237' }, level: 0, parent: null, stub: false } as unknown as IRowNode<Data>
+    const api = { isDestroyed: () => false, getDisplayedRowCount: () => 376, getDisplayedRowAtIndex: () => node } as unknown as GridApi<Data>
+    const blocks = { getRowId: (row: Data) => row.id, load: vi.fn() }
+    const hook = renderHook(() => useDocumentGridSession(api, reference, 'view', 'scope', '', EMPTY_DOCUMENT_GRID_SESSION, false, blocks))
+    viewport.scrollTop = 237 * 56 + 5
+    act(() => { hook.result.current.rememberRows([], 237, [node.data!]); hook.result.current.bodyScrollEnd() })
+    expect(readDocumentGridSession('view').firstRow).toBe(237)
+    // The native scroll may settle while the destination block is still a
+    // loading stub. Its response does not necessarily produce another scroll.
+    viewport.scrollTop = 363 * 56 + 5
+    element.removeAttribute('row-id'); element.setAttribute('row-index', '363')
+    node = { stub: true, rowIndex: 363 } as IRowNode<Data>
+    if (order === 'after') act(() => hook.result.current.bodyScrollEnd())
+    node = { id: 'document:363', rowIndex: 363, rowTop: 363 * 56, data: { id: 'document:363' }, level: 1, parent: root, stub: false } as unknown as IRowNode<Data>
+    element.setAttribute('row-id', node.id!)
+    act(() => {
+      hook.result.current.rememberRows([], 249, [root.data])
+      hook.result.current.rememberRows(['LINE-250'], 113, [node.data!])
+      // DocumentsHistoryGrid invokes restore on modelUpdated for every block.
+      hook.result.current.restore()
+    })
+    flush()
+    if (order === 'before') act(() => hook.result.current.bodyScrollEnd())
+    // As in the existing teardown regression, a removed frame cannot provide
+    // a replacement snapshot. The live anchor must already have been captured.
+    reference.current = null
+    hook.unmount()
+    expect(readDocumentGridSession('view')).toMatchObject({ rowId: 'document:363', firstRow: 363, top: 363 * 56 + 5,
+      breadcrumbs: [{ id: 'group:249', route: [], index: 249 }, { id: 'document:363', route: ['LINE-250'], index: 113 }] })
+  })
   it('anchors the scrolled document, not the floating copy of its distant group header', () => {
     const { frame, viewport } = visibleFrame('document:110', 360)
     viewport.scrollTop = 360 * 56 + 5

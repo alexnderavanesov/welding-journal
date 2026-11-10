@@ -299,17 +299,23 @@ describe('document grid server lifecycle', () => {
       for (let index = 0; index < 8; index++) grid.props.onModelUpdated()
     })
     expect(grid.api.forEachNode).not.toHaveBeenCalled()
+    // Selection and the late-block scroll anchor each coalesce their own RAF;
+    // capturing the visible anchor must not traverse the cached model again.
+    expect(frames.size).toBe(2)
     act(() => { const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(16)) })
     expect(grid.api.forEachNode).toHaveBeenCalledTimes(1)
     act(() => grid.props.onModelUpdated())
-    expect(frames.size).toBe(1)
+    expect(frames.size).toBe(2)
     // Explicit operator selection is still immediate; it consumes any queued
     // refresh instead of leaving a second traversal or older selection behind.
     view.rerender(<DocumentsHistoryGrid {...initial} selectedDocuments={[{ id: 2 }]} />)
     expect(grid.api.forEachNode).toHaveBeenCalledTimes(2)
+    expect(frames.size).toBe(1)
+    act(() => { const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(32)) })
+    expect(grid.api.forEachNode).toHaveBeenCalledTimes(2)
     expect(frames.size).toBe(0)
     act(() => grid.props.onModelUpdated())
-    expect(frames.size).toBe(1)
+    expect(frames.size).toBe(2)
     view.unmount()
     expect(frames.size).toBe(0)
   })

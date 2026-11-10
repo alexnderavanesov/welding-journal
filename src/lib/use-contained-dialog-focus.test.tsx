@@ -4,7 +4,7 @@ import { useLayoutEffect } from 'react'
 import { useContainedDialogFocus } from './use-contained-dialog-focus'
 import { shouldDeferModalEscape } from './use-report-modal-escape-key'
 
-function Dialog({ label, onClose, busy = false }: { label: string; onClose: () => void; busy?: boolean }) {
+function Dialog({ label, onClose, busy = false }: { label: string; onClose: (() => void) | null; busy?: boolean }) {
   const ref = useContainedDialogFocus(onClose, busy)
   return <section data-modal-dialog="true"><div ref={ref}><button>{label}</button><p>Текст документа</p></div></section>
 }
@@ -49,4 +49,15 @@ it('keeps a busy dialog open on Escape', () => {
   render(<Dialog label="Сохранение" onClose={close} busy />)
   fireEvent.keyDown(document.body, { key: 'Escape' })
   expect(close).not.toHaveBeenCalled()
+})
+
+it('owns Escape without closing either dialog when explicit closing is required', () => {
+  const below = vi.fn()
+  render(<><Dialog label="Основное окно" onClose={below} /><Dialog label="Схема" onClose={null} /></>)
+  screen.getByRole('button', { name: 'Схема' }).focus()
+  const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  window.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+  expect(below).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Схема' })).toHaveFocus()
 })

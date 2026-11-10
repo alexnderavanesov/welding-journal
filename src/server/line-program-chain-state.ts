@@ -7,6 +7,7 @@ import { normalizeSystemIndexSettings } from '@/lib/system-index-settings'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { buildNumberArrayMatch } from './weld-request-utils'
+import { syncSchemePhysicalMembership } from './line-scheme-identity'
 
 export async function attachProgramChainStates<T extends { id: number }>(rows: T[], db: Pick<SystemDocumentSequenceTransaction, 'select'>) {
   if (!rows.length) return rows as (T & { programChainState?: ProgramChainState })[]
@@ -26,7 +27,7 @@ export async function loadProgramChainScopeRows(tx: Pick<SystemDocumentSequenceT
   for (let offset = 0; offset < scopes.length; offset += 500) {
     const tuples = scopes.slice(offset, offset + 500).map(row => sql`(${String(row.projectTitle ?? '').trim().toLocaleLowerCase('ru')}, ${String(row.subtitleCode ?? '').trim().toLocaleLowerCase('ru')}, ${String(row.line ?? '').trim().toLocaleLowerCase('ru')})`)
     const batch = await tx.select({ id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
-      line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality, weldDate: weldJoints.weldDate,
+      line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality, revisionActuality: weldJoints.revisionActuality, weldDate: weldJoints.weldDate,
       connectionType: weldJoints.connectionType, weldLength: weldJoints.weldLength,
     }).from(weldJoints).where(sql`(lower(btrim(coalesce(${weldJoints.projectTitle}, ''))), lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))),
       lower(btrim(coalesce(${weldJoints.line}, '')))) in (${sql.join(tuples, sql`, `)})`)
@@ -80,4 +81,5 @@ export async function syncProgramChainStates(
           then excluded.replacement_coil_ids else ${weldJointProgramStates.replacementCoilIds} end` },
     })
   }
+  await syncSchemePhysicalMembership(tx, finalRows, states, previous, settings)
 }

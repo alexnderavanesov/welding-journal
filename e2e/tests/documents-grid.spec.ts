@@ -17,7 +17,7 @@ const project = 'E2E document grid blocks'
 const defaults: DocumentHistoryGridRequest = { startRow: 0, endRow: 100, rowGroupCols: [], groupKeys: [], sortModel: [] }
 type Kind = 'generated' | 'system'
 const columnFilters = { project: buildWeldColumnValueFilter([project]) }
-
+const distantRestoreTitle = 'document grid browser: restores a child block beneath a distant root group without enumerating earlier groups'
 async function prepareClipboard(page: Page, context: BrowserContext, browserName: string) {
   if (browserName !== 'webkit') return context.grantPermissions(['clipboard-read', 'clipboard-write'])
   // WebKit automation cannot grant OS clipboard permissions. Keep real range
@@ -515,7 +515,23 @@ test('document grid browser: registry return restores a distant position, explic
   await expect(grid.locator(`.ag-row[row-id="document:${firstId}"]`).getByRole('checkbox')).toBeChecked()
 })
 
-test('document grid browser: restores a child block beneath a distant root group without enumerating earlier groups', async ({ page }, info) => {
+for (const lateChild of [false, true]) test(lateChild ? `${distantRestoreTitle} (late child block)` : distantRestoreTitle, async ({ page }, info) => {
+  let delayed = false
+  if (lateChild) {
+    await page.route('**/_serverFn/**', async route => {
+      const request = route.request(), name = rpcName(request.url())
+      if (!delayed && name.startsWith('listRemoteGeneratedDocumentHistoryGrid_') && request.postData()) {
+        const { data } = deserializeRpcPayload(request.postData()!) as { data: DocumentHistoryGridRequest }
+        if (data.startRow === 100 && data.groupKeys[0] === '["value","LINE-250"]' && !data.selectionOnly && !data.countRoutes) {
+          delayed = true
+          // Deliberately let the native scroll settle before this remote block
+          // arrives. A successful restore must not depend on a second gesture.
+          await new Promise(resolve => setTimeout(resolve, 800))
+        }
+      }
+      await route.continue()
+    })
+  }
   // 250 distinct root groups, with 126 children in the last group. Neither the
   // ancestor nor the target child belongs to its store's first block.
   await withLineProgramFixture(async db => {
@@ -605,6 +621,7 @@ test('document grid browser: restores a child block beneath a distant root group
   expect(savedPosition).not.toBeNull()
   expect(savedPosition!.index).toBeGreaterThanOrEqual(350)
   const savedScroll = await viewport.evaluate(element => element.scrollTop)
+  if (lateChild) expect(delayed, 'The late-child case must hold the LINE-250 child100 request before leaving').toBe(true)
   await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
   await expect(page.locator('[data-document-history-grid^="system:lnkRequest:"]')).toBeVisible()
   const beforeReturn = requests.length

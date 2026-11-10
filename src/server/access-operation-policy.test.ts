@@ -46,6 +46,21 @@ describe('server operation access boundary', () => {
       expect(() => permissions.forEach(permission => assertPermission(pstoOnly, permission))).not.toThrow()
     }
   })
+  it('keeps the joint picture behind journal viewing without granting edits or another specialty', () => {
+    for (const name of ['getWeldJointById', 'listWeldJointChain']) {
+      const required = getOperationPermissions(getOperationPolicy('weld-read-api.ts', name), { id: 1 })
+      expect(required).toEqual(['welding.view'])
+      for (const extra of [[], ['lnk.view'], ['psto.view']] as AccessIdentity['permissions'][]) {
+        const schemeReader = { ...engineer, permissions: ['schemes.view', ...extra] as AccessIdentity['permissions'] }
+        expect(() => required.forEach(permission => assertPermission(schemeReader, permission))).toThrow()
+      }
+      const reader = { ...engineer, permissions: ['schemes.view', 'welding.view'] as AccessIdentity['permissions'] }
+      expect(() => required.forEach(permission => assertPermission(reader, permission))).not.toThrow()
+      expect(() => assertPermission(reader, 'welding.edit')).toThrow()
+      expect(redactWeldData(reader, { id: 1, joint: 'S1', weldDate: '2014-04-17', lnkNote: 'hidden', pstoNote: 'hidden' }))
+        .toEqual({ id: 1, joint: 'S1', weldDate: '2014-04-17' })
+    }
+  })
   it('does not let template editors modify DZ or bypass mixed field/query checks', () => {
     expect(() => getOperationPermissions('@settingEdit', { key: 'dispatcher' }).forEach(permission => assertPermission(engineer, permission))).toThrow()
     expect(() => assertReadableQuery(engineer, { columnFilters: { lnkNote: '=private' } })).toThrow()

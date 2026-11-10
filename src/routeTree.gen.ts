@@ -17,6 +17,7 @@ import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AppDocumentsRouteImport } from './routes/_app.documents'
 import { Route as AppJournalRouteImport } from './routes/_app.journal'
 import { Route as AppLineProgramRouteImport } from './routes/_app.line-program'
+import { Route as AppLineSchemesRouteImport } from './routes/_app.line-schemes'
 import { Route as AppLnkRouteImport } from './routes/_app.lnk'
 import { Route as AppPercentageLinesRouteImport } from './routes/_app.percentage-lines'
 import { Route as AppPstoRouteImport } from './routes/_app.psto'
@@ -25,6 +26,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppStatisticsRouteImport } from './routes/_app.statistics'
 import { Route as AppUserGuideRouteImport } from './routes/_app.user-guide'
 import { Route as AppWelderStampsRouteImport } from './routes/_app.welder-stamps'
+import { Route as ApiLineSchemeFileRouteImport } from './routes/api/line-scheme-file'
 import { Route as ApiReportExcelRouteImport } from './routes/api/report-excel'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiMaintenanceDispatcherRefreshRouteImport } from './routes/api/maintenance/dispatcher-refresh'
@@ -68,6 +70,11 @@ const AppLineProgramRoute = AppLineProgramRouteImport.update({
   path: '/line-program',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLineSchemesRoute = AppLineSchemesRouteImport.update({
+  id: '/line-schemes',
+  path: '/line-schemes',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLnkRoute = AppLnkRouteImport.update({
   id: '/lnk',
   path: '/lnk',
@@ -108,6 +115,11 @@ const AppWelderStampsRoute = AppWelderStampsRouteImport.update({
   path: '/welder-stamps',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiLineSchemeFileRoute = ApiLineSchemeFileRouteImport.update({
+  id: '/api/line-scheme-file',
+  path: '/api/line-scheme-file',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiReportExcelRoute = ApiReportExcelRouteImport.update({
   id: '/api/report-excel',
   path: '/api/report-excel',
@@ -133,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/documents': typeof AppDocumentsRoute
   '/journal': typeof AppJournalRoute
   '/line-program': typeof AppLineProgramRoute
+  '/line-schemes': typeof AppLineSchemesRoute
   '/lnk': typeof AppLnkRoute
   '/percentage-lines': typeof AppPercentageLinesRoute
   '/psto': typeof AppPstoRoute
@@ -141,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
+  '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
@@ -153,6 +167,7 @@ export interface FileRoutesByTo {
   '/documents': typeof AppDocumentsRoute
   '/journal': typeof AppJournalRoute
   '/line-program': typeof AppLineProgramRoute
+  '/line-schemes': typeof AppLineSchemesRoute
   '/lnk': typeof AppLnkRoute
   '/percentage-lines': typeof AppPercentageLinesRoute
   '/psto': typeof AppPstoRoute
@@ -161,6 +176,7 @@ export interface FileRoutesByTo {
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
+  '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
@@ -175,6 +191,7 @@ export interface FileRoutesById {
   '/_app/documents': typeof AppDocumentsRoute
   '/_app/journal': typeof AppJournalRoute
   '/_app/line-program': typeof AppLineProgramRoute
+  '/_app/line-schemes': typeof AppLineSchemesRoute
   '/_app/lnk': typeof AppLnkRoute
   '/_app/percentage-lines': typeof AppPercentageLinesRoute
   '/_app/psto': typeof AppPstoRoute
@@ -183,6 +200,7 @@ export interface FileRoutesById {
   '/_app/statistics': typeof AppStatisticsRoute
   '/_app/user-guide': typeof AppUserGuideRoute
   '/_app/welder-stamps': typeof AppWelderStampsRoute
+  '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
@@ -197,6 +215,7 @@ export interface FileRouteTypes {
     | '/documents'
     | '/journal'
     | '/line-program'
+    | '/line-schemes'
     | '/lnk'
     | '/percentage-lines'
     | '/psto'
@@ -205,6 +224,7 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/user-guide'
     | '/welder-stamps'
+    | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
     | '/api/maintenance/dispatcher-refresh'
@@ -217,6 +237,7 @@ export interface FileRouteTypes {
     | '/documents'
     | '/journal'
     | '/line-program'
+    | '/line-schemes'
     | '/lnk'
     | '/percentage-lines'
     | '/psto'
@@ -225,6 +246,7 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/user-guide'
     | '/welder-stamps'
+    | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
     | '/api/maintenance/dispatcher-refresh'
@@ -238,6 +260,7 @@ export interface FileRouteTypes {
     | '/_app/documents'
     | '/_app/journal'
     | '/_app/line-program'
+    | '/_app/line-schemes'
     | '/_app/lnk'
     | '/_app/percentage-lines'
     | '/_app/psto'
@@ -246,6 +269,7 @@ export interface FileRouteTypes {
     | '/_app/statistics'
     | '/_app/user-guide'
     | '/_app/welder-stamps'
+    | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
     | '/api/maintenance/dispatcher-refresh'
@@ -257,6 +281,7 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   AccountLinkRoute: typeof AccountLinkRoute
   ActivityRoute: typeof ActivityRoute
+  ApiLineSchemeFileRoute: typeof ApiLineSchemeFileRoute
   ApiReportExcelRoute: typeof ApiReportExcelRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiMaintenanceDispatcherRefreshRoute: typeof ApiMaintenanceDispatcherRefreshRoute
@@ -320,6 +345,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLineProgramRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/line-schemes': {
+      id: '/_app/line-schemes'
+      path: '/line-schemes'
+      fullPath: '/line-schemes'
+      preLoaderRoute: typeof AppLineSchemesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/lnk': {
       id: '/_app/lnk'
       path: '/lnk'
@@ -376,6 +408,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWelderStampsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/line-scheme-file': {
+      id: '/api/line-scheme-file'
+      path: '/api/line-scheme-file'
+      fullPath: '/api/line-scheme-file'
+      preLoaderRoute: typeof ApiLineSchemeFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/report-excel': {
       id: '/api/report-excel'
       path: '/api/report-excel'
@@ -404,6 +443,7 @@ interface AppRouteChildren {
   AppDocumentsRoute: typeof AppDocumentsRoute
   AppJournalRoute: typeof AppJournalRoute
   AppLineProgramRoute: typeof AppLineProgramRoute
+  AppLineSchemesRoute: typeof AppLineSchemesRoute
   AppLnkRoute: typeof AppLnkRoute
   AppPercentageLinesRoute: typeof AppPercentageLinesRoute
   AppPstoRoute: typeof AppPstoRoute
@@ -418,6 +458,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDocumentsRoute: AppDocumentsRoute,
   AppJournalRoute: AppJournalRoute,
   AppLineProgramRoute: AppLineProgramRoute,
+  AppLineSchemesRoute: AppLineSchemesRoute,
   AppLnkRoute: AppLnkRoute,
   AppPercentageLinesRoute: AppPercentageLinesRoute,
   AppPstoRoute: AppPstoRoute,
@@ -436,6 +477,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   AccountLinkRoute: AccountLinkRoute,
   ActivityRoute: ActivityRoute,
+  ApiLineSchemeFileRoute: ApiLineSchemeFileRoute,
   ApiReportExcelRoute: ApiReportExcelRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiMaintenanceDispatcherRefreshRoute: ApiMaintenanceDispatcherRefreshRoute,

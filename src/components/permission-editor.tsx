@@ -3,6 +3,7 @@ import { FieldHelp } from './field-help'
 import { ACCESS_AREAS, ACCESS_ACTIONS, AREA_ACTIONS, type AccessArea, type AccessAction, type Permission } from '@/lib/access-permissions'
 
 const AREA_HELP: Record<AccessArea, string> = {
+  schemes: 'Просмотр чертежей и состояний физических стыков; редактирование точек и редакций; удаление файлов. Карточки стыков сохраняют свои права доступа.',
   welding: 'Стыки, параметры сварки, клейма и примечания сварочного журнала. Результаты ЛНК и ПСТО настраиваются отдельно.',
   lnk: 'Отчёт ЛНК, результаты неразрушающего контроля, заявки и заключения ЛНК.',
   psto: 'ПСТО и ТВМТ: заявки, результаты, заключения, повторы и примечания термообработки.',

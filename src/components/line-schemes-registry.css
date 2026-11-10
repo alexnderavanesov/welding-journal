@@ -1,0 +1,8 @@
+.line-schemes-registry .ag-root-wrapper { border: 0; border-radius: 0; }
+/* The API returns at most 50 lines. Let this bounded page use native document
+   scrolling; never size the DOM from the registry's total record count. */
+.line-schemes-registry .read-only-grid-dialog { height: auto; min-height: 120px; }
+.line-schemes-registry .read-only-grid-dialog > .program-grid-frame { height: auto; }
+
+/* Only this registry follows the page; keep the real AG header clickable. */
+.line-schemes-registry .ag-grid-pinned-top-rows { z-index: 5; will-change: translate; box-shadow: 0 1px 3px #33415512; }

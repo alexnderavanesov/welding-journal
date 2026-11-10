@@ -272,6 +272,7 @@ function ReportBackground({
     activeReport === 'statistics' ||
     activeReport === 'percentageLines' ||
     activeReport === 'documents' ||
+    activeReport === 'lineSchemes' ||
     activeReport === 'settings' ||
     activeReport === 'userGuide'
   const isWeldTableReport =

@@ -32,5 +32,6 @@ export type ActiveReport =
   | 'percentageLines'
   | 'statistics'
   | 'documents'
+  | 'lineSchemes'
   | 'settings'
   | 'userGuide'

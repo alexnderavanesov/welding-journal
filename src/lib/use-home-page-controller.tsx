@@ -729,7 +729,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       activeReport === 'heatTreatment' ||
       activeReport === 'lnk' ||
       activeReport === 'welderStamps' ||
-      activeReport === 'documents'),
+      activeReport === 'documents' || Boolean(editing)),
     setMessage,
   })
   const {
@@ -2346,10 +2346,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         setMessage('Стык больше не найден. Обновите картину стыка и повторите действие.')
         return
       }
-      captureReportContext('weldingJournal')
       setChainRecord(null)
-      setColumnFilters(buildExactJointFilters(fullRecord))
-      setActiveReport('weldingJournal')
+      // Editing from a drawing stays above it, retaining the PDF camera and
+      // unsaved overlay. The successful mutation refreshes its joint states.
+      if (activeReport !== 'lineSchemes') {
+        captureReportContext('weldingJournal')
+        setColumnFilters(buildExactJointFilters(fullRecord))
+        setActiveReport('weldingJournal')
+      }
       setEditing({ record: fullRecord })
     })
   }
@@ -2897,7 +2901,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         onSelect: () => {
           percentageLineNavigationRequestIdRef.current += 1
           setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'open-line', family: isTConnectionType(row.connectionType) ? 'supports' : undefined,
-            projectTitle: String(row.projectTitle ?? ''), subtitleCode: String(row.subtitleCode ?? ''), line: String(row.line ?? ''), stamp: '' })
+            projectTitle: String(row.projectTitle ?? ''), subtitleCode: String(row.subtitleCode ?? ''), line: String(row.line ?? ''), stamp: '', jointId: contextRows.length === 1 ? row.id : undefined })
           captureReportContext('percentageLines')
           setChainRecord(null); setEditing(null); setActiveReport('percentageLines')
         },
@@ -4082,9 +4086,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   async function runDispatcherTaskAction(
-    _selectedRow: WeldRow,
+    selectedRow: WeldRow,
     task: RepeatedJointTask,
     action: DispatcherTaskActionId | DispatcherTaskActionSpec,
+    fromJointPicture = false,
   ) {
     const actionId = typeof action === 'string' ? action : action.id
     if (actionId === 'restore-coil' && task.kind === 'check' && task.systemWarningCode === 'СП-09') {
@@ -4138,10 +4143,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
     if (actionId === 'open-line-program' && task.kind === 'line-consistency') {
       percentageLineNavigationRequestIdRef.current += 1
-      setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'assign-missing-controls',
+      setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'open-line',
         family: isTConnectionType(task.row.connectionType) ? 'supports' : undefined,
         projectTitle: task.projectTitle, subtitleCode: task.subtitleCode, line: task.line, stamp: '',
-        jointId: task.systemWarningCode === 'СП-08' ? task.row.id : undefined })
+        jointId: task.row.id })
       captureReportContext('percentageLines'); setChainRecord(null); setActiveReport('percentageLines')
       return
     }
@@ -4156,6 +4161,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         stamp: task.stamp,
         family: isTConnectionType(task.row.connectionType) ? 'supports' : undefined,
         demandKind: task.demandKind,
+        // The picture targets its joint; the dispatcher still targets the
+        // stamp whose quota needs attention, including off-screen stamps.
+        jointId: fromJointPicture ? selectedRow.id : undefined,
       })
       captureReportContext('percentageLines')
       setChainRecord(null)
@@ -4386,7 +4394,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (action.kind === 'dispatcherTask') {
       const task = adviceRepeatedJointTasks.find((candidate) => candidate.key === action.taskKey)
       if (options.runDispatcherAction && task && action.taskActionId) {
-        void runDispatcherTaskAction(row, task, action.taskAction ?? action.taskActionId)
+        void runDispatcherTaskAction(row, task, action.taskAction ?? action.taskActionId, true)
         return
       }
       openRowsInReport([task?.row ?? row], 'weldingJournal')
@@ -4443,7 +4451,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onEditRow: openWeldEditorFromJointPicture,
     onOpenCoilCorrection: row => setCoilCorrectionTarget({ rootId: row.id }),
     onRunNextAction: (row, action) => runJointNextAction(row, action, { runDispatcherAction: true }),
-    onRunDispatcherTaskAction: runDispatcherTaskAction,
+    onRunDispatcherTaskAction: (row, task, action) => runDispatcherTaskAction(row, task, action, true),
     canCreateRepeatedJoint: true,
     isRepeatedJointPending: repeatedJointMutation.isPending,
     onCreateRepeatedJoint: (task) => createRepeatedJoint(task, { fromChain: true }),

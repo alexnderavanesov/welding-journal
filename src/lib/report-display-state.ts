@@ -8,6 +8,7 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   percentageLines: 'Программа линий',
   statistics: 'Статистика',
   documents: 'Документы',
+  lineSchemes: 'Схемы линий',
   settings: 'Настройки',
   userGuide: 'Руководство пользователя',
 }
@@ -20,6 +21,7 @@ const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
   percentageLines: 'percentage-lines.xlsx',
   statistics: 'statistics.xlsx',
   documents: 'documents.xlsx',
+  lineSchemes: 'line-schemes',
   settings: 'settings.xlsx',
   userGuide: 'Руководство пользователя. Учет сварки.pdf',
 }

@@ -8,6 +8,7 @@ export const APP_REPORT_ROUTES = {
   percentageLines: '/line-program',
   statistics: '/statistics',
   documents: '/documents',
+  lineSchemes: '/line-schemes',
   settings: '/settings',
   userGuide: '/user-guide',
 } as const satisfies Record<ActiveReport, string>

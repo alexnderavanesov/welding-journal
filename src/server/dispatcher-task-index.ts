@@ -1190,6 +1190,7 @@ const DISPATCHER_ROW_CONTEXT_KEYS = [
   'subtitleCode',
   'line',
   'joint',
+  'connectionType',
   'officiality',
   'weldDate',
 ] as const

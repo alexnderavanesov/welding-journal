@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 import { withE2eDatabase } from '../database'
 import { isAccountRefreshRpc, rpcName } from '../rpc'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -18,8 +19,25 @@ test.afterEach(async ({ page }) => {
   })
 })
 
-test('изменение допуска через UI на 200000 стыков: СП-02 обновляется, факты сохраняются, SQL пакетный', async ({ page }) => {
+test('изменение допуска через UI на 200000 стыков: СП-02 обновляется, факты сохраняются, SQL пакетный', async ({ page }, info) => {
   test.setTimeout(240_000)
+  const traceRpc = process.env.PERMIT_SAVE_TRACE === '1', origin = performance.now()
+  const rpcTimings: { name: string; start: number; end: number | null; status: number | 'failed' | null }[] = []
+  if (traceRpc) {
+    const pending = new Map<Request, typeof rpcTimings[number]>()
+    page.on('request', request => {
+      if (!request.url().includes('/_serverFn/') || rpcTimings.length >= 80) return
+      const entry = { name: rpcName(request.url()), start: Math.round(performance.now() - origin), end: null, status: null }
+      pending.set(request, entry); rpcTimings.push(entry)
+    })
+    page.on('response', response => { const entry = pending.get(response.request()); if (entry) entry.status = response.status() })
+    page.on('requestfinished', request => {
+      const entry = pending.get(request); if (entry) { entry.end = Math.round(performance.now() - origin); pending.delete(request) }
+    })
+    page.on('requestfailed', request => {
+      const entry = pending.get(request); if (entry) { entry.end = Math.round(performance.now() - origin); entry.status = 'failed'; pending.delete(request) }
+    })
+  }
   await page.goto('/welder-stamps')
   await create(page, 'EPA3', ['М01', 'М05'])
   const [{ requireDb }, { markDispatcherTaskIndexDirty }, dispatcher, read, pg] = await Promise.all([
@@ -79,7 +97,14 @@ test('изменение допуска через UI на 200000 стыков: 
     await refresh('restored-material', 0)
     expect(await facts()).toEqual(before)
     console.log(JSON.stringify({ workflow: 'permit-ui-and-dispatcher-200k', measurements }))
-  } finally { prototype.query = original }
+  } finally {
+    prototype.query = original
+    if (traceRpc) {
+      const path = info.outputPath('permit-save-rpc-timings.json')
+      await writeFile(path, JSON.stringify({ elapsed: Math.round(performance.now() - origin), rpcTimings }, null, 2))
+      await info.attach('permit-save-rpc-timings.json', { path, contentType: 'application/json' })
+    }
+  }
 })
 async function select(editor: Locator, values: string[]) {
   for (const value of values) {

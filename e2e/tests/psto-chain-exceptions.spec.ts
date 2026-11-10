@@ -30,6 +30,12 @@ async function call<T>(page: Page, name: string, data: unknown, method = 'POST')
 async function open(page: Page) {
   page.on('request', request => { if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('listPstoChainExceptions_')) observed = request.url() })
   await page.goto('/psto')
+  // Raw fixtures start without derived final statuses. The initial dispatcher
+  // persists those statuses (and changes xmin); capture mutation previews only
+  // after that preparation. Wait before the modal hides the background report.
+  await expect(page.getByLabel('Диспетчер задач', { exact: true }))
+    .toContainText('Изменения выполняются только после подтверждения.', { timeout: 30_000 })
+  await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 })
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Требуют выравнивания', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Исключения', exact: true }).click()

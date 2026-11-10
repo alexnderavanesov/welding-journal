@@ -89,6 +89,9 @@ async function openManager(page: Page, stage: Stage) {
     name: stage === 'primary' ? 'Редактирование результатов ЛНК' : 'Редактирование результатов ЛНК до ТО', exact: true,
   }) })
   await manager.getByLabel('Вид контроля в реестре').selectOption(stage === 'primary' ? 'vikRequest' : 'ВИК')
+  // Other scenarios may leave newer records above this fixture. Use the
+  // operator's search instead of assuming its rows are in the virtual window.
+  await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill(line)
   return manager
 }
 
@@ -267,6 +270,7 @@ test('удаление заявки не захватывает стык, доб
   await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
   await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
   const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true }) })
+  await manager.getByPlaceholder('Название, дата, стык или линия').fill('STAGED-REQUEST')
   await manager.getByRole('button').filter({ hasText: 'STAGED-REQUEST' }).click()
   await manager.getByRole('button', { name: 'Дополнительные действия с заявкой', exact: true }).click()
   await manager.getByRole('button', { name: 'Удалить выбранную заявку', exact: true }).click()

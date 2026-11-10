@@ -373,6 +373,7 @@ function isActiveReport(value: unknown): value is ActiveReport {
     value === 'percentageLines' ||
     value === 'statistics' ||
     value === 'documents' ||
+    value === 'lineSchemes' ||
     value === 'settings' ||
     value === 'userGuide'
 }

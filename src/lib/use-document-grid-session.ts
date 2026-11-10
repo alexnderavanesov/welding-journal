@@ -87,11 +87,15 @@ export function useDocumentGridSession<T>(
       breadcrumbs, expandedPaths: [...expanded.current.values()] })
   }, [frame, viewId])
   const restore = useCallback(() => {
-    if (scheduled.current || !pending.current || walking.current || failed.current) return
+    if (scheduled.current || walking.current || failed.current) return
     scheduled.current = requestAnimationFrame(() => {
       scheduled.current = 0
       const { api: grid, blocks: access } = current.current, saved = pending.current
-      if (!grid || grid.isDestroyed() || !saved) return
+      if (!grid || grid.isDestroyed()) return
+      // A user can finish scrolling while the destination is still a stub.
+      // modelUpdated then supplies the real rows without another scrollEnd.
+      // Capture their visible anchor after rendering, coalesced into this RAF.
+      if (!saved) { capture(); return }
       const known = saved.rowId ? grid.getRowNode(saved.rowId) : undefined
       if (access && saved.breadcrumbs?.length && known?.rowIndex == null) {
         walking.current = true

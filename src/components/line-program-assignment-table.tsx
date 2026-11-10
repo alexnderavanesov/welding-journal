@@ -135,7 +135,7 @@ export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
   </div></AssignmentEditorContext.Provider></AssignmentSelectionContext.Provider>
 }
 
-type ReadProps = { sessionKey?: string; contextLabel?: string; removalHints?: ProgramRemovalHints; rows: WeldRow[]; onAssignment: (id: number, method?: ProgramMethod) => void; onContextMenu?: RowContextMenu; onReady?: (api: GridApi<WeldRow>) => void }
+type ReadProps = { sessionKey?: string; contextLabel?: string; focusedJoint?: number; removalHints?: ProgramRemovalHints; rows: WeldRow[]; onAssignment: (id: number, method?: ProgramMethod) => void; onContextMenu?: RowContextMenu; onReady?: (api: GridApi<WeldRow>) => void }
 const ReadContext = createContext<ReadProps & { toggle: (row: WeldRow) => void }>(null!)
 const ReadExpansionContext = createContext<Set<number>>(new Set())
 const ReadIdentityContent = memo(function ReadIdentityContent({ row, expanded, toggle }: { row: WeldRow; expanded: boolean; toggle: (row: WeldRow) => void }) {
@@ -147,7 +147,6 @@ function ReadIdentity({ data }: ICellRendererParams<WeldRow>) {
 }
 // Expanding one history must not recalculate/decorate every saved row or redraw
 // all result and assignment cells. These callbacks depend only on saved data.
-const readRowClass = ({ data }: { data?: WeldRow }) => data ? rowClass(data) : ''
 const readRowAttributes = (row: WeldRow) => ({ 'data-testid': 'line-program-readonly-joint', 'data-joint': String(row.joint ?? ''), 'data-final-status': calculateFinalStatus(row), 'aria-description': `Итоговое состояние: ${calculateFinalStatus(row)}` })
 function ReadMetadata({ data }: ICellRendererParams<WeldRow>) { return data ? <ProgramJointMetadata row={data} /> : null }
 function ReadAssignments({ data: row }: ICellRendererParams<WeldRow>) {
@@ -179,9 +178,11 @@ export const ProgramReadOnlyTable = memo(function ProgramReadOnlyTable(props: Re
   const [details, setDetails] = useProgramSessionState(`details:${sessionKey}`, new Set<number>())
   const toggle = useCallback((row: WeldRow) => setDetails(previous => { const next = new Set(previous); next.has(row.id) ? next.delete(row.id) : next.add(row.id); return next }), [setDetails])
   const actions = useMemo(() => ({ ...props, toggle }), [props.rows, props.onAssignment, props.onContextMenu, props.removalHints, props.sessionKey, props.contextLabel, toggle])
+  const readRowClass = useCallback(({ data }: { data?: WeldRow }) => data ? rowClass(data, data.id === props.focusedJoint) : '', [props.focusedJoint])
+  const rowAttributes = useCallback((row: WeldRow) => ({ ...readRowAttributes(row), 'data-highlighted': row.id === props.focusedJoint ? 'true' : undefined }), [props.focusedJoint])
   return <ReadContext.Provider value={actions}><ReadExpansionContext.Provider value={details}><div data-testid="program-joint-scroll">
     <ProgramGrid onReady={props.onReady} kind="joints" sessionKey={sessionKey} label="Назначения и результаты" contextLabel={props.contextLabel} rows={props.rows} columns={readColumns} getId={row => String(row.id)}
       detailRenderer={ReadDetails} isExpanded={row => details.has(row.id)} onRowClick={toggle} onRowMenu={props.onContextMenu}
-      getRowClass={readRowClass} rowAttributes={readRowAttributes} />
+      getRowClass={readRowClass} rowAttributes={rowAttributes} />
   </div></ReadExpansionContext.Provider></ReadContext.Provider>
 })

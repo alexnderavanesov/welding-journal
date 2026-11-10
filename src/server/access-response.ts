@@ -1,5 +1,6 @@
 import type { AccessIdentity } from '@/lib/access-permissions'
-import { redactWeldData } from '@/lib/weld-field-access'
+import { canViewWeldField, redactWeldData } from '@/lib/weld-field-access'
+import type { SchemeJoint, SchemeWeldInfo } from '@/lib/line-schemes'
 import { projectControlWorkflowAccess } from './control-workflow-access'
 
 // These handlers return only their own registry/configuration/aggregate data.
@@ -7,6 +8,17 @@ import { projectControlWorkflowAccess } from './control-workflow-access'
 // Activity details already apply entity-area and weld-field checks in SQL and
 // projection; applying weld rules again would erase authorized registry history.
 const ownDomainResults = new Set([
+  // Scheme labels/statuses have their own permission. Tooltip welding facts
+  // are projected separately below using their original field permissions.
+  'line-schemes-api.ts#getLineSchemes',
+  'line-schemes-api.ts#getLineSchemeFilterOptions',
+  'line-schemes-api.ts#openLineScheme',
+  'line-schemes-api.ts#keepLineSchemeLease',
+  'line-schemes-api.ts#getLineSchemeJoints',
+  'line-schemes-api.ts#getLineSchemePoints',
+  'line-schemes-api.ts#getLineSchemeDraftStates',
+  'line-schemes-api.ts#saveLineSchemePoints',
+  'line-schemes-api.ts#changeLineSchemeRevision',
   'document-connections.ts#getDocumentConnections',
   // The collector checks documents and each requested work area itself.
   'document-participants-api.ts#getDocumentTemplateParticipants',
@@ -55,9 +67,38 @@ const ownDomainResults = new Set([
   'line-program.ts#getLineProgramsForImport',
 ])
 const lineConfigurationFields = ['projectTitle', 'subtitleCode', 'line', 'category', 'groupName', 'weldControlPercent', 'pvkControlPercent']
+const schemeWeldFields = {
+  date: 'weldDate', material1: 'material1', material2: 'material2', element1: 'element1', element2: 'element2',
+  d1: 'd1', d2: 'd2', t1: 't1', t2: 't2',
+  stamp1: 'stamp1K', stamp1Fact: 'stamp1KFact', stamp2: 'stamp1Z', stamp2Fact: 'stamp1ZFact',
+} satisfies Record<keyof SchemeWeldInfo, string>
+
+function projectSchemeJointAccess(identity: AccessIdentity, joint: SchemeJoint): SchemeJoint {
+  if (identity.role !== 'user' || !joint.weldInfo) return joint
+  const weldInfo = Object.fromEntries(Object.entries(schemeWeldFields).map(([key, field]) => [key,
+    canViewWeldField(identity, field) ? joint.weldInfo![key as keyof SchemeWeldInfo] : null,
+  ])) as SchemeWeldInfo
+  return { ...joint, weldInfo }
+}
 
 export function redactOperationResult<T>(identity: AccessIdentity, filename: string, name: string, value: T): T {
   const operation = `${filename.replaceAll('\\', '/').split('/').at(-1)}#${name}`
+  // These DTOs rename weldDate/stamp fields, so generic key-based redaction
+  // alone cannot enforce their source policy. Do not redact scheme identity,
+  // coordinates, or its explicitly authorized aggregate production state.
+  if (value && typeof value === 'object') {
+    if (operation === 'line-schemes-api.ts#getLineSchemeJoints') {
+      const source = value as unknown as { rows: SchemeJoint[] }
+      return { ...source, rows: source.rows.map(joint => projectSchemeJointAccess(identity, joint)) } as T
+    }
+    if (operation === 'line-schemes-api.ts#getLineSchemePoints') {
+      const source = value as unknown as { points: { joint: SchemeJoint }[] }
+      return { ...source, points: source.points.map(point => ({ ...point, joint: projectSchemeJointAccess(identity, point.joint) })) } as T
+    }
+    if (operation === 'line-schemes-api.ts#getLineSchemeDraftStates') {
+      return (value as SchemeJoint[]).map(joint => projectSchemeJointAccess(identity, joint)) as T
+    }
+  }
   if (ownDomainResults.has(operation)) return value
   const redacted = redactWeldData(identity, value, (source, result) => projectControlWorkflowAccess(identity, source, result))
   if (!value || typeof value !== 'object' || !redacted || typeof redacted !== 'object') return redacted

@@ -366,6 +366,24 @@ describe('JointChainDialog', () => {
     expect(screen.queryByRole('button', { name: /Переименовать S1R1/ })).not.toBeInTheDocument()
   })
 
+  it('keeps the selected joint when opening a line quota from the line picture', () => {
+    const selected = row({ id: 2, joint: 'F2' })
+    const task: PercentageLineControlTask = {
+      ...percentageTask(row({ id: 1, joint: 'F1' }), 'A1'),
+      issue: 'missing', title: 'Назначить контроль', count: 2,
+    }
+    const onRunDispatcherTaskAction = vi.fn()
+    renderDialog({ rows: [selected], dispatcherTasks: [task], onRunDispatcherTaskAction })
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Картина линии · 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить контроль' }))
+
+    // The task represents a line quota, not an instruction to switch from
+    // the operator's selected joint to its arbitrary representative F1.
+    expect(onRunDispatcherTaskAction).toHaveBeenCalledWith(selected, task,
+      expect.objectContaining({ id: 'assign-percentage-controls' }))
+  })
+
   it('switches to a grouped line picture and runs each task in its own context', () => {
     const rows = [row({ id: 1, joint: 'F47', line: '330-MS-02-000' })]
     const lineTasks = ['9PC6', '9RX9', '9SZN', '9TMP'].map((stamp, index) => percentageTask(

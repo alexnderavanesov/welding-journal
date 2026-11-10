@@ -2,9 +2,9 @@ import type { JointChainContinuation, RepeatedJointTask } from '@/lib/dispatcher
 
 // Increment when dispatcher rules change in a way that requires existing rows
 // to be recalculated without a corresponding database mutation.
-// Rebuild pair reminders, including local v85 snapshots created before the
-// pre-commit fix for empty factual placeholders.
-export const DISPATCHER_TASK_CALCULATION_VERSION = 86
+// Persist connectionType in compact task rows so SP-08 opens the correct
+// support/weld program, including tasks already stored without that context.
+export const DISPATCHER_TASK_CALCULATION_VERSION = 87
 export const DISPATCHER_TASK_PAGE_SIZE = 100
 
 type DispatcherTaskIndexPayload = {

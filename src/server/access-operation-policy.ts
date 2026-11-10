@@ -2,6 +2,16 @@ import { REPORT_ACCESS_AREAS, SETTING_ACCESS_AREAS, type Permission } from '@/li
 
 // Explicit allowlist: a new server function is closed until its policy is reviewed.
 export const OPERATION_POLICIES = {
+  'line-schemes-api.ts#getLineSchemes': 'schemes.view',
+  'line-schemes-api.ts#getLineSchemeFilterOptions': 'schemes.view',
+  'line-schemes-api.ts#openLineScheme': 'schemes.view',
+  'line-schemes-api.ts#keepLineSchemeLease': 'schemes.view',
+  'line-schemes-api.ts#getLineSchemeJoints': 'schemes.view',
+  'line-schemes-api.ts#getLineSchemePoints': 'schemes.view',
+  'line-schemes-api.ts#getLineSchemeDraftStates': 'schemes.view',
+  'line-schemes-api.ts#saveLineSchemePoints': 'schemes.edit',
+  'line-schemes-api.ts#changeLineSchemeRevision': 'schemes.view',
+  'line-schemes-api.ts#updateLineSchemeRevisionNumber': 'schemes.edit',
   'journal-inline-edit-api.ts#saveJournalCellEdits': 'welding.edit',
   'journal-inline-edit-api.ts#pasteJournalCells': 'welding.edit',
   'activity-api.ts#listActivityHistory': '@identity',

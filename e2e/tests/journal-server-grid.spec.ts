@@ -1412,17 +1412,21 @@ test('grouped browser wheel preserves horizontal input, page boundaries and filt
 
   // At both page boundaries, reversing the gesture must work immediately.
   for (const edge of ['bottom', 'top']) {
-    await page.evaluate(edge => scrollTo(0, edge === 'bottom' ? document.documentElement.scrollHeight : 0), edge)
-    await page.evaluate(async () => {
+    await page.evaluate(async edge => {
       let last = '', stable = 0
       for (let frame = 0; frame < 90 && stable < 8; frame++) {
+        // The previous native wheel may still adjust the position. A stable
+        // y=2 is not the top boundary: establish the exact edge before testing.
+        const target = edge === 'bottom' ? Math.max(0, document.documentElement.scrollHeight - innerHeight) : 0
+        if (scrollY !== target) { scrollTo({ left: 0, top: target, behavior: 'instant' }); stable = 0; last = '' }
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        const atEdge = scrollY === (edge === 'bottom' ? Math.max(0, document.documentElement.scrollHeight - innerHeight) : 0)
         const current = `${scrollY}:${document.documentElement.scrollHeight}`
-        stable = current === last ? stable + 1 : 0
+        stable = atEdge && current === last ? stable + 1 : 0
         last = current
       }
-      if (stable < 8) throw new Error('Boundary geometry did not settle')
-    })
+      if (stable < 8) throw new Error('Exact boundary geometry did not settle')
+    }, edge)
     const boundary = await page.evaluate(() => scrollY)
     const boundaryHeight = await page.evaluate(() => document.documentElement.scrollHeight)
     await page.mouse.move(1000, 600)

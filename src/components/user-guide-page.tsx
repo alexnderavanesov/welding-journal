@@ -12,11 +12,12 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ACCESS_GUIDE_SECTION } from '@/components/user-guide-content/access-section'
+import { LINE_SCHEMES_GUIDE_SECTION } from '@/components/user-guide-content/line-schemes-section'
 import { PRE_HEAT_TREATMENT_MODES_GUIDE } from '@/components/user-guide-content/pre-heat-treatment-modes-section'
 import { WORK_GUIDE_SECTIONS as EXISTING_WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'
 import type { GuideBlock, GuideSection } from '@/components/user-guide-content/types'
 
-const WORK_GUIDE_SECTIONS = [EXISTING_WORK_GUIDE_SECTIONS[0], ACCESS_GUIDE_SECTION, PRE_HEAT_TREATMENT_MODES_GUIDE, ...EXISTING_WORK_GUIDE_SECTIONS.slice(1)]
+const WORK_GUIDE_SECTIONS = [EXISTING_WORK_GUIDE_SECTIONS[0], ACCESS_GUIDE_SECTION, PRE_HEAT_TREATMENT_MODES_GUIDE, LINE_SCHEMES_GUIDE_SECTION, ...EXISTING_WORK_GUIDE_SECTIONS.slice(1)]
 
 const USER_GUIDE_PDF_TITLE = 'Руководство пользователя. Учет сварки'
 

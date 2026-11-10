@@ -893,6 +893,25 @@ it.each(['stamp', 'REMOVED'])('opens a case-insensitive or stale stamp navigatio
   expect(screen.getByRole('combobox', { name: 'Стыки в окне назначений' })).toHaveValue(stamp === 'REMOVED' ? '' : 'stamp:STAMP')
   expect(mocks.rows).toHaveBeenCalledTimes(1)
 })
+it.each(['open-line', 'assign-missing-controls'] as const)('reveals a single joint in the saved overview, without opening assignments: %s', async action => {
+  mocks.rows.mockResolvedValue({ rows: [sample, { ...sample, id: 2, joint: 'F2' }], total: 2, approvedKeys: [] })
+  const request: PercentageLineNavigationRequest = { id: 71, action, projectTitle: 'P', subtitleCode: 'S', line: 'LP-1', stamp: 'REMOVED', jointId: sample.id }
+  const view = render(<QueryClientProvider client={client}><LineProgramPage navigationRequest={request} /></QueryClientProvider>)
+  await waitFor(() => expect(screen.getAllByTestId('line-program-readonly-joint')).toHaveLength(2))
+  expect(screen.getByRole('button', { name: 'Все стыки линии' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('dialog', { name: 'Назначения · LP-1' })).not.toBeInTheDocument()
+  expect(screen.getAllByTestId('line-program-readonly-joint').filter(row => row.dataset.highlighted === 'true')).toHaveLength(1)
+  expect(screen.getAllByTestId('line-program-readonly-joint').find(row => row.dataset.highlighted === 'true')).toHaveAttribute('data-joint', String(sample.joint))
+  view.rerender(<QueryClientProvider client={client}><LineProgramPage navigationRequest={{ ...request, id: 72, jointId: 2 }} /></QueryClientProvider>)
+  await waitFor(() => expect(screen.getAllByTestId('line-program-readonly-joint').find(row => row.dataset.highlighted === 'true')).toHaveAttribute('data-joint', 'F2'))
+  expect(screen.queryByRole('dialog', { name: 'Назначения · LP-1' })).not.toBeInTheDocument()
+  // Rapid targets can share an in-flight line refresh; neither needs a
+  // separate per-joint read or more than one refresh per navigation.
+  expect(mocks.rows.mock.calls.length).toBeGreaterThanOrEqual(1)
+  expect(mocks.rows.mock.calls.length).toBeLessThanOrEqual(2)
+  expect(mocks.assign).not.toHaveBeenCalled()
+  expect(await openAssignments()).toBeVisible()
+})
 async function openAssignments() {
   const button = await screen.findByRole('button', { name: /^Назначения/ })
   await waitFor(() => expect(button).toBeEnabled())

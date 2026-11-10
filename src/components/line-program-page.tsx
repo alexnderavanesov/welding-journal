@@ -226,8 +226,11 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
         setCommand(null)
         setTab(programTab(line))
         setSearch(line.line); setPage(0); setFilter('all')
-        choose(line, { stamp: navigationRequest.stamp || undefined, kind: navigationRequest.action === 'open-line' ? undefined : navigationRequest.demandKind ?? 'common', slice: 'all' }, true)
-        if (navigationRequest.jointId) setCommand({ lineId: line.id, value: { action: 'assignments', selection: { slice: 'all' }, jointId: navigationRequest.jointId } })
+        // A joint target always opens the saved overview. Assignments are an
+        // explicit action inside that overview, never a navigation side effect.
+        choose(line, navigationRequest.jointId
+          ? { slice: 'all', focusedJoint: navigationRequest.jointId, reveal: navigationRequest.id }
+          : { stamp: navigationRequest.stamp || undefined, kind: navigationRequest.action === 'open-line' ? undefined : navigationRequest.demandKind ?? 'common', slice: 'all' }, true)
       }
       reportNavigationHandled(navigationRequest.id, line ? 'opened' : 'stale')
     }).catch(() => { if (active) reportNavigationHandled(navigationRequest.id, 'stale') })

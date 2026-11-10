@@ -27,6 +27,7 @@ export function ReportWorkspace({
     activeReport === 'percentageLines' ||
     activeReport === 'welderStamps' ||
     activeReport === 'documents' ||
+    activeReport === 'lineSchemes' ||
     activeReport === 'settings' ||
     activeReport === 'userGuide'
   const isWideTableReport =

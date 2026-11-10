@@ -57,3 +57,32 @@ it('preserves common configuration, profile identity and already filtered histor
   expect(redactOperationResult(user('numbering.view'), 'document-grouping-preferences.ts', 'getDocumentGroupingDefaults', defaults)).toEqual(defaults)
   expect(redactOperationResult(user('numbering.view'), 'system-document-sequences.ts', 'getSystemDocumentSequences', { pstoRequest: 2 })).toEqual({ pstoRequest: 2 })
 })
+
+const schemeWeldInfo = {
+  date: '2026-11-10', material1: '15Х5М', material2: '12Х18Н10Т', element1: 'Труба', element2: 'Отвод',
+  d1: 108, d2: 89, t1: 6, t2: 4, stamp1: 'A1', stamp1Fact: 'B1', stamp2: 'A2', stamp2Fact: 'B2',
+}
+const schemeJoint = { key: 'p:1', rootId: 1, physicalId: 1, rowId: 1, label: 'S1R1', color: 'good', reason: 'Годен', welded: true, placedPage: 1, weldInfo: schemeWeldInfo }
+const schemeResponses = [
+  { name: 'getLineSchemeJoints', wrap: (joint: unknown) => ({ rows: [joint], total: 1 }) },
+  { name: 'getLineSchemePoints', wrap: (joint: unknown) => ({ points: [{ id: 'point', page: 1, x: 0.1, y: 0.2, joint }], version: 1, next: null }) },
+  { name: 'getLineSchemeDraftStates', wrap: (joint: unknown) => [joint] },
+]
+for (const { name, wrap } of schemeResponses) {
+  it(`${name} preserves scheme labels/statuses but does not reveal welding facts to a scheme-only viewer`, () => {
+    const value = wrap(schemeJoint), before = structuredClone(value)
+    const hiddenInfo = Object.fromEntries(Object.keys(schemeWeldInfo).map(key => [key, null]))
+    expect(redactOperationResult(user('schemes.view'), 'line-schemes-api.ts', name, value))
+      .toEqual(wrap({ ...schemeJoint, weldInfo: hiddenInfo }))
+    expect(value).toEqual(before)
+  })
+  it(`${name} keeps permitted shared dimensions while redacting welding-only tooltip fields`, () => {
+    const hiddenInfo = Object.fromEntries(Object.keys(schemeWeldInfo).map(key => [key, null]))
+    expect(redactOperationResult(user('schemes.view', 'lnk.view'), 'line-schemes-api.ts', name, wrap(schemeJoint)))
+      .toEqual(wrap({ ...schemeJoint, weldInfo: { ...hiddenInfo, d1: 108, d2: 89, t1: 6, t2: 4 } }))
+  })
+  it(`${name} keeps all tooltip details for a user with welding access`, () => {
+    expect(redactOperationResult(user('schemes.view', 'welding.view'), 'line-schemes-api.ts', name, wrap(schemeJoint)))
+      .toEqual(wrap(schemeJoint))
+  })
+}

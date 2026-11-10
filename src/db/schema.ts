@@ -366,6 +366,7 @@ export const weldJoints = pgTable(
     index('weld_joints_line_program_idx').on(table.lineProgramId),
     index('weld_joints_joint_idx').on(table.joint),
     index('weld_joints_joint_choice_idx').on(sql`lower(trim(coalesce(${table.joint}::text, '')))`),
+    index('weld_joints_compact_joint_idx').on(sql`lower(translate(coalesce(${table.joint}, ''), ${sql.raw(DISPATCHER_SCOPE_WHITESPACE_SQL)}, ''))`),
     index('weld_joints_natural_joint_asc_idx').on(...naturalJointOrder(table.joint, 'asc'), table.line, table.joint, table.id).where(indexedJointName(table.joint, table.line)),
     index('weld_joints_natural_joint_desc_idx').on(...naturalJointOrder(table.joint, 'desc'), table.line, table.joint, table.id).where(indexedJointName(table.joint, table.line)),
     index('weld_joints_technology_card_name_idx').on(sql`btrim(${table.technologyCardNumber})`),
@@ -405,6 +406,102 @@ export const weldJoints = pgTable(
 
 export type WeldJoint = typeof weldJoints.$inferSelect
 export type NewWeldJoint = typeof weldJoints.$inferInsert
+
+// A scheme survives deletion of its line. The original registry ID is never
+// reused by name; last titles are captured before an explicit line deletion.
+export const lineSchemeBundles = pgTable('line_scheme_bundles', {
+  id: serial('id').primaryKey(),
+  lineProgramId: integer('line_program_id').notNull().unique(),
+  projectTitle: text('project_title').notNull(), subtitleCode: text('subtitle_code').notNull(), line: text('line').notNull(),
+  activeRevisionId: text('active_revision_id'), version: integer('version').default(1).notNull(),
+  lockUserId: text('lock_user_id'), lockName: text('lock_name'), lockToken: text('lock_token'),
+  lockExpiresAt: timestamp('lock_expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Durable file lifecycle: staging -> ready -> deleting. Failed/abandoned
+// uploads and deletes can be retried without walking every stored revision.
+export const lineSchemeFiles = pgTable('line_scheme_files', {
+  key: text('key').primaryKey(), state: text('state').$type<'staging' | 'ready' | 'deleting'>().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('line_scheme_files_cleanup_idx').on(table.state, table.expiresAt),
+  check('line_scheme_files_state_check', sql`${table.state} in ('staging','ready','deleting')`)])
+
+export const lineSchemeRevisions = pgTable('line_scheme_revisions', {
+  id: text('id').primaryKey(), bundleId: integer('bundle_id').notNull().references(() => lineSchemeBundles.id, { onDelete: 'cascade' }),
+  changeNumber: text('change_number'),
+  fileKey: text('file_key').notNull().unique().references(() => lineSchemeFiles.key, { onDelete: 'restrict' }),
+  fileName: text('file_name').notNull(), size: integer('size').notNull(), pageCount: integer('page_count').notNull(),
+  version: integer('version').default(1).notNull(), authorId: text('author_id').notNull(), authorName: text('author_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('line_scheme_revisions_bundle_idx').on(table.bundleId, table.createdAt),
+  check('line_scheme_revisions_size_check', sql`${table.size} > 0 and ${table.size} <= 104857600`),
+  check('line_scheme_revisions_pages_check', sql`${table.pageCount} between 1 and 100`)])
+
+// Physical identity is independent of computational roots, which can change
+// during an explicit officiality rebuild. Membership retains deleted node IDs.
+export const lineSchemePhysicals = pgTable('line_scheme_physicals', {
+  id: serial('id').primaryKey(), seedNodeId: integer('seed_node_id').notNull().unique(),
+  lastLabel: text('last_label').notNull(), lastLineProgramId: integer('last_line_program_id'),
+})
+export const lineSchemeMembers = pgTable('line_scheme_members', {
+  weldJointId: integer('weld_joint_id').primaryKey(),
+  physicalId: integer('physical_id').notNull().references(() => lineSchemePhysicals.id, { onDelete: 'cascade' }),
+}, table => [index('line_scheme_members_physical_idx').on(table.physicalId)])
+
+export const lineSchemePoints = pgTable('line_scheme_points', {
+  id: text('id').primaryKey(), revisionId: text('revision_id').notNull().references(() => lineSchemeRevisions.id, { onDelete: 'cascade' }),
+  physicalId: integer('physical_id').notNull().references(() => lineSchemePhysicals.id, { onDelete: 'restrict' }),
+  page: integer('page').notNull(), x: numeric('x', { precision: 12, scale: 9, mode: 'number' }).notNull(), y: numeric('y', { precision: 12, scale: 9, mode: 'number' }).notNull(),
+}, table => [uniqueIndex('line_scheme_points_physical_idx').on(table.revisionId, table.physicalId),
+  index('line_scheme_points_page_idx').on(table.revisionId, table.page, table.id),
+  check('line_scheme_points_coordinates_check', sql`${table.page} between 1 and 100 and ${table.x} between 0 and 1 and ${table.y} between 0 and 1`)])
+
+// Drawing symbols have no weld identity and never participate in weld statistics.
+export const lineSchemeAnnotations = pgTable('line_scheme_annotations', {
+  id: text('id').primaryKey(), revisionId: text('revision_id').notNull().references(() => lineSchemeRevisions.id, { onDelete: 'cascade' }),
+  page: integer('page').notNull(), x: numeric('x', { precision: 12, scale: 9, mode: 'number' }).notNull(), y: numeric('y', { precision: 12, scale: 9, mode: 'number' }).notNull(),
+  shape: text('shape').$type<'dot' | 'triangle' | 'line'>().notNull(), label: text('label').notNull(), color: text('color').notNull(),
+  note: text('note').notNull().default(''),
+  size: integer('size').notNull(), strokeWidth: integer('stroke_width').notNull(), rotation: integer('rotation').notNull(),
+}, table => [index('line_scheme_annotations_page_idx').on(table.revisionId, table.page, table.id),
+  check('line_scheme_annotations_position_check', sql`${table.page} between 1 and 100 and ${table.x} between 0 and 1 and ${table.y} between 0 and 1`),
+  check('line_scheme_annotations_shape_check', sql`${table.shape} in ('dot', 'triangle', 'line')`),
+  check('line_scheme_annotations_style_check', sql`${table.size} in (16, 24, 32) and ${table.strokeWidth} between 1 and 3 and ${table.rotation} between 0 and 359`),
+  check('line_scheme_annotations_label_check', sql`length(btrim(${table.label})) between 1 and 120`),
+  check('line_scheme_annotations_note_check', sql`length(${table.note}) <= 1000`),
+  check('line_scheme_annotations_color_check', sql`${table.color} in ('#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#6b7280', '#475569', '#0284c7', '#7c3aed', '#0f766e')`),
+])
+
+// Manual dimensions belong to a PDF revision, not to the changing joint label.
+// Removing either marker or the revision removes the connected dimensions.
+export const lineSchemeDimensions = pgTable('line_scheme_dimensions', {
+  id: text('id').primaryKey(), revisionId: text('revision_id').notNull().references(() => lineSchemeRevisions.id, { onDelete: 'cascade' }),
+  fromPointId: text('from_point_id').references(() => lineSchemePoints.id, { onDelete: 'cascade' }),
+  toPointId: text('to_point_id').references(() => lineSchemePoints.id, { onDelete: 'cascade' }),
+  fromAnnotationId: text('from_annotation_id').references(() => lineSchemeAnnotations.id, { onDelete: 'cascade' }),
+  toAnnotationId: text('to_annotation_id').references(() => lineSchemeAnnotations.id, { onDelete: 'cascade' }),
+  page: integer('page').notNull(), distanceMm: numeric('distance_mm', { mode: 'number' }).notNull(),
+  color: text('color').notNull().default('#64748b'), strokeWidth: numeric('stroke_width', { mode: 'number' }).notNull().default(1.5),
+  offsetX: numeric('offset_x', { precision: 12, scale: 9, mode: 'number' }).notNull(),
+  offsetY: numeric('offset_y', { precision: 12, scale: 9, mode: 'number' }).notNull(),
+}, table => [uniqueIndex('line_scheme_dimensions_pair_idx').on(table.revisionId, sql`coalesce('p:' || ${table.fromPointId}, 'a:' || ${table.fromAnnotationId})`, sql`coalesce('p:' || ${table.toPointId}, 'a:' || ${table.toAnnotationId})`),
+  index('line_scheme_dimensions_page_idx').on(table.revisionId, table.page),
+  index('line_scheme_dimensions_from_idx').on(table.fromPointId), index('line_scheme_dimensions_to_idx').on(table.toPointId),
+  check('line_scheme_dimensions_value_check', sql`${table.distanceMm} > 0 and ${table.distanceMm} < 'Infinity'::numeric`),
+  check('line_scheme_dimensions_style_check', sql`${table.color} in ('#64748b', '#111827', '#dc2626', '#2563eb', '#16a34a', '#ea580c', '#6b7280') and ${table.strokeWidth} in (1, 1.5, 2, 3)`),
+  index('line_scheme_dimensions_from_annotation_idx').on(table.fromAnnotationId), index('line_scheme_dimensions_to_annotation_idx').on(table.toAnnotationId),
+  check('line_scheme_dimensions_endpoints_check', sql`num_nonnulls(${table.fromPointId}, ${table.fromAnnotationId}) = 1 and num_nonnulls(${table.toPointId}, ${table.toAnnotationId}) = 1`),
+  check('line_scheme_dimensions_pair_check', sql`coalesce('p:' || ${table.fromPointId}, 'a:' || ${table.fromAnnotationId}) < coalesce('p:' || ${table.toPointId}, 'a:' || ${table.toAnnotationId})`),
+  check('line_scheme_dimensions_position_check', sql`${table.page} between 1 and 100 and ${table.offsetX} between -1 and 1 and ${table.offsetY} between -1 and 1`),
+])
+
+export const lineSchemeReceipts = pgTable('line_scheme_receipts', {
+  id: text('id').primaryKey(), bundleId: integer('bundle_id').notNull().references(() => lineSchemeBundles.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(), payloadHash: text('payload_hash').notNull(), result: jsonb('result').$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('line_scheme_receipts_bundle_idx').on(table.bundleId, table.createdAt)])
 
 // System-owned identity and physical replacement facts. Source IDs intentionally survive
 // deletion of their referenced journal record; names cannot reattach a new object.

@@ -352,30 +352,62 @@ const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selectio
     if (!selection.reveal || selection.reveal === lastReveal.current || pending || error) return
     let active = true
     let frame = 0
+    let stableFrames = 0
+    const cleanup = () => {
+      active = false; cancelAnimationFrame(frame)
+      for (const name of ['pointerdown', 'wheel', 'keydown']) window.removeEventListener(name, cancelReveal)
+    }
+    const cancelReveal = () => { lastReveal.current = selection.reveal; cleanup() }
+    if (selection.focusedJoint) for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, cancelReveal, { passive: true })
+    const revealJoint = (remaining = 8) => {
+      if (!active || !selection.focusedJoint || !api || api.isDestroyed()) return
+      const node = api.getRowNode(String(selection.focusedJoint))
+      if (node?.rowIndex == null || node.rowTop == null) return
+      const grid = section.current?.querySelector<HTMLElement>('[data-program-grid="joints"]')
+      const bounds = grid?.querySelector<HTMLElement>(`.ag-row[row-id="${selection.focusedJoint}"]`)?.getBoundingClientRect()
+      if (bounds && bounds.top >= 80 && bounds.bottom <= window.innerHeight - 20) {
+        // Wait for the nested detail/auto-height measurements to settle too.
+        if (++stableFrames >= 3) { cleanup(); return }
+      } else if (grid?.dataset.programPageScroll === 'true') {
+        stableFrames = 0
+        const header = grid.querySelector<HTMLElement>('.ag-grid-pinned-top-rows')?.offsetHeight ?? 0
+        // This grid's viewport follows the document, not an independent
+        // scrollbar. Use the model to render a distant row, then its actual DOM
+        // geometry once the nested frame has moved into place.
+        const center = bounds ? bounds.top + bounds.height / 2 : grid.getBoundingClientRect().top + header + node.rowTop + (node.rowHeight ?? 44) / 2
+        window.scrollTo({ top: window.scrollY + center - window.innerHeight / 2, behavior: 'instant' })
+      } else api.ensureNodeVisible(node, 'middle')
+      if (remaining > 1) frame = requestAnimationFrame(() => revealJoint(remaining - 1))
+      else cleanup()
+    }
     const focus = (remaining = 3) => { frame = requestAnimationFrame(() => {
       if (!active) return
       if (remaining > 1) { focus(remaining - 1); return }
       lastReveal.current = selection.reveal
       section.current?.scrollIntoView?.({ block: 'start' }); section.current?.focus({ preventScroll: true })
+      revealJoint()
     }) }
-    if (!rows.length) { focus(); return () => { active = false; cancelAnimationFrame(frame) } }
-    if (!api || api.isDestroyed()) return
-    void revealProgramComposition(api, rows.map(row => String(row.id)), () => active).then(cleared => {
+    if (!rows.length) { setRevealMessage(selection.focusedJoint ? 'Выбранного стыка больше нет в этой линии.' : ''); focus(); return cleanup }
+    if (!api || api.isDestroyed()) return cleanup
+    const targetMissing = !!selection.focusedJoint && !rows.some(row => row.id === selection.focusedJoint)
+    const ids = selection.focusedJoint && !targetMissing ? [String(selection.focusedJoint)] : rows.map(row => String(row.id))
+    void revealProgramComposition(api, ids, () => active).then(cleared => {
       if (!active) return
-      setRevealMessage(cleared.length ? `Для полного состава сняты мешающие фильтры: ${cleared.join(', ')}.` : '')
+      setRevealMessage(targetMissing ? 'Выбранного стыка больше нет в этой линии. Показаны доступные стыки.' : cleared.length ? `Для показа ${selection.focusedJoint ? 'стыка' : 'полного состава'} сняты мешающие фильтры: ${cleared.join(', ')}.` : '')
       focus()
-    }).catch(() => { if (active) setRevealMessage('Не удалось показать состав. Повторите переход из расчёта.') })
-    return () => { active = false; cancelAnimationFrame(frame) }
-  }, [selection.reveal, pending, error, rows, api])
+    }).catch(() => { if (active) setRevealMessage('Не удалось показать стыки. Повторите переход.') })
+    return cleanup
+  }, [selection.reveal, selection.focusedJoint, pending, error, rows, api])
   const assignments = useStableEventCallback((id: number, method?: ProgramMethod) => onAssignments(selection, id, method))
   const contextMenu = useStableEventCallback((event: React.MouseEvent | React.KeyboardEvent, row: WeldRow) => onContextMenu(selection, event, row))
   const scopeName = selection.unassigned ? 'без клейма' : selection.stamp ? `клейма ${selection.stamp}` : 'всей линии'
   return createPortal(<section ref={section} tabIndex={-1} data-testid="program-joint-workspace" className="min-w-0 scroll-mt-20 overflow-hidden bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" aria-label={`Стыки ${scopeName} · ${line.line}`} aria-description={`Записей в выборке: ${rows.length}. Исторические записи не увеличивают число учитываемых соединений.`}>
     {error ? <div className="p-3"><ProgramError error={error} /><button type="button" onClick={onRetry}>Повторить загрузку состава</button></div> : null}
     {selection.explanationList && !pending && !error ? <p role="status" className="px-4 py-2 text-xs text-slate-600">{PROGRAM_EXPLANATION_LISTS[selection.explanationList]} · {rows.length ? `Записей: ${rows.length}.` : 'В этой части расчёта нет стыков. Данные могли измениться; обновите расчёт.'} {revealMessage}</p> : null}
+    {selection.focusedJoint && revealMessage && !pending && !error ? <p role="status" className="px-4 py-2 text-xs text-slate-600">{revealMessage}</p> : null}
     {feedback ? <p role="status" className="px-4 py-2 text-sm text-emerald-700">{feedback}</p> : null}
-    {pending ? <p role="status" className="p-6 text-sm text-slate-500">Загружаем стыки линии…</p> : error && selection.explanationList ? null : <ProgramReadOnlyTable onReady={setApi} sessionKey={`joints:${line.family ?? 'welds'}:${line.id}:${programScopeKey(selection)}`} contextLabel={`${line.line} · ${scopeName}`} removalHints={removalHints} rows={rows} onAssignment={assignments} onContextMenu={contextMenu} />}
+    {pending ? <p role="status" className="p-6 text-sm text-slate-500">Загружаем стыки линии…</p> : error && selection.explanationList ? null : <ProgramReadOnlyTable onReady={setApi} focusedJoint={selection.focusedJoint} sessionKey={`joints:${line.family ?? 'welds'}:${line.id}:${programScopeKey(selection)}`} contextLabel={`${line.line} · ${scopeName}`} removalHints={removalHints} rows={rows} onAssignment={assignments} onContextMenu={contextMenu} />}
   </section>, container)
 }, (before, after) => Object.keys(before).every(key => key === 'selection'
-  ? (['stamp', 'unassigned', 'kind', 'slice', 'status', 'search', 'explanationList', 'reveal'] as const).every(field => before.selection[field] === after.selection[field])
+  ? (['stamp', 'unassigned', 'kind', 'slice', 'status', 'search', 'explanationList', 'reveal', 'focusedJoint'] as const).every(field => before.selection[field] === after.selection[field])
   : Object.is(before[key as keyof typeof before], after[key as keyof typeof after])))

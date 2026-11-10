@@ -2,7 +2,7 @@
 export const ACCESS_AREAS = {
   welding: 'Сварочный журнал', lnk: 'ЛНК', psto: 'ПСТО и ТВМТ',
   lines: 'Программа линий', references: 'Справочники', statistics: 'Статистика',
-  documents: 'Документы', templates: 'Шаблоны документов',
+  documents: 'Документы', schemes: 'Схемы линий', templates: 'Шаблоны документов',
   checks: 'Проверки сохранения', dispatcher: 'Диспетчер и ДЗ', assignmentWarnings: 'Предупреждения', exceptions: 'Принятые исключения',
   numbering: 'Заявки, заключения и нумерация', data: 'Настройки данных',
   wdi: 'Расчёт дюймов', processes: 'Процессы контроля', indexes: 'Системные индексы',
@@ -23,7 +23,7 @@ export const AREA_ACTIONS: Record<AccessArea, readonly AccessAction[]> = {
   welding: ['view', 'edit', 'import', 'delete', 'generate', 'export'],
   lnk: ['view', 'edit', 'delete', 'generate', 'export'], psto: ['view', 'edit', 'delete', 'generate', 'export'],
   lines: ['view', 'edit', 'delete', 'export'], references: ['view', 'edit', 'delete', 'export'], statistics: ['view', 'export'],
-  documents: ['view', 'edit', 'delete', 'generate', 'export'], templates: ['view', 'edit', 'delete'],
+  documents: ['view', 'edit', 'delete', 'generate', 'export'], schemes: ['view', 'edit', 'delete'], templates: ['view', 'edit', 'delete'],
   checks: ['view', 'edit'], dispatcher: ['view', 'edit'], assignmentWarnings: ['view', 'edit'], exceptions: ['view', 'edit'], numbering: ['view', 'edit'],
   data: ['view', 'edit'], wdi: ['view', 'edit'], processes: ['view', 'edit'], indexes: ['view', 'edit'],
 }
@@ -56,7 +56,7 @@ export const ACCESS_PROFILES: Record<string, { label: string; permissions: Permi
 }
 export const REPORT_ACCESS_AREAS: Record<string, AccessArea> = {
   weldingJournal: 'welding', lnk: 'lnk', heatTreatment: 'psto', percentageLines: 'lines',
-  welderStamps: 'references', statistics: 'statistics', documents: 'documents',
+  welderStamps: 'references', statistics: 'statistics', documents: 'documents', lineSchemes: 'schemes',
 }
 export const SETTING_ACCESS_AREAS: Record<string, AccessArea> = {
   'custom-document-names': 'templates',

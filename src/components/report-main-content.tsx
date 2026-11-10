@@ -13,6 +13,7 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { WeldReportExportFieldsRef } from '@/lib/weld-report-export-fields'
 
 const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
+const LineSchemesPage = lazy(() => import('@/components/line-schemes-page').then(module => ({ default: module.LineSchemesPage })))
 const LineProgramPage = lazy(() => import('@/components/line-program-page').then((module) => ({ default: module.LineProgramPage })))
 const WelderStampsRegistry = lazy(() =>
   import('@/components/welder-stamps-registry').then((module) => ({ default: module.WelderStampsRegistry })),
@@ -78,6 +79,7 @@ export function ReportMainContent({
   journalSummary,
   reportExportFieldsRef,
 }: ReportMainContentProps) {
+  if (activeReport === 'lineSchemes') return <Suspense fallback={<ReportSectionFallback label="Загружаем схемы линий" />}><LineSchemesPage onOpenJoint={onOpenDocumentJointHistory} /></Suspense>
   if (activeReport === 'percentageLines') {
     return <Suspense fallback={<ReportSectionFallback label="Загружаем программу линий" />}>
       <LineProgramPage onOpenReportRows={onOpenReportRowIds} navigationRequest={percentageLineNavigationRequest} onNavigationHandled={onPercentageLineNavigationRequestHandled} />

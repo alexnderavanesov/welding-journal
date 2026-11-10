@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { vi } from 'vitest'
 
 // Browsers implement this API, but JSDOM only logs "Not implemented".
-window.scrollTo = vi.fn()
+if (typeof window !== 'undefined') window.scrollTo = vi.fn()
 
 // Most existing component tests exercise business UI as an authorized owner.
 // Access/session and storage isolation tests explicitly unmock these fixtures.

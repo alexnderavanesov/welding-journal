@@ -119,6 +119,11 @@ test('a very large report limits only preview and exports every row; narrowed cu
   })
 
   await page.goto('/lnk')
+  // Seeding 10,001 rows starts a real dispatcher rebuild (5.8 s in the cold
+  // trace). Finish that setup before checking the preview's content; the
+  // report correctly waits for the same fresh context while it is rebuilding.
+  await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.', { timeout: 30_000 })
+  await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 })
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Ожидание заявки', exact: true }).click()
   const modal = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })

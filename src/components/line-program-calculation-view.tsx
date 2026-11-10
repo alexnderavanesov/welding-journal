@@ -73,11 +73,11 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
     setSelection(value)
     setBlocks(previous => new Map(previous).set(programScopeKey(value), { selection: value, open: true }))
   }
-  const filteredScope = (scope: ProgramSelection): ProgramSelection => ({ ...scope, explanationList: undefined, reveal: undefined, slice: quickFilter === 'missing' ? 'missing' : 'all', kind: undefined,
+  const filteredScope = (scope: ProgramSelection): ProgramSelection => ({ ...scope, explanationList: undefined, reveal: undefined, focusedJoint: undefined, slice: quickFilter === 'missing' ? 'missing' : 'all', kind: undefined,
     status: quickFilter !== 'all' && quickFilter !== 'missing' ? quickFilter : undefined })
   const changeFilter = (value: ProgramQuickFilter) => {
     setQuickFilter(value)
-    const filter = { kind: undefined, explanationList: undefined, reveal: undefined, slice: value === 'missing' ? 'missing' as const : 'all' as const,
+    const filter = { kind: undefined, explanationList: undefined, reveal: undefined, focusedJoint: undefined, slice: value === 'missing' ? 'missing' as const : 'all' as const,
       status: value !== 'all' && value !== 'missing' ? value : undefined }
     const openAll = ![...blocks].some(([key, block]) => block.open && (view === 'all' ? key === 'all:' : key !== 'all:'))
     if (openAll) setView('all')

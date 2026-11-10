@@ -101,8 +101,8 @@ test('explicit far-stamp reveal clears only conflicting filters and retains hist
 test('dispatcher navigation mounts the requested far stamp without a calculation-dialog reveal token', async ({ page }) => {
   test.setTimeout(120000)
   await prepare(page)
-  // Two joints at 10% round to zero; 50% creates a real missing-control task
-  // for the final stamp instead of relying on an invented dispatcher fixture.
+  // Two joints require at least one control even at 10%. Use 50% here so the
+  // missing-control task also follows directly from the unrounded quota.
   await withLineProgramFixture(async db => {
     await db.query('update line_programs set weld_control_percent=50,pvk_control_percent=50 where project_title=$1', [project])
     await db.query('update weld_joints set weld_control_percent=50,pvk_control_percent=50 where project_title=$1', [project])
@@ -120,6 +120,38 @@ test('dispatcher navigation mounts the requested far stamp without a calculation
   await expect(workspace.getByRole('button', { name: 'F179001', exact: true })).toBeInViewport()
   await expect(page.getByRole('button', { name: 'Клеймо V179', exact: true })).toHaveAttribute('aria-expanded', 'true')
   expect(await page.locator('[data-program-grid="stamps"]').getByTestId('line-program-stamp').count()).toBeLessThan(60)
+})
+
+test('joint-picture quota action opens all line joints and highlights the selected joint, not the task representative', async ({ page }) => {
+  test.setTimeout(120000)
+  await prepare(page, { stamps: 1, firstBranchJoints: 2 })
+  await withLineProgramFixture(async db => {
+    await db.query('update line_programs set weld_control_percent=50,pvk_control_percent=50 where project_title=$1', [project])
+    await db.query('update weld_joints set weld_control_percent=50,pvk_control_percent=50 where project_title=$1', [project])
+  })
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/journal')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
+  await page.getByRole('button', { name: 'F2', exact: true }).click({ button: 'right' })
+  await page.getByTestId('context-action-menu').getByRole('button', { name: 'Картина стыка', exact: true }).click()
+  const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Картина стыка F2', exact: true }) })
+  await picture.getByRole('tab', { name: /^Картина линии/ }).click()
+  // The quota covers V000 and uses its first joint, F1, as its stored
+  // representative. The picture must retain the explicitly chosen F2.
+  const quota = picture.getByRole('region', { name: 'СП-01 Назначить контроль по процентной линии', exact: true })
+  const quotaToggle = quota.locator('button[aria-expanded]').first()
+  await expect(quotaToggle).toBeVisible()
+  if (await quotaToggle.getAttribute('aria-expanded') !== 'true') await quotaToggle.click()
+  await quota.getByRole('button', { name: 'Назначить контроль', exact: true }).click()
+  await expect(page).toHaveURL(/\/line-program$/)
+  const program = page.getByTestId('line-program')
+  await expect(program.getByRole('button', { name: 'Все стыки линии', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  const selected = program.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F2', exact: true }) })
+  await expect(selected).toHaveAttribute('data-highlighted', 'true')
+  await expect(selected).toBeInViewport()
+  await expect(page.getByRole('dialog', { name: `Назначения · ${line}`, exact: true })).not.toBeVisible()
+  await expect(page.getByRole('region', { name: `Стыки клейма V000 · ${line}`, exact: true })).not.toBeVisible()
+  expect(errors).toEqual([])
 })
 
 test('nested joint navigation has one scroll owner and closing returns focus to its virtual master', async ({ page }) => {

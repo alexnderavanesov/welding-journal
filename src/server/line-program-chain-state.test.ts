@@ -6,7 +6,7 @@ describe('stable program topology query budget', () => {
   it.each([1, 1000])('persists immediate predecessors for %i mixed chains with batched queries', async count => {
     const rows = Array.from({ length: count }, (_, group) => ['', 'W1', 'W1R1', 'W2R1']
       .map((suffix, i) => ({ id: group * 4 + i + 1, joint: `S${group + 1}${suffix}`, line: 'L' }))).flat()
-    const results = [rows, [], []]
+    const results = [rows, [], [], []]
     const select = vi.fn(() => {
       const result = results.shift()
       const query = { from: () => query, where: () => Object.assign(Promise.resolve(result), { orderBy: () => Promise.resolve(result) }) }
@@ -14,7 +14,7 @@ describe('stable program topology query budget', () => {
     })
     const values = vi.fn((_batch: unknown[]) => ({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }))
     await syncProgramChainStates({ select, insert: () => ({ values }) } as never, rows.filter(row => row.id % 4 === 0), new Map())
-    expect(select).toHaveBeenCalledTimes(3)
+    expect(select).toHaveBeenCalledTimes(4)
     expect(values).toHaveBeenCalledTimes(Math.ceil(rows.length / 1000))
     expect(values.mock.calls.every(([batch]) => batch.length <= 1000)).toBe(true)
     const states = values.mock.calls.flatMap(([batch]) => batch) as Array<{ weldJointId: number; sourceRowId: number; physicalRootId: number }>
@@ -25,7 +25,7 @@ describe('stable program topology query budget', () => {
   it('captures physical before-state when the first structural touch deletes both legacy sides', async () => {
     const root = { id: 1, joint: 'S1', line: 'L', weldDate: '2026-09-01' }
     const sides = [2, 3].map((id, index) => ({ ...root, id, joint: `S1Y${index + 1}` }))
-    const results = [[root], [], []]
+    const results = [[root], [], [], []]
     const select = vi.fn(() => {
       const result = results.shift()
       const query = { from: () => query, where: () => Object.assign(Promise.resolve(result), { orderBy: () => Promise.resolve(result) }) }
@@ -46,9 +46,9 @@ describe('stable program topology query budget', () => {
     expect(tx.select).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()
   })
-  it.each([1, 2000])('uses three batched reads and capped inserts for %i joints on one affected line', async count => {
+  it.each([1, 2000])('uses four batched reads and capped inserts for %i joints on one affected line', async count => {
     const rows: WeldRow[] = Array.from({ length: count }, (_, i) => ({ id: i + 1, joint: `F${i + 1}`, projectTitle: 'P', subtitleCode: 'S', line: 'L', weldDate: '2026-09-01' }))
-    const results = [rows, [], []]
+    const results = [rows, [], [], []]
     const select = vi.fn(() => {
       const result = results.shift()
       const query = { from: () => query, where: () => Object.assign(Promise.resolve(result), { orderBy: () => Promise.resolve(result) }) }
@@ -57,7 +57,7 @@ describe('stable program topology query budget', () => {
     const values = vi.fn((_batch: unknown[]) => ({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }))
     const insert = vi.fn(() => ({ values }))
     await syncProgramChainStates({ select, insert } as never, rows, new Map())
-    expect(select).toHaveBeenCalledTimes(3)
+    expect(select).toHaveBeenCalledTimes(4)
     expect(insert).toHaveBeenCalledTimes(Math.ceil(count / 1000))
     expect(values.mock.calls.every(call => call[0].length <= 1000)).toBe(true)
   })

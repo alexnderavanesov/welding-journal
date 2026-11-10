@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { shouldDeferModalEscape } from './use-report-modal-escape-key'
 import { isTopModalDialog } from './modal-layer'
 
-export function useContainedDialogFocus(onClose: () => void, busy = false, enabled = true) {
+export function useContainedDialogFocus(onClose: (() => void) | null, busy = false, enabled = true) {
   const ref = useRef<HTMLDivElement>(null)
   const current = useRef({ onClose, busy }); current.current = { onClose, busy }
   useLayoutEffect(() => {
@@ -20,7 +20,7 @@ export function useContainedDialogFocus(onClose: () => void, busy = false, enabl
         if (!isTopModalDialog(panel)) return
         event.preventDefault()
         event.stopImmediatePropagation()
-        if (!current.current.busy) current.current.onClose()
+        if (!current.current.busy) current.current.onClose?.()
       }
       if (event.key === 'Tab' && ref.current?.contains(document.activeElement)) {
         const fields = controls(), first = fields[0], last = fields.at(-1)

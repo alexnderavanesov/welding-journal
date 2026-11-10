@@ -9,6 +9,7 @@ import {
   ListTree,
   Settings,
   BookUser,
+  createLucideIcon,
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -27,6 +28,11 @@ type AppSidebarProps = {
   onReportChange: (report: ActiveReport) => void
 }
 
+const PipelineBend = createLucideIcon('PipelineBend', [
+  ['path', { d: 'M3 15h5V8a4 4 0 0 1 4-4h9M3 19h7a2 2 0 0 0 2-2V8h9', key: 'pipe' }],
+  ['path', { d: 'M3 13v8M19 2v8M6 14v6M16 3v6', key: 'joints' }],
+])
+
 const sidebarItems: Array<{
   report: ActiveReport
   label: string
@@ -38,6 +44,7 @@ const sidebarItems: Array<{
   { report: 'lnk', label: 'ЛНК', icon: ClipboardCheck },
   { report: 'welderStamps', label: 'Справочники', icon: BookUser },
   { report: 'documents', label: 'Документы', icon: FileText },
+  { report: 'lineSchemes', label: 'Схемы линий', icon: PipelineBend },
   { report: 'statistics', label: 'Статистика', icon: BarChart3 },
 ]
 
