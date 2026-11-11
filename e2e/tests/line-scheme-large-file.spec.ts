@@ -82,7 +82,9 @@ test('PDF near byte/page limits: partial reads, cold/warm opens, zoom, batch sav
   const uploaded = Date.now()
   await page.getByRole('dialog', { name: /^Файлы и архив линии/ }).getByRole('button', { name: 'Загрузить PDF', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: `Схема линии ${line}`, exact: true })
-  await expect(dialog.locator('canvas[data-pdf-rendered="preview"]')).toBeVisible({ timeout: 60_000 })
+  // S3 publication is part of the server's existing 120-second upload deadline.
+  // Do not cancel a valid near-limit upload at 60 seconds on a slower uplink.
+  await expect(dialog.locator('canvas[data-pdf-rendered="preview"]')).toBeVisible({ timeout: process.env.LINE_SCHEME_STORAGE_DRIVER === 's3' ? 150_000 : 60_000 })
   const uploadAndOpenMs = Date.now() - uploaded
   await rm(sourceFile)
   await dialog.getByRole('button', { name: 'Закрыть схему' }).click()

@@ -9,7 +9,8 @@ import { requireIdentity } from './access-context'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { readSchemeBundle, readSchemeTopology } from './line-scheme-read'
 import { ensureSchemePhysicals } from './line-scheme-identity'
-import { createSchemeFileStore, lineSchemeStorageDirectory } from './line-scheme-files'
+import { getSchemeFileStore } from './line-scheme-storage'
+import { cleanupSchemeFilesInStore } from './line-scheme-file-cleanup'
 import { buildNumberArrayMatch } from './weld-request-utils'
 import { lockWeldLineMemberships } from './weld-line-membership-lock'
 import { saveSchemeAnnotations } from './line-scheme-annotations'
@@ -199,18 +200,9 @@ export async function changeSchemeRevision(data: SchemeWriteRequest & { revision
 }
 
 export async function cleanupSchemeFiles() {
-  const store = createSchemeFileStore(lineSchemeStorageDirectory())
-  await requireDb().transaction(async tx => {
-    const files = await tx.select().from(lineSchemeFiles).where(sql`${lineSchemeFiles.state} = 'deleting' or (${lineSchemeFiles.state} = 'staging' and ${lineSchemeFiles.expiresAt} < now())`)
-      .orderBy(lineSchemeFiles.createdAt).limit(10).for('update', { skipLocked: true })
-    for (const file of files) {
-      const [used] = await tx.select({ id: lineSchemeRevisions.id }).from(lineSchemeRevisions).where(eq(lineSchemeRevisions.fileKey, file.key)).limit(1)
-      if (used) continue
-      await store.remove(file.key)
-      await tx.delete(lineSchemeFiles).where(eq(lineSchemeFiles.key, file.key))
-    }
-    await tx.delete(lineSchemeReceipts).where(sql`${lineSchemeReceipts.createdAt} < now() - interval '7 days'`)
-  })
+  // Each mutation can pick up its newly orphaned key. Database leases prevent
+  // simultaneous callers/processes from sending duplicate storage deletes.
+  await cleanupSchemeFilesInStore(requireDb(), await getSchemeFileStore())
 }
 
 export async function prepareSchemeUpload(data: SchemeWriteRequest & { replace: 'archive' | 'delete' }) {

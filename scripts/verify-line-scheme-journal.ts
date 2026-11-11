@@ -8,6 +8,7 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { assertSafeE2eDatabaseUrl } from '../e2e/database'
 
 assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
+assert.equal(process.env.LINE_SCHEME_STORAGE_DRIVER || 'local', 'local', 'This fixture must not access S3')
 const storage = process.env.LINE_SCHEME_STORAGE_PATH
 assert(storage && basename(storage) === 'line-schemes', 'Runner-owned disposable PDF directory is required')
 const directory = await realpath(dirname(storage))
@@ -75,8 +76,8 @@ async function appendRevision(drawing: Drawing) {
   const bundle = await readSchemeBundle(db, drawing.bundleId)
   const request = { bundleId: bundle.id, token: drawing.token, version: bundle.version, operationId: randomUUID(), replace: 'archive' as const }
   const fileKey = await prepareSchemeUpload(request)
-  const stored = await store.write(fileKey, new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close() } }))
-  const published = await publishSchemeFile({ ...request, fileKey, fileName: `${drawing.revisions.length + 1}.pdf`, ...stored, pageCount: await store.validate(fileKey) })
+  const stored = await store.upload(fileKey, new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close() } }))
+  const published = await publishSchemeFile({ ...request, fileKey, fileName: `${drawing.revisions.length + 1}.pdf`, ...stored })
   const revision = { revisionId: published.revisionId, fileKey }
   drawing.revisions.push(revision)
   // These are explicit manual placements in both editions, not automatic copying.

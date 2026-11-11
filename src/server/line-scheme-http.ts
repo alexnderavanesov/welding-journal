@@ -1,9 +1,9 @@
 import { and, eq } from 'drizzle-orm'
-import { Readable } from 'node:stream'
 import { requireDb } from '@/db'
 import { lineSchemeFiles, lineSchemeRevisions } from '@/db/schema'
 import { SCHEME_MAX_BYTES, schemeToken, schemeChangeNumber } from '@/lib/line-schemes'
-import { createSchemeFileStore, lineSchemeStorageDirectory, parseSchemeRange } from './line-scheme-files'
+import { getSchemeFileStore } from './line-scheme-storage'
+import { schemeFileResponse } from './line-scheme-file-response'
 import { requirePermission } from './access-context'
 import { cleanupSchemeFiles, prepareSchemeUpload, publishSchemeFile, type SchemeWriteRequest } from './line-scheme-write'
 
@@ -13,25 +13,12 @@ export async function handleSchemeFile(request: Request) {
   let publishing = false
   try {
     await requirePermission('schemes.view')
-    const store = createSchemeFileStore(lineSchemeStorageDirectory())
+    const store = await getSchemeFileStore()
     if (request.method === 'GET' || request.method === 'HEAD') {
       const id = schemeToken(new URL(request.url).searchParams.get('revision'))
       const [revision] = await requireDb().select().from(lineSchemeRevisions).where(eq(lineSchemeRevisions.id, id))
       if (!revision) return new Response('Редакция удалена или не найдена.', { status: 404 })
-      const size = await store.size(revision.fileKey), etag = `"${revision.fileKey}"`
-      const headers = new Headers({ 'Content-Type': 'application/pdf', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-cache', ETag: etag,
-        'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `inline; filename="drawing.pdf"; filename*=UTF-8''${encodeURIComponent(revision.fileName).replace(/'/g, '%27')}` })
-      if (request.headers.get('if-none-match') === etag && !request.headers.has('range')) return new Response(null, { status: 304, headers })
-      let range
-      try { range = parseSchemeRange(request.headers.has('if-range') && request.headers.get('if-range') !== etag ? null : request.headers.get('range'), size) }
-      catch { headers.set('Content-Range', `bytes */${size}`); return new Response(null, { status: 416, headers }) }
-      headers.set('Content-Length', String(range ? range.end - range.start + 1 : size))
-      if (range) headers.set('Content-Range', `bytes ${range.start}-${range.end}/${size}`)
-      if (request.method === 'HEAD') return new Response(null, { status: range ? 206 : 200, headers })
-      const stream = store.read(revision.fileKey, range?.start, range?.end)
-      const abort = () => stream.destroy()
-      request.signal.addEventListener('abort', abort, { once: true }); stream.once('close', () => request.signal.removeEventListener('abort', abort))
-      return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, { status: range ? 206 : 200, headers })
+      return await schemeFileResponse(request, revision, store)
     }
     if (request.method !== 'POST') return new Response(null, { status: 405 })
     await requirePermission('schemes.edit')
@@ -44,8 +31,7 @@ export async function handleSchemeFile(request: Request) {
     if (Number(request.headers.get('content-length')) > SCHEME_MAX_BYTES) throw new Error('Размер PDF превышает 100 МБ.')
     pendingKey = await prepareSchemeUpload(data)
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(120_000)])
-    const { size, digest } = await store.write(pendingKey, request.body, signal)
-    const pageCount = await store.validate(pendingKey, signal)
+    const { size, digest, pageCount } = await store.upload(pendingKey, request.body, signal)
     signal.throwIfAborted()
     publishing = true
     const result = await publishSchemeFile({ ...data, fileKey: pendingKey, fileName: data.fileName.trim(), size, digest, pageCount })

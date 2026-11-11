@@ -1,18 +1,14 @@
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, open, rename, rm, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { link, mkdir, open, rm, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createHash } from 'node:crypto'
-import { Readable, Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
-import { SCHEME_MAX_BYTES, SCHEME_MAX_PAGES } from '@/lib/line-schemes'
-import { validateSchemePdf } from './line-scheme-pdf-validation'
+import type { Readable } from 'node:stream'
+import { assertSchemeFileKey, removeStagedSchemeUpload, withValidatedSchemeUpload, type SchemeUploadResult } from './line-scheme-upload-file'
 
 export type SchemeFileStore = {
-  write: (key: string, body: ReadableStream<Uint8Array>, signal?: AbortSignal) => Promise<{ size: number; digest: string }>
-  read: (key: string, start?: number, end?: number) => Readable
-  size: (key: string) => Promise<number>
-  remove: (key: string) => Promise<void>
-  validate: (key: string, signal?: AbortSignal) => Promise<number>
+  upload: (key: string, body: ReadableStream<Uint8Array>, signal?: AbortSignal) => Promise<SchemeUploadResult>
+  read: (key: string, start?: number, end?: number, signal?: AbortSignal) => Promise<{ stream: Readable; size: number }>
+  size: (key: string, signal?: AbortSignal) => Promise<number>
+  remove: (key: string, signal?: AbortSignal) => Promise<void>
 }
 
 export function lineSchemeStorageDirectory() {
@@ -20,44 +16,36 @@ export function lineSchemeStorageDirectory() {
   return resolve(process.env.LINE_SCHEME_STORAGE_PATH?.trim() || 'data/line-schemes')
 }
 
-// Parse one upload at a time. Waiting uploads stay on disk, not as 100 MB buffers
-// in memory. The isolated parser also bounds memory and can be terminated.
-let validationTail: Promise<unknown> = Promise.resolve()
 export function createSchemeFileStore(directory: string): SchemeFileStore {
   const path = (key: string) => {
-    if (!/^[a-f0-9-]{36}\.pdf$/.test(key)) throw new Error('Недопустимый ключ PDF.')
+    assertSchemeFileKey(key)
     return resolve(directory, key)
   }
   return {
-    async write(key, body, signal) {
-      const final = path(key), temporary = `${final}.tmp`
+    async upload(key, body, signal) {
+      const final = path(key)
+      signal?.throwIfAborted()
       await mkdir(directory, { recursive: true })
-      let bytes = 0
-      const hash = createHash('sha256')
-      const limit = new Transform({ transform(chunk: Buffer, _encoding, done) {
-        bytes += chunk.length
-        hash.update(chunk)
-        done(bytes > SCHEME_MAX_BYTES ? new Error('Размер PDF превышает 100 МБ.') : null, chunk)
-      } })
-      try {
-        await pipeline(Readable.fromWeb(body as never), limit, createWriteStream(temporary, { flags: 'wx' }), { signal })
-        if (!bytes) throw new Error('Загружен пустой файл.')
-        const handle = await open(temporary, 'r+'); try { await handle.sync() } finally { await handle.close() }
-        await rename(temporary, final)
-        const folder = await open(directory, 'r'); try { await folder.sync() } finally { await folder.close() }
-        return { size: bytes, digest: hash.digest('hex') }
-      } finally { await rm(temporary, { force: true }) }
-    },
-    read(key, start, end) { return createReadStream(path(key), { start, end }) },
-    async size(key) { return (await stat(path(key))).size },
-    async remove(key) { await rm(path(key), { force: true }); await rm(`${path(key)}.tmp`, { force: true }) },
-    validate(key, signal) {
-      const task = validationTail.catch(() => {}).then(async () => {
+      return withValidatedSchemeUpload(key, body, signal, async file => {
         signal?.throwIfAborted()
-        return validateSchemePdf(path(key), SCHEME_MAX_BYTES, SCHEME_MAX_PAGES, signal)
-      })
-      validationTail = task.catch(() => {})
-      return task
+        // Same-filesystem atomic publication; an existing revision is never overwritten.
+        await link(file.path, final)
+        const folder = await open(directory, 'r'); try { await folder.sync() } finally { await folder.close() }
+        return { size: file.size, digest: file.digest, pageCount: file.pageCount }
+      }, directory)
+    },
+    async read(key, start, end, signal) {
+      const file = path(key)
+      signal?.throwIfAborted()
+      const size = (await stat(file)).size
+      signal?.throwIfAborted()
+      return { size, stream: createReadStream(file, { start, end, signal }) }
+    },
+    async size(key, signal) { signal?.throwIfAborted(); return (await stat(path(key))).size },
+    async remove(key, signal) {
+      signal?.throwIfAborted()
+      await rm(path(key), { force: true }); await rm(`${path(key)}.tmp`, { force: true })
+      await removeStagedSchemeUpload(key, directory)
     },
   }
 }

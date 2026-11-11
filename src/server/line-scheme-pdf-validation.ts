@@ -27,11 +27,16 @@ async function workerRss(pid: number, signal: AbortSignal): Promise<number | nul
     return Number(match[1]) * 1024
   }
   if (process.platform === 'darwin') return new Promise((resolve, reject) => {
-    execFile('/bin/ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000, maxBuffer: 1024, signal }, (error, stdout) => {
+    execFile('/bin/ps', ['-o', 'rss=,stat=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000, maxBuffer: 1024, signal }, (error, stdout) => {
       if (error) { reject(error); return }
-      const value = stdout.trim()
-      if (!/^\d+$/.test(value)) { reject(new Error('Missing worker RSS')); return }
-      resolve(Number(value) * 1024)
+      const match = /^(\d+)\s+(\S+)$/.exec(stdout.trim())
+      if (!match) { reject(new Error('Missing worker RSS')); return }
+      const rss = Number(match[1]) * 1024, state = match[2]
+      // Darwin can release task memory before Node receives close: ps reports
+      // zero RSS with Z (zombie) or E (exiting). This is not validation success;
+      // the checked IPC result, peak RSS and successful close are still required.
+      if (rss === 0 && (state.startsWith('Z') || state.slice(1).includes('E'))) { resolve(null); return }
+      resolve(rss)
     })
   })
   throw new Error('Unsupported worker memory monitor')
@@ -82,7 +87,10 @@ export async function validateSchemePdf(path: string, maxBytes: number, maxPages
       try {
         if (!child.pid) throw new Error('Missing worker process')
         const rss = await workerRss(child.pid, probeAbort.signal)
-        if (!closed && rss !== null && (!Number.isFinite(rss) || rss <= 0 || rss > MAX_RSS_BYTES)) stop(new Error(RESOURCE_ERROR))
+        // A probe already in flight can finish after the checked worker reply.
+        // Darwin may then report 0 even before ps observes the exit-state flag.
+        // Keep rejecting over-budget samples and require the actual close below.
+        if (!closed && rss !== null && (!Number.isFinite(rss) || rss < 0 || (rss === 0 && pages === undefined) || rss > MAX_RSS_BYTES)) stop(new Error(RESOURCE_ERROR))
       } catch {
         if (!closed && !failure && !received) stop(new Error(VALIDATION_ERROR))
       }

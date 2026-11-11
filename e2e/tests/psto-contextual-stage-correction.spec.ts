@@ -452,7 +452,12 @@ test('после переноса: переход из документа и и�
 for (const scenario of ['cancel', 'moveWithPsto'] as const) test(`новый сценарий ${scenario}: заявка ПСТО блокирует перенос только своего стыка, подделка откатывается`, async ({ page }) => {
   const fixture = await seed(scenario === 'cancel' ? 'beforeHeatTreatment' : 'primary')
   if (scenario === 'moveWithPsto') await addTarget(fixture, true)
-  await withE2eDatabase(db => db.query("update weld_joints set psto_request='CTX-PSTO-REQUEST',psto_request_date='2026-09-06' where id=$1", [fixture.moved.id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set psto_request='CTX-PSTO-REQUEST',psto_request_date='2026-09-06' where id=$1", [fixture.moved.id]))
+  // Adding the request changes the derived status and its row version. Finish
+  // that fixture calculation before opening a dialog which captures versions,
+  // so the forged request reaches the history guard being tested here.
+  const { ensureDispatcherTaskIndexFresh } = await import('../../src/server/dispatcher-task-index')
+  await ensureDispatcherTaskIndexFresh()
   const moveState = scenario === 'moveWithPsto' ? await openMove(page, fixture.moved.id) : null
   const window = moveState?.move ?? await openCancellation(page)
   const label = scenario === 'cancel' ? 'Весь НК до ТО → основной' : 'Весь основной НК → до ТО'

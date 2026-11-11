@@ -357,7 +357,11 @@ const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selectio
       active = false; cancelAnimationFrame(frame)
       for (const name of ['pointerdown', 'wheel', 'keydown']) window.removeEventListener(name, cancelReveal)
     }
-    const cancelReveal = () => { lastReveal.current = selection.reveal; cleanup() }
+    // A fresh row snapshot can interrupt the effect between animation frames.
+    // Only a finished reveal or explicit user cancellation consumes its token.
+    const finishReveal = () => { lastReveal.current = selection.reveal; cleanup() }
+    const cancelReveal = finishReveal
+    const targetMissing = !!selection.focusedJoint && !rows.some(row => row.id === selection.focusedJoint)
     if (selection.focusedJoint) for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, cancelReveal, { passive: true })
     const revealJoint = (remaining = 8) => {
       if (!active || !selection.focusedJoint || !api || api.isDestroyed()) return
@@ -367,7 +371,7 @@ const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selectio
       const bounds = grid?.querySelector<HTMLElement>(`.ag-row[row-id="${selection.focusedJoint}"]`)?.getBoundingClientRect()
       if (bounds && bounds.top >= 80 && bounds.bottom <= window.innerHeight - 20) {
         // Wait for the nested detail/auto-height measurements to settle too.
-        if (++stableFrames >= 3) { cleanup(); return }
+        if (++stableFrames >= 3) { finishReveal(); return }
       } else if (grid?.dataset.programPageScroll === 'true') {
         stableFrames = 0
         const header = grid.querySelector<HTMLElement>('.ag-grid-pinned-top-rows')?.offsetHeight ?? 0
@@ -378,18 +382,17 @@ const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selectio
         window.scrollTo({ top: window.scrollY + center - window.innerHeight / 2, behavior: 'instant' })
       } else api.ensureNodeVisible(node, 'middle')
       if (remaining > 1) frame = requestAnimationFrame(() => revealJoint(remaining - 1))
-      else cleanup()
+      else finishReveal()
     }
     const focus = (remaining = 3) => { frame = requestAnimationFrame(() => {
       if (!active) return
       if (remaining > 1) { focus(remaining - 1); return }
-      lastReveal.current = selection.reveal
       section.current?.scrollIntoView?.({ block: 'start' }); section.current?.focus({ preventScroll: true })
-      revealJoint()
+      if (!selection.focusedJoint || targetMissing) finishReveal()
+      else revealJoint()
     }) }
     if (!rows.length) { setRevealMessage(selection.focusedJoint ? 'Выбранного стыка больше нет в этой линии.' : ''); focus(); return cleanup }
     if (!api || api.isDestroyed()) return cleanup
-    const targetMissing = !!selection.focusedJoint && !rows.some(row => row.id === selection.focusedJoint)
     const ids = selection.focusedJoint && !targetMissing ? [String(selection.focusedJoint)] : rows.map(row => String(row.id))
     void revealProgramComposition(api, ids, () => active).then(cleared => {
       if (!active) return

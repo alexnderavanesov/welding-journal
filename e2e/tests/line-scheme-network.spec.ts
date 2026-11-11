@@ -81,7 +81,9 @@ test('ordinary PDF: bounded RPC/SQL during idle, gestures, focus, geometry saves
   await (await chooser).setFiles({ name: 'Ordinary network.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) })
   await page.getByRole('dialog', { name: `Файлы и архив линии ${line}`, exact: true }).getByRole('button', { name: 'Загрузить PDF', exact: true }).click()
   const drawing = page.getByRole('dialog', { name: `Схема линии ${line}`, exact: true })
-  await expect(drawing.locator('canvas[data-pdf-rendered="preview"]')).toBeVisible()
+  // This setup reads the actual remote PDF in S3 runs. The RPC/count assertions
+  // below measure each operation independently of this initial network wait.
+  await expect(drawing.locator('canvas[data-pdf-rendered="preview"]')).toBeVisible({ timeout: process.env.LINE_SCHEME_STORAGE_DRIVER === 's3' ? 30_000 : 5_000 })
   await owner.settle(); expect(uploads).toBe(1)
   await drawing.getByRole('button', { name: 'Закрыть схему', exact: true }).click(); await owner.settle()
   const fixture = await withE2eDatabase(async db => {

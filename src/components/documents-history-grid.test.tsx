@@ -444,6 +444,26 @@ describe('document grid server lifecycle', () => {
     expect(grid.api.setNodesSelected).toHaveBeenCalledWith({ nodes: [node], newValue: !wasSelected, source: 'api' })
     expect(initial.loadRows).toHaveBeenCalledTimes(1)
   })
+  it.each([false, true])('honors the visible checkbox value while restored selection is catching up (stored: %s)', async selected => {
+    const node = { id: 'document:1', data: { id: 1 }, rowIndex: 0, isSelected: () => !selected } as IRowNode<Row | DocumentHistoryGroupRow>
+    grid.api.forEachNode.mockImplementation(callback => callback(node))
+    grid.api.getDisplayedRowAtIndex.mockReturnValue(node)
+    const selection = vi.fn(), view = render(<DocumentsHistoryGrid {...props({
+      selectedDocuments: [{ id: 900 }, ...(selected ? [{ id: 1 }] : [])], onSelectionChange: selection,
+    })} />)
+    await act(async () => { request() })
+    const row = document.createElement('div'), wrapper = document.createElement('div'), checkbox = document.createElement('input')
+    row.className = 'ag-row'; row.setAttribute('row-index', '0')
+    wrapper.className = 'ag-selection-checkbox'; checkbox.type = 'checkbox'; checkbox.checked = !selected
+    wrapper.append(checkbox); row.append(wrapper); view.container.querySelector('.document-grid-frame')!.append(row)
+    grid.api.setNodesSelected.mockClear(); selection.mockClear()
+    fireEvent.click(checkbox)
+    // Native activation expresses the requested state. A delayed AG checkbox
+    // must not invert the already restored identity or drop hidden choices.
+    expect(checkbox.checked).toBe(selected)
+    expect(selection).not.toHaveBeenCalled()
+    expect(grid.api.setNodesSelected).toHaveBeenCalledWith({ nodes: [node], newValue: selected, source: 'api' })
+  })
   it('does not treat a null SSRM selectedNodes snapshot as clearing loaded identities', async () => {
     const node = { data: { id: 1 }, isSelected: () => true } as IRowNode<Row | DocumentHistoryGroupRow>
     grid.api.forEachNode.mockImplementation(callback => callback(node))

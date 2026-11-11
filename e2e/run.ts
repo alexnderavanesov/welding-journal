@@ -19,6 +19,7 @@ try {
   templateDirectory = await mkdtemp(join(tmpdir(), 'welding-e2e-templates-'))
   process.env.DOCUMENT_TEMPLATE_STORAGE_PATH = templateDirectory
   process.env.LINE_SCHEME_STORAGE_PATH = join(templateDirectory, 'line-schemes')
+  process.env.LINE_SCHEME_STORAGE_DRIVER = 'local'
   const { default: prepareE2eDatabase } = await import('./global-setup')
   const verifyFixture = await prepareE2eDatabase()
   if (process.env.AUDIT_SQL_COUNTS === '1') {

@@ -1,6 +1,13 @@
 import pg from 'pg'
 
-const E2E_DATABASE_NAME = 'welding_tracker_e2e'
+const profiles: Record<string, string> = {
+  'line-scheme-s3': 'welding_tracker_s3_e2e_20261111',
+  'line-scheme-s3-manual': 'welding_tracker_s3_manual_20261111',
+  'line-scheme-s3-backup': 'welding_tracker_s3_backup_20261111',
+  'line-scheme-s3-restore': 'welding_tracker_s3_restore_20261111',
+}
+if (process.env.E2E_DATABASE_PROFILE && !Object.hasOwn(profiles, process.env.E2E_DATABASE_PROFILE)) throw new Error('Unknown disposable database profile')
+const E2E_DATABASE_NAME = process.env.E2E_DATABASE_PROFILE ? profiles[process.env.E2E_DATABASE_PROFILE] : 'welding_tracker_e2e'
 const E2E_DATABASE_HOST = '127.0.0.1'
 let ownedDatabaseOid: number | undefined
 

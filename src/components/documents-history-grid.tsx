@@ -614,7 +614,14 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           // agrees with its checked value, so no deferred rollback is needed.
           event.stopPropagation()
           rowRange.current = { anchorId: node.id, endId: null }
-          current.current.onSelectionChange(toggleLoadedDocumentGridSelection(current.current.selectedDocuments, [node.data]))
+          const selected = current.current.selectedDocuments
+          // Native checkbox activation already expresses the requested value.
+          // A restored identity can reach React before AG paints its checkbox;
+          // toggling that identity would then reverse the operator's click.
+          const nativeCheckbox = event.target instanceof HTMLInputElement && event.target.type === 'checkbox' ? event.target : null
+          const alreadySelected = selected.some(row => String(row.id) === String(node.data!.id))
+          if (nativeCheckbox && nativeCheckbox.checked === alreadySelected) syncSelection()
+          else current.current.onSelectionChange(toggleLoadedDocumentGridSelection(selected, [node.data]))
         }
       }} onContextMenu={event => {
         if (!(event.target instanceof Element)) return

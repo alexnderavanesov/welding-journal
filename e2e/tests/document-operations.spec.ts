@@ -60,11 +60,19 @@ function documentCheckbox(page: Page, documentId: number) {
   return page.locator(`[data-document-history-grid] .ag-row[row-id="document:system-document:${documentId}"]`).getByRole('checkbox')
 }
 
-async function open(page: Page, documents: Array<{ id: number; title: string }>, action: 'split' | 'rename' | 'merge' = 'split') {
+async function open(page: Page, documents: Array<{ id: number; title: string }>, action: 'split' | 'rename' | 'merge' = 'split', restoreSelection = false) {
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
+  // A repeated visit can retain rows while their matching selection reloads.
+  // Those rows deliberately reject clicks until the registry is ready.
+  const frame = page.locator('[data-document-history-grid] .document-grid-frame')
+  await expect(frame).toBeVisible()
+  await expect(frame).not.toHaveAttribute('data-journal-updating', '')
   for (const doc of documents) {
-    await documentCheckbox(page, doc.id).check()
+    // Reopening must restore the previous selection, not click a checkbox
+    // which may become checked while Playwright is preparing its click.
+    if (restoreSelection) await expect(documentCheckbox(page, doc.id)).toBeChecked()
+    else await documentCheckbox(page, doc.id).check()
   }
   await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
   await page.getByRole('button', { name: action === 'split' ? 'Изменить разделение' : action === 'merge' ? 'Объединить' : 'Переименовать', exact: true }).click()
@@ -197,7 +205,7 @@ test('document editor: clear names, underlined modes, help, explicit check and m
   await page.keyboard.press('Escape')
   expect(calls.filter(name => name === 'previewDocumentOperation')).toHaveLength(1)
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
-  dialog = await open(page, docs)
+  dialog = await open(page, docs, 'split', true)
   await dialog.getByRole('combobox', { name: 'Разделение выбранных документов' }).selectOption('line')
   await dialog.getByRole('checkbox', { name: 'Объединить перед разделением' }).check()
   await expect(dialog.getByText('Количество документов — после проверки')).toBeVisible()
@@ -346,7 +354,7 @@ test('real UI: explicit split, manual name, lazy paged composition, cancel, narr
   expect((await state()).rows.every(row => row.vik_request === docs[0].title)).toBe(true)
   await page.setViewportSize({ width: 1600, height: 1000 })
   // The second opening starts from the saved preference, not the cancelled draft.
-  dialog = await open(page, docs)
+  dialog = await open(page, docs, 'split', true)
   await expect(dialog.getByRole('combobox', { name: 'Разделение выбранных документов' })).toHaveValue('none')
   await dialog.getByRole('combobox', { name: 'Разделение выбранных документов' }).selectOption('line')
   await dialog.getByRole('button', { name: 'Проверить изменения' }).click()
@@ -460,7 +468,7 @@ test('action dialogs: Escape closes help then dialog, preserves selection, works
   const docs = await seedRequests(2)
   let before: Awaited<ReturnType<typeof state>> | undefined
   for (const action of ['rename', 'split', 'merge'] as const) {
-    const dialog = await open(page, docs, action)
+    const dialog = await open(page, docs, action, action !== 'rename')
     // On an otherwise fresh DB, the first history read initializes its index.
     // Compare cancellation with the already opened dialog, not that setup work.
     before ??= await state()

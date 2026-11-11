@@ -20,7 +20,7 @@ beforeEach(() => {
   terminateListeners = process.listenerCount('SIGTERM'); interruptListeners = process.listenerCount('SIGINT')
   mocked.fork.mockReset().mockReturnValue(child)
   mocked.readFile.mockReset().mockResolvedValue('VmRSS:\t65536 kB\n')
-  mocked.execFile.mockReset().mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, '65536\n')); return {} })
+  mocked.execFile.mockReset().mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, '65536 R\n')); return {} })
 })
 afterEach(() => {
   expect(vi.getTimerCount()).toBe(0)
@@ -79,7 +79,7 @@ it('does not spawn for an already-cancelled validation', async () => {
 })
 it('kills when the OS probe detects external-memory RSS above the budget', async () => {
   mocked.readFile.mockResolvedValue('VmRSS:\t525312 kB\n')
-  mocked.execFile.mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, '525312\n')); return {} })
+  mocked.execFile.mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, '525312 R\n')); return {} })
   const { result } = await begin()
   await vi.advanceTimersByTimeAsync(100)
   expect((await result).error?.message).toContain('безопасно проверить')
@@ -136,6 +136,61 @@ it('accepts an exiting Linux zombie only after its validated result and close', 
   expect(child.kill).not.toHaveBeenCalled()
   child.emit('message', success()); child.emit('close', 0, null)
   expect((await result).value).toBe(3)
+})
+it.each(['Z', '?E'])('waits for a validated result and close after Darwin reports zero RSS for %s', async state => {
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  mocked.execFile.mockImplementation((_file, args, _options, callback) => {
+    queueMicrotask(() => callback(null, args[1] === 'rss=' ? '0\n' : `0 ${state}\n`)); return {}
+  })
+  const { result } = await begin()
+  await vi.advanceTimersByTimeAsync(100)
+  expect(child.kill).not.toHaveBeenCalled()
+  let finished = false; void result.then(() => { finished = true })
+  child.emit('message', success())
+  await Promise.resolve(); expect(finished).toBe(false)
+  child.emit('close', 0, null)
+  expect((await result).value).toBe(3)
+})
+it.each(['0 R', '0 S', '0 ?', '525312 ?E'])('still rejects unsafe Darwin RSS: %s', async sample => {
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  mocked.execFile.mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, `${sample}\n`)); return {} })
+  const { result } = await begin()
+  await vi.advanceTimersByTimeAsync(100)
+  expect((await result).error?.message).toContain('безопасно проверить')
+  expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+})
+it('never treats a Darwin exit state alone as successful PDF validation', async () => {
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  mocked.execFile.mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, '0 ?E\n')); return {} })
+  const { result } = await begin()
+  await vi.advanceTimersByTimeAsync(100)
+  child.emit('close', 0, null)
+  expect((await result).error?.message).toContain('Не удалось проверить PDF')
+})
+it.each([0, 525312])('handles Darwin RSS %i arriving after the validated worker reply', async rss => {
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  let respond!: (error: Error | null, stdout: string) => void
+  mocked.execFile.mockImplementation((_file, _args, _options, callback) => { respond = callback; return {} })
+  const { result } = await begin()
+  await vi.advanceTimersByTimeAsync(100)
+  child.emit('message', success())
+  respond(null, `${rss} ?\n`)
+  await Promise.resolve()
+  if (rss > 0) {
+    expect((await result).error?.message).toContain('безопасно проверить')
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+  } else {
+    expect(child.kill).not.toHaveBeenCalled()
+    child.emit('close', 0, null)
+    expect((await result).value).toBe(3)
+  }
+})
+it('keeps the timeout when Darwin reports an exit state without closing', async () => {
+  Object.defineProperty(process, 'platform', { value: 'darwin' })
+  mocked.execFile.mockImplementation((_file, _args, _options, callback) => { queueMicrotask(() => callback(null, '0 ?E\n')); return {} })
+  const { result } = await begin()
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect((await result).error?.message).toContain('слишком много времени')
 })
 it('fails closed on Linux ENOENT before a result or process exit', async () => {
   Object.defineProperty(process, 'platform', { value: 'linux' })

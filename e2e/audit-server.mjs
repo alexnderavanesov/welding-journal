@@ -16,8 +16,16 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const resourceContainer = process.env.AUDIT_RESOURCE_CONTAINER === '1'
-assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@${resourceContainer ? 'host.docker.internal' : '127.0.0.1'}:5432/welding_tracker_e2e`)
-assert.equal(process.env.PORT, resourceContainer ? '3000' : '3100')
+const s3Restore = process.env.E2E_DATABASE_PROFILE === 'line-scheme-s3-restore'
+const s3Integration = process.env.E2E_DATABASE_PROFILE === 'line-scheme-s3' || s3Restore
+if (s3Integration) {
+  if (resourceContainer) assert.equal(process.env.E2E_S3_LINUX, '1')
+  assert.equal(process.env.LINE_SCHEME_STORAGE_DRIVER, 's3')
+  assert.equal(process.env.LINE_SCHEME_S3_BUCKET, 'welding-journal-schemes-test')
+  assert.equal(process.env.LINE_SCHEME_S3_ENDPOINT, 'https://s3.ru-1.storage.selcloud.ru')
+}
+assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@${resourceContainer ? 'host.docker.internal' : '127.0.0.1'}:5432/${s3Restore ? 'welding_tracker_s3_restore_20261111' : s3Integration ? 'welding_tracker_s3_e2e_20261111' : 'welding_tracker_e2e'}`)
+assert.equal(process.env.PORT, resourceContainer ? '3000' : s3Restore ? '3109' : s3Integration ? '3107' : '3100')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
 // Saved comparison bundles live outside Vite's mutable .output directory.
 // This changes only the local audit runner and keeps the dev server usable.
@@ -36,6 +44,15 @@ const file = process.env.AUDIT_SQL_COUNTS_FILE
 assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
 const counts = { statements: 0, operations: {}, rpcStatements: {} }
+if (s3Integration) {
+  counts.s3Requests = {}
+  channel('http.client.request.start').subscribe(({ request }) => {
+    if (request.getHeader('host') !== 'welding-journal-schemes-test.s3.ru-1.storage.selcloud.ru') return
+    // Counters only: never record authorization, signatures, object keys or headers.
+    const operation = request.method + (request.getHeader('range') ? '_RANGE' : '')
+    counts.s3Requests[operation] = (counts.s3Requests[operation] ?? 0) + 1
+  })
+}
 const jointFacetTrace = process.env.DEEP_JOINT_FACET_CACHE === '1'
 const foundRecheck = process.env.DEEP_POPUP_FOUND_RECHECK === '1'
 if (foundRecheck) {

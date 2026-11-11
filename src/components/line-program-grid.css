@@ -75,8 +75,11 @@
 .program-ag-grid-windowed { position: relative; min-height: 100px; }
 .program-ag-grid-windowed > .program-grid-frame { position: absolute; top: 0; width: 100%; height: 100%; }
 .program-ag-grid-windowed .ag-grid-viewport { overflow-y: hidden; }
-/* Do not start AG's visibility-retry loop when the page moves a nested grid. */
-.program-ag-grid-windowed .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
+/* Both windowed details and their auto-height overview can receive a scroll
+   sync. Keep the invisible partner measurable, including the zero-sized one
+   in the overview, so AG does not retry its visibility every 10ms. */
+.program-ag-grid-windowed .ag-body-vertical-scroll,
+.program-ag-grid-page .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
 .program-joint-history { background: #f8fbfd; padding: 10px 12px 12px; font-size: 12px; border-bottom: 1px solid #dce7f0; }
 .program-line-disclosure { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; margin-top: 1px; color: #2780b3; flex-shrink: 0; }
 [aria-expanded="true"] > .program-line-disclosure { background: #e0effb; }

@@ -17,12 +17,14 @@ test('page grids: idle work after scroll, including hidden scroll partners', asy
   test.setTimeout(180000)
   await page.addInitScript(() => {
     const set = window.setInterval.bind(window), clear = window.clearInterval.bind(window)
-    const state = { active: new Map<number, number>(), ticks10: 0 }
+    const state = { active: new Map<number, number>(), origins: new Map<number, { stack?: string; callback: string }>(), ticks10: 0 }
     window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
       const wrapped = timeout === 10 && typeof handler === 'function' ? (...params: unknown[]) => { state.ticks10++; return handler(...params) } : handler
-      const id = set(wrapped, timeout, ...args); state.active.set(id, timeout ?? 0); return id
+      const id = set(wrapped, timeout, ...args); state.active.set(id, timeout ?? 0)
+      if (timeout === 10) state.origins.set(id, { stack: new Error().stack, callback: String(handler) })
+      return id
     }) as typeof window.setInterval
-    window.clearInterval = id => { if (typeof id === 'number') state.active.delete(id); clear(id) }
+    window.clearInterval = id => { if (typeof id === 'number') { state.active.delete(id); state.origins.delete(id) }; clear(id) }
     Object.assign(window, { gridIdleAudit: state })
   })
   const probe = await createSmoothnessProbe(page, info), samples: unknown[] = []
@@ -54,13 +56,21 @@ test('page grids: idle work after scroll, including hidden scroll partners', asy
         const observation = await page.evaluate(selector => ({
           ticks10: (window as any).gridIdleAudit.ticks10,
           active10: [...(window as any).gridIdleAudit.active.values()].filter(delay => delay === 10).length,
+          intervalOrigins: [...(window as any).gridIdleAudit.origins.values()],
+          allPartners: [...document.querySelectorAll<HTMLElement>('.ag-body-vertical-scroll-viewport, .ag-body-horizontal-scroll-viewport')].map(element => ({
+            grid: element.closest<HTMLElement>('[data-program-grid]')?.dataset.programGrid,
+            context: element.closest<HTMLElement>('[data-program-grid]')?.dataset.programGridContext,
+            className: element.className, measurable: element.checkVisibility({ checkVisibilityCSS: true }),
+            width: element.clientWidth, height: element.clientHeight,
+            visibility: getComputedStyle(element).visibility,
+          })),
           partners: [...document.querySelectorAll(`${selector} .ag-body-vertical-scroll-viewport`)].map(element => ({
             measurable: element.checkVisibility({ checkVisibilityCSS: true }),
             scrollTop: element.scrollTop, clientHeight: element.clientHeight,
           })),
         }), selector)
         samples.push({ route, n, ...observation })
-        if (process.env.SMOOTHNESS_ASSERT_IDLE === '1') expect(observation.active10).toBe(0)
+        if (process.env.SMOOTHNESS_ASSERT_IDLE === '1') expect.soft(observation.active10, `${route}: idle ${n}`).toBe(0)
       }
     }
   } finally {

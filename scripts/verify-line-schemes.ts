@@ -8,6 +8,7 @@ import { eq, and, inArray } from 'drizzle-orm'
 import { assertSafeE2eDatabaseUrl } from '../e2e/database'
 
 assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
+assert.equal(process.env.LINE_SCHEME_STORAGE_DRIVER || 'local', 'local', 'This fixture must not access S3')
 if (!process.env.LINE_SCHEME_STORAGE_PATH?.includes('welding-e2e-')) throw new Error('Disposable PDF directory is required.')
 assert.equal(basename(process.env.LINE_SCHEME_STORAGE_PATH), 'line-schemes')
 assert((await realpath(dirname(process.env.LINE_SCHEME_STORAGE_PATH))).startsWith(join(await realpath(tmpdir()), 'welding-e2e-templates-')))
@@ -40,8 +41,8 @@ try {
     const upload = async (id: number, version: number, lockToken = token, replace: 'archive' | 'delete' = 'archive') => {
       const data = { bundleId: id, version, token: lockToken, operationId: randomUUID(), replace }
       const key = await prepareSchemeUpload(data)
-      const stored = await store.write(key, new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close() } }))
-      const payload = { ...data, fileKey: key, fileName: 'Fixture.pdf', changeNumber: '01', ...stored, pageCount: await store.validate(key) }
+      const stored = await store.upload(key, new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close() } }))
+      const payload = { ...data, fileKey: key, fileName: 'Fixture.pdf', changeNumber: '01', ...stored }
       const result = await publishSchemeFile(payload)
       assert.deepEqual(await publishSchemeFile(payload), result)
       assert.equal((await readSchemeBundle(db, id)).revisions.find(item => item.id === result.revisionId)?.changeNumber, '01')

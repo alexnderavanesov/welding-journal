@@ -9,6 +9,7 @@ import { assertSafeE2eDatabaseUrl } from '../e2e/database'
 import type { SchemeAnnotation, SchemeChanges, SchemeDimension } from '../src/lib/line-schemes'
 
 assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
+assert.equal(process.env.LINE_SCHEME_STORAGE_DRIVER || 'local', 'local', 'This fixture must not access S3')
 assert.equal(basename(process.env.LINE_SCHEME_STORAGE_PATH ?? ''), 'line-schemes')
 assert((await realpath(dirname(process.env.LINE_SCHEME_STORAGE_PATH!))).startsWith(join(await realpath(tmpdir()), 'welding-e2e-templates-')))
 const { schemeDimensionPair } = await import('../src/lib/line-schemes')
@@ -35,8 +36,8 @@ try {
     const request = async () => ({ bundleId, token, version: (await readSchemeBundle(db, bundleId)).version, operationId: randomUUID() })
     const upload = async () => {
       const data = { ...await request(), replace: 'archive' as const }, key = await prepareSchemeUpload(data)
-      const stored = await store.write(key, new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close() } }))
-      return publishSchemeFile({ ...data, fileKey: key, fileName: 'Dimensions.pdf', ...stored, pageCount: await store.validate(key) })
+      const stored = await store.upload(key, new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close() } }))
+      return publishSchemeFile({ ...data, fileKey: key, fileName: 'Dimensions.pdf', ...stored })
     }
     const original = await upload(), revisionId = original.revisionId
     const read = async () => { const { updatedAt, ...state } = await readSchemePointPage({ revisionId, page: 1 }); return { ...state, dimensions: state.dimensions.map(({ fromAnnotationId, toAnnotationId, ...d }) => ({ ...d, ...(fromAnnotationId ? { fromAnnotationId } : {}), ...(toAnnotationId ? { toAnnotationId } : {}) })) } }
