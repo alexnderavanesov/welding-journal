@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { resizeFilterPopup } from '../filter-popup'
 import { captureReportExcel } from '../report-excel-capture'
 
 const PROJECT = 'E2E T-OP physical statistics'
@@ -163,6 +164,7 @@ test('сварщики опор: общие фильтры столбцов, Ф�
       ['waitingControl', 'Ожидает НК', '0', 3], ['rejected', 'Не годен', '1', 1], ['defectPercent', '% брака', '33,3%', 1],
     ] as const) {
       const popup = await openFilter(column, title)
+      if (column === 'total') await resizeFilterPopup(page, page.locator('.read-only-grid-popup').filter({ has: popup }))
       await popup.getByRole('checkbox', { name: value, exact: true }).check()
       await expect(welders.getByText(`Показано сварщиков: ${count} из 3`, { exact: true })).toBeVisible()
       await page.keyboard.press('Escape')

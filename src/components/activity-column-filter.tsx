@@ -6,6 +6,7 @@ import { Input } from './ui/input'
 import { Button } from './ui/button'
 import { getActivityFilters } from '@/server/activity-api'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
+import { FilterResizeHandles } from './filter-resize-handles'
 import { activityActionLabel } from '@/lib/activity-labels'
 import type { HistoryRequest } from '@/server/activity-history'
 
@@ -17,6 +18,7 @@ export const ACTIVITY_SERVER_FILTER = { component: ActivityColumnFilter, doesFil
 const moscowInput = (value?: string) => value ? new Date(new Date(value).getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 16) : ''
 
 function ActivityColumnFilter({ column, api, model, onModelChange }: CustomFilterDisplayProps) {
+  const panel = useRef<HTMLDivElement>(null)
   const { filters, change } = useContext(ActivityFilterContext)
   const field = column.getColId() as ActivityFilterField
   const [visible, setVisible] = useState(false), [search, setSearch] = useState(''), [error, setError] = useState('')
@@ -38,9 +40,9 @@ function ActivityColumnFilter({ column, api, model, onModelChange }: CustomFilte
   const options = field === 'actorName' ? choices.data?.authors.map(item => ({ value: item.id ?? '@operator', label: item.name, detail: item.id ? item.id.slice(0, 8) : 'Оператор сервера' })) ?? []
     : choices.data?.actions.map(action => ({ value: action, label: activityActionLabel(action), detail: '' })).filter(item => item.label.toLocaleLowerCase().includes(match.toLocaleLowerCase())) ?? []
   const pending = search.trim() !== match || choices.isFetching
-  return <div role="dialog" aria-label={`Фильтр: ${column.getColDef().headerName}`} className="activity-column-filter min-w-0 w-full whitespace-normal text-sm [overflow-wrap:anywhere]" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
+  return <div ref={panel} role="dialog" aria-label={`Фильтр: ${column.getColDef().headerName}`} className="activity-column-filter min-w-0 w-full whitespace-normal text-sm [overflow-wrap:anywhere]" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3"><strong className="min-w-0 font-medium text-slate-700">{field === 'action' ? 'Тип изменения' : column.getColDef().headerName}</strong><button type="button" aria-label="Закрыть фильтр" onClick={close} className="shrink-0 rounded p-1 text-slate-400 hover:text-sky-700"><X className="h-4 w-4" /></button></div>
-    {field === 'createdAt' ? <form className="space-y-4 p-4" onSubmit={event => {
+    {field === 'createdAt' ? <form data-filter-scroll className="space-y-4 p-4" onSubmit={event => {
       event.preventDefault()
       const start = from ? new Date(`${from}${from.length === 16 ? ':00' : ''}+03:00`) : undefined
       const end = until ? new Date(`${until}${until.length === 16 ? ':00' : ''}+03:00`) : undefined
@@ -55,10 +57,11 @@ function ActivityColumnFilter({ column, api, model, onModelChange }: CustomFilte
       <div className="flex flex-wrap justify-between gap-2"><Button type="button" variant="ghost" size="sm" onClick={reset}>Сбросить фильтр</Button><Button type="submit" size="sm">Применить</Button></div>
     </form> : <>
       <div className="p-3"><label className="relative block"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input ref={input} aria-label={field === 'actorName' ? 'Поиск автора' : 'Поиск типа изменения'} placeholder={field === 'actorName' ? 'Найти по ФИО…' : 'Найти тип изменения…'} className="pl-9" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
-      <div className="max-h-64 overflow-x-hidden overflow-y-auto px-2 pb-2" aria-busy={pending}>
+      <div data-filter-scroll className="max-h-64 overflow-x-hidden overflow-y-auto px-2 pb-2" aria-busy={pending}>
         {choices.error ? <p role="alert" className="p-3 text-xs text-rose-700">Не удалось загрузить значения. <button className="underline" onClick={() => void choices.refetch()}>Повторить</button></p> : pending ? <p className="p-3 text-slate-400">Поиск…</p> : options.length ? options.map(option => <button key={option.value} type="button" aria-pressed={value === option.value} className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-sky-50 ${value === option.value ? 'bg-sky-50 text-sky-700' : 'text-slate-600'}`} onClick={() => apply(field === 'actorName' ? { actorId: option.value } : { action: option.value })}><span className="min-w-0 break-words">{option.label}{option.detail ? <span className="block text-xs text-slate-400">{option.detail}</span> : null}</span>{value === option.value ? <span className="ml-auto">✓</span> : null}</button>) : <p className="p-3 text-slate-400">Совпадений нет.</p>}
       </div>
-      <div className="border-t border-slate-200 p-3"><Button type="button" variant="ghost" size="sm" onClick={reset}>Сбросить фильтр</Button><p className="mt-2 text-xs leading-5 text-slate-400">Фильтр действует по всей доступной истории.{field === 'actorName' && options.length >= 50 ? ' Показаны первые 50 авторов — уточните поиск.' : ''}</p></div>
+      <div className="border-t border-slate-200 p-3"><Button type="button" variant="ghost" size="sm" onClick={reset}>Сбросить фильтр</Button>{field === 'actorName' && options.length >= 50 ? <p className="mt-2 text-xs leading-5 text-slate-400">Показаны первые 50 авторов — уточните поиск.</p> : null}</div>
     </>}
+    <FilterResizeHandles panel={panel} />
   </div>
 }

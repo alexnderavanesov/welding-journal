@@ -48,7 +48,7 @@ function ActivityCell({ data }: ICellRendererParams<Row>) {
   if (!data) return null
   if (data.activityLabel === 'Онлайн') return <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Онлайн</span>
   const time = data.activityLabel === 'Был(а) на сайте' && data.lastActiveAt ? formatAccountActivityTime(data.lastActiveAt, now) : null
-  if (!time) return <span className="text-xs text-slate-400" title={data.activityLabel === 'Нет данных' ? 'Активность появится после следующего открытия сайта.' : undefined}>{data.activityLabel}</span>
+  if (!time) return <span className="text-xs text-slate-400" title={data.activityLabel === 'Ещё не входил' ? 'Активность появится после входа на сайт.' : undefined}>{data.activityLabel}</span>
   return <div className="text-xs leading-5 text-slate-500"><p>Был(а) на сайте</p><time dateTime={time.iso} title={time.exact} aria-label={`${time.label}; ${time.exact}`}>{time.label}</time></div>
 }
 function ActionsCell({ data }: ICellRendererParams<Row>) { const { actions } = useContext(GridContext); return data ? actions(data) : null }

@@ -3,8 +3,8 @@ import { isControlEnabledValue } from './control-availability-values'
 
 export type PreHeatTreatmentMode = 'selected' | 'allPsto'
 
-export function isPreHeatTreatmentRequiredByMode(row: WeldInput, mode = row.preHeatTreatmentMode) {
-  return mode === 'allPsto' || row.preHeatTreatmentRequired === true
+export function isPreHeatTreatmentRequiredByMode(row: WeldInput, _legacyMode = row.preHeatTreatmentMode) {
+  return row.preHeatTreatmentRequired === true
 }
 
 export type PreHeatTreatmentPolicyRow = WeldInput

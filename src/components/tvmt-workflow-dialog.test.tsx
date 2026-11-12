@@ -11,7 +11,7 @@ vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDe
 vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ tvmtRequest: 10, tvmtConclusion: 20 })) }))
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return { preHeatTreatmentMode: 'allPsto' as const,
+  return { preHeatTreatmentRequired: true,
     id: 1,
     projectTitle: 'Проект А',
     subtitleCode: 'Шифр-1',

@@ -34,7 +34,7 @@ test.beforeEach(async () => {
     settings = (await db.query("select key,value,updated_at from app_settings where key in ('data-list','control-processes')")).rows
     for (const [key, value] of [
       ['data-list', { weldingTypes: ['РД'], connectionTypes: ['С17'], materialGroups: ['M01'] }],
-      ['control-processes', { preHeatTreatmentMode: 'allPsto',  }],
+      ['control-processes', { preHeatTreatmentMode: 'selected' }],
     ] as const) await db.query(`insert into app_settings(key,value) values ($1,$2)
       on conflict(key) do update set value=excluded.value,updated_at=now()`, [key, JSON.stringify(value)])
     await db.query(`insert into welder_stamps(naks_stamp,welder_name,weld_type,material_groups,
@@ -76,11 +76,13 @@ async function seed(stage: Stage) {
       const row = (await db.query<{ id: number; joint: string }>(`insert into weld_joints
         (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,material_group,welding_method,
         officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
-        has_vik,has_rk,has_uzk,has_pvk,psto_required,category,group_name,weld_control_percent,pvk_control_percent)
+        has_vik,has_rk,has_uzk,has_pvk,psto_required,pre_heat_treatment_required,category,group_name,weld_control_percent,pvk_control_percent)
         values ($1,$2,'CTX',$3,$4,'2026-09-01','С17','M01','РД','действующий','актуальная',108,108,4,4,0.42,
-        $5,$5,$5,$5,'да','да','да','да',$6,'II','A',100,100) returning id,joint`,
+        $5,$5,$5,$5,'да','да','да','да',$6,true,'II','A',100,100) returning id,joint`,
       [lines.find(line => line.line === SOURCE)!.id, PROJECT, SOURCE, joint, STAMP, stage === 'primary' ? null : 'да'])).rows[0]!
       rows.push(row)
+      // A retained requirement survives a previous move/cancellation. Explicit
+      // stage correction must not depend on the retired line-wide default.
       for (const method of METHODS) {
         const c = control(method)
         if (stage === 'primary') {
@@ -238,6 +240,25 @@ async function addTarget(fixture: Awaited<ReturnType<typeof seed>>, pre: boolean
     return document.id as number
   })
 }
+
+test('назначение ПСТО не включает снятую отметку НК до ТО и не переносит основной комплект', async ({ page }) => {
+  const fixture = await seed('primary')
+  await withE2eDatabase(db => db.query('update weld_joints set pre_heat_treatment_required=false where project_title=$1', [PROJECT]))
+  const before = await snapshot(fixture.moved.id)
+  const assignment = await openAssignment(page)
+  for (const joint of ['F881', 'F882']) {
+    await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+    await expect(choices(assignment, joint).getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
+  }
+  await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+  await expectPackage(fixture.moved.id, 'primary')
+  await expectPackage(fixture.kept.id, 'primary')
+  const after = await snapshot(fixture.moved.id)
+  expect(after.row).toMatchObject({ psto_required: 'да', pre_heat_treatment_required: false })
+  expect(after.controls).toEqual(before.controls)
+  expect(after.documents).toEqual(before.documents)
+})
 
 test('отмена ПСТО: явный перенос одного стыка сохраняет специалистов и не переносит соседний', async ({ page }) => {
   const fixture = await seed('beforeHeatTreatment')

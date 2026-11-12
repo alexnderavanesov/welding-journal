@@ -1,4 +1,5 @@
 import { normalizeFinalStatus } from './weld-status'
+import { STATISTICS_RESULT_VERSION } from './statistics-result-version'
 import { isTConnectionType } from './connection-type'
 import { buildSupportStatistics, type SupportStatisticsSummary } from './support-statistics'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -50,6 +51,7 @@ export type StatisticsServerRequest = {
 }
 
 export type StatisticsServerResult = {
+  formatVersion: typeof STATISTICS_RESULT_VERSION
   supportSummary?: SupportStatisticsSummary
   projectOptions: StatisticsFilterOption[]
   subtitleOptions: StatisticsFilterOption[]
@@ -238,7 +240,7 @@ export function buildStatisticsServerResult({
 }): StatisticsServerResult {
   const tab = request.tab
   // Control reports retain permitted T work. Production counters stay separate.
-  if (tab === 'supports' || tab === 'general' || tab === 'welders' || tab === 'lineSummary') rows = rows.filter(row => isTConnectionType(row.connectionType) === (tab === 'supports'))
+  if (tab === 'supports' || tab === 'general' || tab === 'welders') rows = rows.filter(row => isTConnectionType(row.connectionType) === (tab === 'supports'))
   const projectFilter = normalizeFilterValue(request.projectFilter)
   const selectedSubtitles = (request.selectedSubtitles ?? []).map(normalizeFilterValue).filter(Boolean)
   const from = String(request.from ?? '').trim()
@@ -290,6 +292,7 @@ export function buildStatisticsServerResult({
 
   return {
     ...(tab === 'supports' ? { supportSummary: buildSupportStatistics(scopedRows, from, to, systemIndexSettings, welderStamps) } : {}),
+    formatVersion: STATISTICS_RESULT_VERSION,
     projectOptions,
     subtitleOptions,
     summary: isGeneralLikeTab ? { ...calculatedSummary, periodRows: [] } : EMPTY_STATISTICS_SUMMARY,

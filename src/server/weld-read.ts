@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { getPreHeatTreatmentFilterLabel } from '@/lib/pre-heat-treatment-column'
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
 import { REPORT_PREVIEW_ROW_LIMIT } from '@/lib/report-preview-limit'
 import type { TabularReportData } from '@/lib/tabular-report'
@@ -1702,8 +1703,8 @@ export function buildDerivedReportCacheKey(
   extra: Record<string, unknown> = {},
 ) {
   const key = buildDerivedCalculationCacheKey(namespace, {
-    // Old persisted facets/pages/totals used stored main-NK result labels.
-    filterValuesVersion: 2,
+    // Facets/pages/totals must distinguish an unmarked preliminary stage from an inapplicable one.
+    filterValuesVersion: 3,
     report,
     search: filters.search ?? '',
     projectTitle: filters.projectTitle ?? '',
@@ -1867,6 +1868,9 @@ export function normalizeWeldColumnFilterOptions(
   fieldKey: WeldFieldKey,
   options: readonly WeldColumnFilterOption[],
 ) {
+  if (fieldKey === 'preHeatTreatmentRequired') return sortColumnFilterOptions(options.map(option => ({
+    ...option, label: getPreHeatTreatmentFilterLabel(option.value),
+  })))
   if (!CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)) return sortColumnFilterOptions(options)
 
   const counts = new Map<string, number>()

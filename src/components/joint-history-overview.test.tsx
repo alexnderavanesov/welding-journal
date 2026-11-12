@@ -7,7 +7,7 @@ import type { RepeatedJointCheckTask, RepeatedJointCreateTask, WeldRow } from '@
 
 describe('JointHistoryOverview', () => {
   it.each([null, 'отменен'])('labels an unperformed repeat as history, not waiting, on an inactive line (%s)', pstoRequired => {
-    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 91, joint: 'S91', pstoRequired, pstoRequest: 'P1', pstoResult: 'проведено', tvmtResult: 'не годен',
+    const row = { preHeatTreatmentRequired: true, id: 91, joint: 'S91', pstoRequired, pstoRequest: 'P1', pstoResult: 'проведено', tvmtResult: 'не годен',
       pstoRepeatCycles: [{ id: 92, weldJointId: 91, sequence: 2, pstoRequest: 'P2', pstoRequestDate: '2026-09-02', pstoResult: 'ожидает ПСТО' }],
     } as WeldRow
     const onOpenDocument = vi.fn()
@@ -103,7 +103,7 @@ describe('JointHistoryOverview', () => {
   it('shows a performed PSTO as pending until TVMT finishes the cycle', () => {
     render(
       <JointHistoryOverview
-        row={{ preHeatTreatmentMode: 'allPsto' as const,
+        row={{ preHeatTreatmentRequired: true,
           id: 8,
           projectTitle: 'Проект',
           subtitleCode: '400',
@@ -133,7 +133,7 @@ describe('JointHistoryOverview', () => {
 
   it('opens documents from the exact PSTO cycle shown in the picture', () => {
     const onOpenDocument = vi.fn()
-    const row = { preHeatTreatmentMode: 'allPsto' as const,
+    const row = { preHeatTreatmentRequired: true,
       id: 8,
       projectTitle: 'Проект',
       subtitleCode: '400',
@@ -317,7 +317,7 @@ describe('JointHistoryOverview', () => {
   it('shows cancellation without inventing a pending PSTO cycle for a completed joint', () => {
     render(
       <JointHistoryOverview
-        row={{ preHeatTreatmentMode: 'allPsto' as const,
+        row={{ preHeatTreatmentRequired: true,
           id: 14,
           projectTitle: 'Проект',
           subtitleCode: '400',
@@ -351,7 +351,7 @@ describe('JointHistoryOverview', () => {
   it('uses the same no-need statuses and section name after rejected pre-TO control', () => {
     render(
       <JointHistoryOverview
-        row={{ preHeatTreatmentMode: 'allPsto' as const,
+        row={{ preHeatTreatmentRequired: true,
           id: 15,
           projectTitle: 'Риформинг',
           subtitleCode: '73281024/4152-330-ТКМ5',
@@ -399,7 +399,7 @@ describe('JointHistoryOverview', () => {
   })
 
   it.each([null, 'отменен'])('keeps captions inside the sections and preserves old document links (%s)', pstoRequired => {
-    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 81, joint: 'F81', weldDate: '2026-09-01', pstoRequired,
+    const row = { preHeatTreatmentRequired: true, id: 81, joint: 'F81', weldDate: '2026-09-01', pstoRequired,
       preHeatTreatmentControls: [{ id: 81, weldJointId: 81, method: 'ВИК', requestName: 'Старая заявка ВИК', conclusionName: 'Старое заключение ВИК', result: 'годен' }],
       pstoRequest: 'Старая заявка ПСТО',
     } as WeldRow
@@ -422,7 +422,7 @@ describe('JointHistoryOverview', () => {
 
   it('updates the empty captions and settings without adding anything above the two sections', () => {
     const props = { onOpenDocument: vi.fn(), onOpenReport: vi.fn(), onShowInReport: vi.fn(), onEditRow: vi.fn(), onRunNextAction: vi.fn(), onOpenTasks: vi.fn() }
-    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 82, joint: 'F82', pstoRequired: 'да', hasVik: 'да' } as WeldRow
+    const row = { preHeatTreatmentRequired: true, id: 82, joint: 'F82', pstoRequired: 'да', hasVik: 'да' } as WeldRow
     const { rerender } = render(<JointHistoryOverview {...props} row={row} />)
     const pre = () => within(screen.getByRole('heading', { name: 'НК до ТО' }).closest('section')!)
     const psto = () => within(screen.getByRole('heading', { name: 'ПСТО и ТВМТ' }).closest('section')!)
@@ -432,18 +432,18 @@ describe('JointHistoryOverview', () => {
     rerender(<JointHistoryOverview {...props} row={{ ...row, weldDate: '2026-09-01' }} />)
     expect(pre().getByText('Ожидает заявку НК до ТО')).toBeInTheDocument()
     expect(psto().getByText('Ожидает НК до ТО')).toBeInTheDocument()
-    rerender(<JointHistoryOverview {...props} row={{ ...row, weldDate: '2026-09-01' }}
+    rerender(<JointHistoryOverview {...props} row={{ ...row, preHeatTreatmentRequired: false, weldDate: '2026-09-01' }}
       controlProcessSettings={{ preHeatTreatmentMode: 'selected' as const,  }} />)
     expect(pre().getByText('НК до ТО для цепочки не требуется')).toBeInTheDocument()
     expect(psto().getByText('Ожидает заявку ПСТО')).toBeInTheDocument()
-    rerender(<JointHistoryOverview {...props} row={{ preHeatTreatmentMode: 'allPsto' as const, ...row, pstoRequired: null, pstoResult: 'ожидает заявку' }} />)
+    rerender(<JointHistoryOverview {...props} row={{ preHeatTreatmentRequired: true, ...row, pstoRequired: null, pstoResult: 'ожидает заявку' }} />)
     expect(pre().getByText('ПСТО не предусмотрено')).toBeInTheDocument()
     expect(psto().getByText('ПСТО не предусмотрено')).toBeInTheDocument()
     expect(psto().queryByText('Цикл 1')).not.toBeInTheDocument()
   })
 
   it('does not hide partial old result text or a note after cancellation without other cycle documents', () => {
-    const row = { preHeatTreatmentMode: 'allPsto' as const, id: 83, joint: 'F83', pstoRequired: 'отменен',
+    const row = { preHeatTreatmentRequired: true, id: 83, joint: 'F83', pstoRequired: 'отменен',
       pstoResult: 'Старое значение результата', pstoNote: 'Сохранённое пояснение',
     } as WeldRow
     render(<JointHistoryOverview row={row} onOpenDocument={vi.fn()} onOpenReport={vi.fn()}

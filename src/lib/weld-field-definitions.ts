@@ -31,6 +31,7 @@ export const WELD_FIELDS = [
   { key: 'groupName', dbName: 'group_name', label: 'Группа трубопровода', kind: 'text', group: 'Общее', visible: true },
   { key: 'category', dbName: 'category', label: 'Категория трубопровода', kind: 'text', group: 'Общее', visible: true },
   { key: 'pstoRequired', dbName: 'psto_required', label: 'Назначение ПСТО', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'preHeatTreatmentRequired', dbName: 'pre_heat_treatment_required', label: 'НК до ТО', kind: 'boolean', group: 'Контроль', visible: true },
   { key: 'pstoControlBasis', dbName: 'psto_control_basis', label: 'Основание отмены ПСТО', kind: 'text', group: 'Контроль' },
   { key: 'pstoCancellationDate', dbName: 'psto_cancellation_date', label: 'Дата решения об отмене ПСТО', kind: 'date', group: 'Контроль' },
   { key: 'weldControlPercent', dbName: 'weld_control_percent', label: 'Контроль швов, (%)', kind: 'number', group: 'Контроль' },
@@ -355,6 +356,8 @@ export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldVal
   id?: number
   /** Chain choice, changed only by the confirmed pre-TO workflow. */
   preHeatTreatmentRequired?: boolean | null
+  /** Explicit unsaved-card choice; checked against current line/chain on create. */
+  newPreHeatTreatmentChoice?: { required: true; identityKey: string }
   /** Current project policy; never accepted as a writable weld field. */
   preHeatTreatmentMode?: import('./pre-heat-treatment-policy').PreHeatTreatmentMode
   /** Dedicated line-program and layered-control workflows; never ordinary form fields. */

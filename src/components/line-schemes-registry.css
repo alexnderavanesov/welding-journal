@@ -6,3 +6,6 @@
 
 /* Only this registry follows the page; keep the real AG header clickable. */
 .line-schemes-registry .ag-grid-pinned-top-rows { z-index: 5; will-change: translate; box-shadow: 0 1px 3px #33415512; }
+/* Keep the top edge with the header when the outer frame scrolls away,
+   without changing its height or intercepting column controls. */
+.line-schemes-registry .ag-grid-pinned-top-rows::after { content: ''; position: absolute; inset: 0 0 auto; height: 1px; background: #e2e8f0; z-index: 10; pointer-events: none; }

@@ -29,12 +29,12 @@ test.beforeAll(async () => {
       // prerequisite pre-heat-treatment control, not an unwelded joint.
       const weldDate = '2026-09-01'
       const inserted = await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,wdi,connection_type,d1,t1,officiality,revision_actuality,
-        has_vik,vik_request,vik_result,psto_required,psto_request,psto_request_date,psto_date,heat_treatment_diagram,psto_result,tvmt_request,tvmt_request_date,tvmt_conclusion_date,tvmt_conclusion,tvmt_result,psto_cancellation_date,psto_control_basis)
-        values($1,'PGRID',$2,$3,$4,10,'С17',254,10,'действующий','актуальная','да','ВИК', $5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) returning id`,
+        has_vik,vik_request,vik_result,psto_required,psto_request,psto_request_date,psto_date,heat_treatment_diagram,psto_result,tvmt_request,tvmt_request_date,tvmt_conclusion_date,tvmt_conclusion,tvmt_result,psto_cancellation_date,psto_control_basis,pre_heat_treatment_required)
+        values($1,'PGRID',$2,$3,$4,10,'С17',254,10,'действующий','актуальная','да','ВИК', $5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
       [PROJECT, line, joint, weldDate, state === 'repair' ? 'ремонт' : pending ? null : 'годен', cancelled ? 'отменен' : 'да',
         pending ? null : `ПСТО-${joint}`, pending ? null : '2026-09-02', pending ? null : '2026-09-03', pending ? null : `ДИАГ-${joint}`,
         state === 'error' ? 'ошибка' : pending ? null : 'проведено', pending ? null : `ТВМТ-${joint}`, pending ? null : '2026-09-04', pending ? null : '2026-09-05', pending ? null : `ЗАКЛ-${joint}`,
-        pending ? null : ['bad', 'repeat', 'cancelled'].includes(state) ? 'не годен' : 'годен', cancelled ? '2026-09-10' : null, cancelled ? 'E2E отмена' : null])
+        pending ? null : ['bad', 'repeat', 'cancelled'].includes(state) ? 'не годен' : 'годен', cancelled ? '2026-09-10' : null, cancelled ? 'E2E отмена' : null, pending])
       const id = inserted.rows[0].id as number
       rows.push({ id, projectTitle: PROJECT, subtitleCode: 'PGRID', line, joint, weldDate, officiality: 'действующий' })
       if (state === 'repeat') await db.query(`insert into psto_repeat_cycles(weld_joint_id,sequence,psto_request,psto_request_date,psto_date,heat_treatment_diagram,psto_result,tvmt_request,tvmt_request_date,tvmt_conclusion_date,tvmt_conclusion,tvmt_result)

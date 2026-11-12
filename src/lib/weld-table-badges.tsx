@@ -26,8 +26,8 @@ export function isAdditionalText(value: unknown) {
   return isControlAdditionalValue(value)
 }
 
-export function YesBadge() {
-  return <Badge data-weld-badge="neutral" className="bg-background px-2 py-0.5 text-xs font-normal text-slate-600">да</Badge>
+export function YesBadge({ label = 'да' }: { label?: string }) {
+  return <Badge data-weld-badge="neutral" className="bg-background px-2 py-0.5 text-xs font-normal text-slate-600">{label}</Badge>
 }
 
 export function CancelledBadge() {

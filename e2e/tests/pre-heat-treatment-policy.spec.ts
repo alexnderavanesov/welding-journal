@@ -4,12 +4,12 @@ import { promisify } from 'node:util'
 import { expect, test } from '@playwright/test'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 
-test('НК до ТО: PostgreSQL и серверные правила совпадают после выключения и включения', async () => {
+test('НК до ТО: PostgreSQL и серверные правила совпадают после снятия и установки отметки', async () => {
   const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/verify-pre-heat-treatment-policy.ts'], {
     env: { ...process.env, FORCE_COLOR: undefined, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
   })
   expect(stderr).toBe('')
-  expect(JSON.parse(stdout.trim())).toMatchObject({ comparisons: 510, obsoleteFlagsUnchanged: true, settingInitPlan: true, fixtureRolledBack: true })
+  expect(JSON.parse(stdout.trim())).toMatchObject({ comparisons: 510, obsoleteFlagsUnchanged: true, settingLookupFree: true, fixtureRolledBack: true })
 })
 
 for (const historical of [false, true]) test(`НК до ТО доступен: ${historical ? 'исторический стык с завершённой ПСТО' : 'старый флаг и «ожидает заявку»'}`, async ({ page }) => {
@@ -19,10 +19,10 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
     id = await withE2eDatabase(async (client) => {
       const result = await client.query<{ id: number }>(`insert into weld_joints (
         joint, project_title, subtitle_code, line, weld_date, psto_required, has_vik,
-        pre_heat_treatment_lnk_exempt, psto_result, officiality, material_group, connection_type,
+        pre_heat_treatment_lnk_exempt, pre_heat_treatment_required, psto_result, officiality, material_group, connection_type,
         welding_method, d1, d2, t1, t2, wdi, vik_control_basis
       ) values ($1, 'E2E legacy pre-TO', 'P', '330-P42/P59-01-000', '2026-09-16', 'да', 'да',
-        true, 'ожидает заявку', 'действующий', 'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект') returning id`, [joint])
+        true, true, 'ожидает заявку', 'действующий', 'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект') returning id`, [joint])
       return result.rows[0].id
     })
     if (historical) await withE2eDatabase(async (client) => {
@@ -68,16 +68,13 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
 test('открытая заявка не обходит выключение этапа другим пользователем', async ({ page }) => {
   const joint = 'E2E-PRE-STALE-SETTING'
   let id = 0
-  let previousSetting: { value: string; updated_at: Date } | undefined
-  let settingChanged = false
   try {
     id = await withE2eDatabase(async (client) => {
-      previousSetting = (await client.query('select value, updated_at from app_settings where key = $1', ['control-processes'])).rows[0]
       const inserted = await client.query<{ id: number }>(`insert into weld_joints (
         joint, project_title, subtitle_code, line, weld_date, psto_required, has_vik, officiality,
-        material_group, connection_type, welding_method, d1, d2, t1, t2, wdi, vik_control_basis
+        material_group, connection_type, welding_method, d1, d2, t1, t2, wdi, vik_control_basis, pre_heat_treatment_required
       ) values ($1, 'E2E stale setting', 'P', 'L-STALE', '2026-09-16', 'да', 'да', 'действующий',
-        'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект') returning id`, [joint])
+        'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект',true) returning id`, [joint])
       return inserted.rows[0].id
     })
     await page.goto('/lnk')
@@ -88,22 +85,17 @@ test('открытая заявка не обходит выключение э�
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-17')
     await expect(page.getByRole('button', { name: 'Создать заявку до ТО', exact: true })).toBeEnabled()
     await withE2eDatabase(async (client) => {
-      const value = JSON.stringify({ ...JSON.parse(previousSetting?.value ?? '{}'), preHeatTreatmentMode: 'selected' })
-      await client.query(`insert into app_settings (key, value) values ('control-processes', $1)
-        on conflict (key) do update set value = excluded.value`, [value])
-      settingChanged = true
+      await client.query('update weld_joints set pre_heat_treatment_required=false where id=$1', [id])
     })
     await page.getByRole('button', { name: 'Создать заявку до ТО', exact: true }).click()
-    await expect(page.getByText('Стык E2E-PRE-STALE-SETTING: НК до ТО не требуется для этого стыка на текущей линии.', { exact: true })).toBeVisible()
+    // The operator now changes the joint itself, not a global setting; its
+    // version guard must reject the stale dialog before checking the stage.
+    await expect(page.getByText('Стык L-STALE · E2E-PRE-STALE-SETTING уже изменен другим пользователем или в другом окне. Ничего не сохранено. Обновите отчет и повторите действие.', { exact: true })).toBeVisible()
     expect(await withE2eDatabase(async (client) => (await client.query('select id from pre_heat_treatment_controls where weld_joint_id = $1', [id])).rows)).toEqual([])
   } finally {
     await page.close()
     await withE2eDatabase(async (client) => {
       if (id) await client.query('delete from weld_joints where id = $1', [id])
-      if (settingChanged) {
-        if (previousSetting) await client.query('update app_settings set value = $1, updated_at = $2 where key = $3', [previousSetting.value, previousSetting.updated_at, 'control-processes'])
-        else await client.query('delete from app_settings where key = $1', ['control-processes'])
-      }
     })
   }
 })

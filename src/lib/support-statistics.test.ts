@@ -62,7 +62,8 @@ describe('support production statistics', () => {
     const calculate = (tab: 'general' | 'supports' | 'lineSummary' | 'welders') => buildStatisticsServerResult({ rows, welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS, request: { tab, from: '', to: '', unit: 'joints', projectFilter: 'p' } })
     expect(calculate('supports').supportSummary).toMatchObject({ physical: 1, produced: 1, lengthMm: '600' })
     expect(calculate('general').summary.welded).toBe(1)
-    expect(calculate('lineSummary').lineSummary.total).toBe(1)
+    // 12 November: line summary now includes supports; the other production tabs stay separate.
+    expect(calculate('lineSummary').lineSummary.total).toBe(2)
     expect(calculate('welders').welderSummary.total).toBe(1)
   })
 })

@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { createAuditOriginResolver } from './audit-origin-policy'
 
 describe('audit provenance recorded with the operation', () => {
+  it('records explicit new-card and bulk flags, preserving manual versus automatic fill fields', () => {
+    const created = createAuditOriginResolver('createWeldJoint', { newPreHeatTreatmentChoice: { required: true } })
+    expect(created('weld_joints', undefined, { preHeatTreatmentRequired: true }, 'preHeatTreatmentRequired')).toBe('user')
+    const bulk = createAuditOriginResolver('savePreHeatTreatmentBatch', { rowIds: [1], required: true,
+      fill: { overrides: { '1:result:ВИК': { name: 'Manual' } } } })
+    expect(bulk('weld_joints', {}, { id: 1 }, 'preHeatTreatmentRequired')).toBe('user')
+    const control = { weldJointId: 1, method: 'ВИК' }
+    expect(bulk('pre_heat_treatment_controls', undefined, control, 'result')).toBe('user')
+    expect(bulk('pre_heat_treatment_controls', undefined, control, 'conclusionName')).toBe('user')
+    expect(bulk('pre_heat_treatment_controls', undefined, control, 'conclusionDate')).toBe('automatic')
+    expect(bulk('weld_joints', {}, { id: 1 }, 'finalStatus')).toBe('automatic')
+  })
   it.each(['saveJournalCellEdits', 'pasteJournalCells'])('attributes %s user fields without exposing managed fields', operation => {
     const origin = createAuditOriginResolver(operation, {})
     const row = { id: 7, weldingElectrodes: 'Э', isometry: 'ISO', finalStatus: 'годен', spool: 'SP' }

@@ -516,7 +516,7 @@ describe('PSTO cycle corrections', () => {
   })
 
   it('does not move the primary PSTO past the official cancellation date', () => {
-    const row = makeRow({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'отменен', pstoCancellationDate: '2026-08-04' })
+    const row = makeRow({ preHeatTreatmentRequired: true, pstoRequired: 'отменен', pstoCancellationDate: '2026-08-04' })
 
     expect(() => applyPstoCycleCorrection(row, {
       sequence: 1,
@@ -528,7 +528,7 @@ describe('PSTO cycle corrections', () => {
   })
 
   it('does not move a repeat PSTO past the official cancellation date', () => {
-    const row = makeRow({ preHeatTreatmentMode: 'allPsto' as const,
+    const row = makeRow({ preHeatTreatmentRequired: true,
       pstoRequired: 'отменен',
       pstoCancellationDate: '2026-08-10',
       tvmtResult: 'не годен',
@@ -556,7 +556,7 @@ describe('PSTO cycle corrections', () => {
 })
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return { preHeatTreatmentMode: 'allPsto' as const,
+  return { preHeatTreatmentRequired: true,
     id: 1,
     joint: 'F1',
     weldDate: '2026-08-01',

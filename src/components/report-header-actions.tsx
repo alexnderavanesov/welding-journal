@@ -1,3 +1,5 @@
+import type { PreHeatTreatmentMenu } from './pre-heat-treatment-menu'
+import type { ComponentProps } from 'react'
 import type { CustomDocumentType } from '@/lib/custom-document-types'
 import type { WorkflowAvailability } from '@/components/workflow-action-menu-item'
 import { HeatTreatmentHeaderActions, LnkHeaderActions, WeldingJournalHeaderActions } from '@/components/report-header-action-groups'
@@ -7,6 +9,7 @@ import { Button } from '@/components/ui/button'
 
 export type ReportHeaderActionsProps = {
   activeReport: ActiveReport
+  preHeatTreatmentMenu?: ComponentProps<typeof PreHeatTreatmentMenu>
   onOpenImportDialog: () => void
   onCreateWeldJoint: () => void
   onOpenLineProgram?: () => void
@@ -78,6 +81,7 @@ export type ReportHeaderActionsProps = {
 
 export function ReportHeaderActions({
   activeReport,
+  preHeatTreatmentMenu,
   onOpenImportDialog,
   onCreateWeldJoint,
   onOpenLineProgram,
@@ -182,6 +186,7 @@ export function ReportHeaderActions({
       ) : null}
       {activeReport === 'lnk' ? (
         <LnkHeaderActions
+          preHeatTreatmentMenu={preHeatTreatmentMenu}
           onCreateRequest={onCreateLnkRequest}
           createRequestDisabled={createLnkRequestDisabled}
           onExtendRequest={onExtendLnkRequest}

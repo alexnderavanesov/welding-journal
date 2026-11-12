@@ -55,7 +55,7 @@ function DocumentHistoryGridFilter({ column, api }: CustomFilterDisplayProps) {
     onRetry={() => { void query.refetch() }} empty={!options.length}
     footer={query.data?.hasMore ? <p className="journal-filter-legacy">{dated
       ? 'Показана часть значений. Выбор года, месяца или дня включает только значения из этого списка. Уточните поиск.'
-      : 'Показана часть значений. Уточните поиск; сохранённый отбор действует по всему реестру.'}</p> : undefined}>
+      : 'Показана часть значений. Уточните поиск.'}</p> : undefined}>
     {pendingValues ? <div className="document-filter-updating" role="status"><span>Обновляем значения…</span></div> : null}
     <fieldset className="document-filter-options" disabled={pendingValues} aria-busy={pendingValues}>
       {dated ? <GridDateFilterOptions options={options} selectedValues={selectedSet} onToggleValues={toggle} search={debouncedSearch} />

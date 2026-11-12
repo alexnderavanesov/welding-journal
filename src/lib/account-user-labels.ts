@@ -6,8 +6,8 @@ export const accountStatusLabel = (status: string) => status === 'active' ? 'А�
 export function accountActivityLabel(user: AccountListUser, available: boolean) {
   if (!available) return 'Нет связи'
   if (user.online) return 'Онлайн'
-  if (!user.lastActiveAt) return user.status === 'pending' ? 'Ещё не входил' : 'Нет данных'
-  return Number.isFinite(new Date(user.lastActiveAt).getTime()) ? 'Был(а) на сайте' : 'Нет данных'
+  if (!user.lastActiveAt) return 'Ещё не входил'
+  return Number.isFinite(new Date(user.lastActiveAt).getTime()) ? 'Был(а) на сайте' : 'Ещё не входил'
 }
 export function accountActivityOrder(user: AccountListUser) {
   if (user.online) return Number.MAX_SAFE_INTEGER

@@ -87,8 +87,8 @@ describe('whole-chain PSTO policy', () => {
     expect(records.every(r => r.pstoRequired === (required ? 'да' : 'отменен') && r.pstoExceptionBasis === decision.basis)).toBe(true)
   })
   it('uses the exception to require pre-TO NK and allows PSTO after that stage is complete', () => {
-    const current = { ...apply(row), weldDate: '2026-10-01', hasVik: 'да', pstoRequest: 'П-1', pstoRequestDate: '2026-10-02' }
-    const context = { controlProcessSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: 'allPsto' as const },
+    const current = { ...apply(row), preHeatTreatmentRequired: true, weldDate: '2026-10-01', hasVik: 'да', pstoRequest: 'П-1', pstoRequestDate: '2026-10-02' }
+    const context = { controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       systemIndexSettings: settings, pstoLineAssignments: new Map([[getPstoLineIdentityKey(row), policy]]) }
     expect(getSystemWorkflowStageTransitionReason(current, row as WeldJoint, context)).toContain('до ТО')
     const completed = { ...current, preHeatTreatmentControls: [{ id: 10, weldJointId: row.id, method: 'ВИК', result: 'годен', requestName: 'В-1', requestDate: '2026-10-01', conclusionName: 'ВК-1', conclusionDate: '2026-10-02' }] } as WeldRow

@@ -14,6 +14,7 @@ weldJoints
 } from '@/db/schema'
 import {
 CONTROL_ASSIGNMENT_FIELD_KEYS,
+CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES,
 getControlAvailabilityFilterAliases
 } from '@/lib/control-availability-values'
 import {
@@ -50,6 +51,7 @@ type WeldImportScopeRequest
 } from '@/server/weld-contracts'
 import { Column,and,asc,eq,exists,getTableColumns,ilike,inArray,notExists,notInArray,or,sql,type SQL,type SQLWrapper } from 'drizzle-orm'
 import { getControlMethodFilterColumnKey } from '@/server/weld-request-utils'
+import { buildNormalizedControlAvailabilityWhere } from './control-availability-sql'
 
 export const filterKeys = [
   'projectTitle',
@@ -329,6 +331,10 @@ export function buildGeneratedDocumentColumnWhere(
 
 export function getWeldColumn(fieldKey: WeldFieldKey) {
   if (fieldKey === 'officiality') return WELD_EFFECTIVE_OFFICIALITY
+  if (fieldKey === 'preHeatTreatmentRequired') return sql<string>`case
+    when ${weldJoints.preHeatTreatmentRequired} is true then 'да'
+    when ${buildNormalizedControlAvailabilityWhere(weldJoints.pstoRequired, CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES)} then ''
+    else '—' end`
   return WELD_TABLE_COLUMNS[fieldKey as keyof typeof WELD_TABLE_COLUMNS]
 }
 

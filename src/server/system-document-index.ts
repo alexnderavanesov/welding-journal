@@ -220,7 +220,7 @@ export async function loadIndexedSystemDocumentHistoryGrid(
   })
 }
 
-export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemDocumentHistoryGridRequest) {
+export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemDocumentHistoryGridRequest, output = false) {
   const storageTypes = getSystemDocumentStorageTypes(request.type)
   const sortExpressions = Object.fromEntries(SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
   Object.assign(sortExpressions, { rowCount: sql`"rowCount"`, date: sql`nullif("date", '')::date` })
@@ -234,7 +234,7 @@ export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemD
   return buildDocumentHistoryGridSql({
     baseQuery: buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true),
     columnFilters: request.columnFilters, filterKeys: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
-    request, idKind: 'system', sortExpressions,
+    output, request, idKind: 'system', sortExpressions,
     defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
     // This indexed row reads only generated_documents. Its existing xmin
     // token changes with metadata, specialists and membership touches too.
@@ -245,6 +245,13 @@ export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemD
       hydrate: ids => buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true, ids),
     },
   })
+}
+
+export async function prepareSystemDocumentHistoryOutput(tx: SystemDocumentSequenceTransaction, request: IndexedSystemDocumentHistoryGridRequest) {
+  await lockSystemDocumentIndex(tx, request.type)
+  await ensureSystemDocumentIndexInitializedInTransaction(tx, request.type)
+  return { query: buildIndexedSystemDocumentHistoryGridSql(request, true),
+    cells: (keys: string[], raw: Record<string, unknown>) => { const row = toIndexedSystemDocumentHistorySummary(raw, request.type); return keys.map(key => systemDocumentGridValue(key, row)) } }
 }
 
 export async function queryIndexedSystemDocumentHistory(

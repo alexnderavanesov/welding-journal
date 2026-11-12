@@ -1463,6 +1463,7 @@ function GeneratedDocumentsPanel({
   return <section className="min-w-0 rounded-md border border-[#cbdde6] bg-white">
     {openRowsError || selectionError ? <DocumentHistoryError message={openRowsError || selectionError!} onRetry={() => { setOpenRowsError(null); refresh() }} /> : null}
     <DocumentsHistoryGrid viewId={historyStorageKey} columns={columns} initialVisibleColumnKeys={initialVisibleColumnKeys}
+      reportTitle={`Список документов: ${documentLabel}`} reportSource={{ kind: 'generated', types: [...historyTypes], columnFilters, ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }) }}
       renderCell={renderCell} renderActions={renderActions} getCellValue={getCellValue} loadRows={loadRows}
       sourceRevision={`${sourceRevision}:${navigationDocumentId ?? ''}`}
       filterSourceRevision={`${sourceRevision}:${navigationDocumentId ?? ''}`}
@@ -1785,6 +1786,7 @@ function SystemDocumentsPanel({
 
     {actionError || selectionError ? <DocumentHistoryError message={actionError || selectionError!} onRetry={() => { setActionError(null); refresh() }} /> : null}
     <DocumentsHistoryGrid viewId={historyStorageKey} columns={columns} initialVisibleColumnKeys={initialVisibleColumnKeys}
+      reportSource={{ kind: 'system', type: documentType, columnFilters: effectiveColumnFilters, ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}) }}
       renderCell={renderCell} renderActions={renderActions} getCellValue={getCellValue} loadRows={loadRows}
       sourceRevision={`${sourceRevision}:${JSON.stringify(effectiveColumnFilters)}:${navigationTarget?.documentId ?? ''}`}
       filterSourceRevision={`${sourceRevision}:${lnkConclusionTemplateFilter}:${navigationTarget?.documentId ?? ''}`}

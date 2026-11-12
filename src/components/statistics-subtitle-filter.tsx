@@ -3,6 +3,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import { Input } from './ui/input'
+import { FilterResizeHandles } from './filter-resize-handles'
 
 export function StatisticsSubtitleFilter({ options, value, onChange }: {
   options: { value: string; label: string }[]
@@ -11,6 +12,7 @@ export function StatisticsSubtitleFilter({ options, value, onChange }: {
 }) {
   const id = useId()
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false), [search, setSearch] = useState('')
   const [placement, setPlacement] = useState({ above: false, maxHeight: 340 })
   const selected = useMemo(() => new Set(value), [value])
@@ -74,9 +76,9 @@ export function StatisticsSubtitleFilter({ options, value, onChange }: {
       }}>
       <span id={`${id}-value`} className="truncate" {...overflowTitle(summary)}>{summary}</span><ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-400 ${open ? 'rotate-180' : ''}`} />
     </button>
-    {open ? <div id={`${id}-options`} role="dialog" aria-labelledby={`${id}-label`} style={{ maxHeight: placement.maxHeight }} className={`absolute left-0 right-0 z-40 flex flex-col rounded-lg border border-slate-200 bg-white shadow-lg ${placement.above ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+    {open ? <div ref={panel} id={`${id}-options`} role="dialog" aria-labelledby={`${id}-label`} style={{ maxHeight: placement.maxHeight }} className={`absolute left-0 right-0 z-40 flex flex-col rounded-lg border border-slate-200 bg-white shadow-lg ${placement.above ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
       <div className="shrink-0 border-b border-slate-100 p-2"><label className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input autoFocus aria-label="Найти шифр" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Найти шифр…" className="h-9 pl-9" /></label></div>
-      <div className="min-h-0 max-h-60 overflow-y-auto overscroll-contain p-1">
+      <div data-filter-scroll className="min-h-0 max-h-60 overflow-y-auto overscroll-contain p-1">
         {filtered.map(option => <label key={option.value} className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-sky-50 focus-within:bg-sky-50">
           <Checkbox checked={selected.has(option.value)} onChange={event => onChange(event.target.checked ? [...value, option.value] : value.filter(item => item !== option.value))} className="mt-0.5 shrink-0" />
           <span className="min-w-0 break-words">{option.label}</span>
@@ -87,6 +89,7 @@ export function StatisticsSubtitleFilter({ options, value, onChange }: {
         <span className="text-slate-500">{value.length ? `Выбрано: ${value.length}` : 'Без ограничения по шифру'}</span>
         <button type="button" disabled={!value.length} onClick={() => onChange([])} className="rounded text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:text-slate-300">Сбросить шифры</button>
       </div>
+      <FilterResizeHandles panel={panel} />
     </div> : null}
   </div>
 }

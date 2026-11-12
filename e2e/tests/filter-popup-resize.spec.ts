@@ -1,0 +1,146 @@
+import { expect, test } from '@playwright/test'
+import { resizeFilterPopup as resize } from '../filter-popup'
+import { withE2eDatabase } from '../database'
+
+test.setTimeout(30_000)
+
+test('native set filter keeps its initial size and expands with the AG Grid handles', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto('/account?tab=users')
+  const grid = page.getByRole('grid', { name: 'Пользователи и права', exact: true })
+  await grid.locator('[col-id="name"] .ag-header-cell-filter-button').click()
+  const popup = page.locator('.read-only-grid-popup').filter({ visible: true })
+  await expect(popup.getByRole('textbox')).toBeVisible()
+  expect((await popup.boundingBox())!.width).toBe(360)
+  await resize(page, popup, true)
+  const resized = (await popup.boundingBox())!
+  await expect(popup.getByRole('button', { name: 'Применить', exact: true })).toBeInViewport()
+  await popup.getByRole('textbox').fill('нет такого имени')
+  await expect(popup.getByText('Нет совпадений', { exact: true })).toBeVisible()
+  await expect(popup.locator('.ag-resizer-bottomRight')).toBeVisible()
+  expect((await popup.boundingBox())!.width).toBeCloseTo(resized.width, 0)
+  expect((await popup.boundingBox())!.height).toBeCloseTo(resized.height, 0)
+  await page.screenshot({ path: info.outputPath('native-filter-expanded.png') })
+  await page.keyboard.press('Escape')
+  await expect(popup).not.toBeVisible()
+})
+
+for (const path of ['/journal', '/lnk', '/psto', '/documents', '/line-schemes']) test(`${path}: custom filter resize keeps search and closes with Escape`, async ({ page }, info) => {
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto(path)
+  await page.locator('.ag-header-cell-filter-button').first().click()
+  const dialog = page.getByRole('dialog', { name: /^Фильтр:/ })
+  await expect(dialog.getByRole('textbox')).toBeVisible()
+  await expect(dialog).not.toContainText(/Отбор действует|Фильтр действует/)
+  const popup = page.locator('.ag-filter-menu').filter({ has: dialog })
+  const initial = await resize(page, popup)
+  await dialog.getByRole('textbox').fill('неизвестное значение')
+  await expect(dialog.getByRole('textbox')).toHaveValue('неизвестное значение')
+  await page.screenshot({ path: info.outputPath('custom-filter-expanded.png') })
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await page.locator('.ag-header-cell-filter-button').first().click()
+  await expect(dialog.getByRole('textbox')).toBeVisible()
+  expect((await popup.boundingBox())!.width).toBeCloseTo(initial.width, 0)
+})
+
+for (const field of ['actorName', 'createdAt']) test(`activity ${field}: resize preserves controls`, async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1100 })
+  await page.goto('/account?tab=activity')
+  await page.locator(`.ag-header-cell[col-id="${field}"] .ag-header-cell-filter-button`).click()
+  const dialog = page.getByRole('dialog', { name: /^Фильтр:/ })
+  await expect(dialog.getByRole('button', { name: 'Сбросить фильтр', exact: true })).toBeVisible()
+  const popup = page.locator('.ag-filter-menu').filter({ has: dialog })
+  expect((await popup.boundingBox())!.width).toBe(310)
+  await resize(page, popup)
+  await expect(dialog).not.toContainText('Фильтр действует')
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+})
+
+test('reference table popup and connection rules resize without changing selected values', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1100 })
+  await page.goto('/account?tab=rules&section=checks')
+  await page.getByRole('button', { name: 'Табличный', exact: true }).click()
+  const table = page.getByRole('region', { name: 'Табличные примеры проверки клейм' })
+  await table.getByRole('button', { name: /^Фильтр:/ }).first().click()
+  const dialog = page.getByRole('dialog', { name: /^Фильтр:/ })
+  await expect(dialog.getByRole('checkbox').first()).toBeVisible()
+  const popup = page.locator('[data-filter-popup]')
+  await resize(page, popup)
+  await dialog.getByRole('checkbox').first().check()
+  await expect(dialog.getByRole('checkbox').first()).toBeChecked()
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await page.goto('/account?tab=rules')
+  await page.locator('.ag-header-cell-filter-button').first().click()
+  await expect(dialog.getByRole('checkbox').first()).toBeVisible()
+  await resize(page, page.locator('.ag-filter-menu').filter({ has: dialog }))
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+})
+
+test('line program native filter retains compact default and grows its values list', async ({ page }) => {
+  const project = 'E2E resize program'
+  const id = await withE2eDatabase(async db => (await db.query("insert into line_programs(project_title,subtitle_code,line) values($1,'CODE','LINE') returning id", [project])).rows[0].id)
+  try {
+    await page.setViewportSize({ width: 1600, height: 1100 })
+    await page.goto('/line-program')
+    await page.locator('.ag-header-cell-filter-button').first().click()
+    const popup = page.locator('.program-grid-popup.ag-filter-menu').filter({ visible: true })
+    await expect(popup.getByRole('textbox')).toBeVisible()
+    expect((await popup.boundingBox())!.width).toBe(284)
+    await resize(page, popup, true)
+    await page.keyboard.press('Escape')
+    await expect(popup).not.toBeVisible()
+  } finally {
+    await withE2eDatabase(db => db.query('delete from line_programs where id=$1', [id]))
+  }
+})
+
+test('custom filter at the window edge supports separate axes, keyboard and viewport limits', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 850 })
+  await page.goto('/line-schemes')
+  await page.locator('.ag-header-cell[col-id="files"] .ag-header-cell-filter-button').click()
+  const popup = page.locator('.read-only-grid-popup').filter({ visible: true })
+  const dialog = popup.getByRole('dialog')
+  await expect(dialog.getByRole('textbox')).toBeVisible()
+  const initial = (await popup.boundingBox())!
+  const right = (await popup.locator('.filter-resize-right').boundingBox())!
+  await page.mouse.move(right.x + right.width / 2, right.y + 20)
+  await page.mouse.down(); await page.mouse.move(right.x + 100, right.y + 20, { steps: 8 }); await page.mouse.up()
+  await expect.poll(async () => (await popup.boundingBox())!.width).toBeGreaterThan(initial.width + 80)
+  expect((await popup.boundingBox())!.height).toBeCloseTo(initial.height, 0)
+  const corner = popup.getByRole('button', { name: 'Изменить размер фильтра', exact: true })
+  await corner.focus()
+  const width = (await popup.boundingBox())!.width
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => (await popup.boundingBox())!.width).toBeCloseTo(width + 10, 0)
+  const grip = (await corner.boundingBox())!
+  await page.mouse.move(grip.x + 7, grip.y + 7); await page.mouse.down()
+  await page.mouse.move(1279, 849, { steps: 16 }); await page.mouse.up()
+  const grown = (await popup.boundingBox())!
+  expect(grown.x).toBeGreaterThanOrEqual(11); expect(grown.y).toBeGreaterThanOrEqual(11)
+  expect(grown.x + grown.width).toBeLessThanOrEqual(1268)
+  expect(grown.y + grown.height).toBeLessThanOrEqual(838)
+  await page.keyboard.press('Escape')
+  await expect(popup).not.toBeVisible()
+})
+
+test('nested PSTO program filter resizes independently from its dialog', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1100 })
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
+  const program = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Программа ПСТО', exact: true }) })
+  await expect(program).toBeVisible()
+  await program.locator('.ag-header-cell-filter-button').first().click()
+  const dialog = page.getByRole('dialog', { name: /^Фильтр:/ })
+  await expect(dialog.getByRole('textbox')).toBeVisible()
+  const before = await program.boundingBox()
+  await resize(page, page.locator('.ag-filter-menu').filter({ has: dialog }))
+  expect(await program.boundingBox()).toEqual(before)
+  await expect(dialog).not.toContainText('Отбор действует')
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await expect(program).toBeVisible()
+})

@@ -3,18 +3,18 @@ import { applyRemoteControlProcessSettings, DEFAULT_CONTROL_PROCESS_SETTINGS, lo
 
 describe('control process modes and legacy settings', () => {
   beforeEach(() => window.localStorage.clear())
-  it('starts new projects in selected mode and preserves legacy enabled/disabled meaning', () => {
+  it('always selects individual joints even with legacy mode settings', () => {
     expect(normalizeControlProcessSettings(null)).toEqual({ pvkGoodOnly: false, preHeatTreatmentMode: 'selected' as const })
-    expect(normalizeControlProcessSettings({ pvkGoodOnly: false }).preHeatTreatmentMode).toBe('allPsto')
-    expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: true }).preHeatTreatmentMode).toBe('allPsto')
+    expect(normalizeControlProcessSettings({ pvkGoodOnly: false }).preHeatTreatmentMode).toBe('selected')
+    expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: true }).preHeatTreatmentMode).toBe('selected')
     expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: false }).preHeatTreatmentMode).toBe('selected')
   })
   it.each([true, false])('ignores the retired primary restriction (%s)', old => {
     expect(normalizeControlProcessSettings({ preHeatTreatmentMode: 'selected', allowPrimaryLnkBeforePreviousStagesComplete: old })).toEqual(DEFAULT_CONTROL_PROCESS_SETTINGS)
   })
-  it('persists selected/allPsto without legacy keys and accepts authoritative remote settings', () => {
+  it('ignores retired allPsto values and accepts other remote settings', () => {
     saveControlProcessSettings({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' as const }, { syncRemote: false })
-    expect(loadControlProcessSettings()).toEqual({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' as const })
+    expect(loadControlProcessSettings()).toEqual({ pvkGoodOnly: false, preHeatTreatmentMode: 'selected' as const })
     applyRemoteControlProcessSettings({ pvkGoodOnly: true, preHeatTreatmentLnkEnabled: false })
     expect(loadControlProcessSettings()).toEqual({ pvkGoodOnly: true, preHeatTreatmentMode: 'selected' as const })
   })

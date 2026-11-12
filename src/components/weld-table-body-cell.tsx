@@ -1,4 +1,5 @@
 import { formatPstoDocumentDisplay } from '@/lib/psto-document-display'
+import { getPreHeatTreatmentColumnText, getPreHeatTreatmentColumnTooltip } from '@/lib/pre-heat-treatment-column'
 import { overflowTitle } from '@/lib/overflow-title'
 import { WeldTableValue } from '@/components/weld-table-value'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -141,6 +142,7 @@ export function getWeldTableBodyCellTooltip({
   canOpenJointOverview?: boolean
   canOpenWeldEditor: boolean
 }) {
+  if (fieldKey === 'preHeatTreatmentRequired') return getPreHeatTreatmentColumnTooltip(row)
   const visibleValue = fieldKey === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : formatPstoDocumentDisplay(row, fieldKey, displayValue)
   const finalStatusErrorReason =
     fieldKey === 'finalStatus' && String(displayValue ?? '').trim().toLowerCase() === 'ошибка'
@@ -239,7 +241,11 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   onOpenJointOverview,
   controlBasisEditorEnabled = false,
 }: WeldTableBodyCellProps) {
-  const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : formatPstoDocumentDisplay(row, field.key, displayValue)
+  const visibleValue = field.key === 'preHeatTreatmentRequired' ? getPreHeatTreatmentColumnText(row)
+    : field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : formatPstoDocumentDisplay(row, field.key, displayValue)
+  const preliminaryTooltip = field.key === 'preHeatTreatmentRequired' ? getPreHeatTreatmentColumnTooltip(row) : undefined
+  const tooltipTitle = preliminaryTooltip ? 'НК до ТО' : field.key === 'joint' ? `Стык ${String(visibleValue ?? '')}` : undefined
+  const tooltipBody = preliminaryTooltip ?? (field.key === 'joint' ? 'Нажмите, чтобы открыть картину стыка, хронологию и следующий шаг.' : undefined)
   const fieldKey = field.key as WeldFieldKey
   const layeredWaitingLabel = getLayeredControlWaitingLabel(row, fieldKey)
   const layeredDocumentTypes = isLayeredControlCompositeFieldKey(fieldKey)
@@ -278,8 +284,9 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
 
   return (
     <div data-weld-field-key={field.key} className="journal-grid-value"
-      data-journal-tip-title={journalTooltips && field.key === 'joint' ? `Стык ${String(visibleValue ?? '')}` : undefined}
-      data-journal-tip-body={journalTooltips && field.key === 'joint' ? 'Нажмите, чтобы открыть картину стыка, хронологию и следующий шаг.' : undefined}>
+      title={!journalTooltips ? preliminaryTooltip : undefined}
+      data-journal-tip-title={journalTooltips ? tooltipTitle : undefined}
+      data-journal-tip-body={journalTooltips ? tooltipBody : undefined}>
       {layeredDocumentTypes.length > 0 ? (
         <div className="journal-layered-documents flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
           {layeredWaitingLabel ? (

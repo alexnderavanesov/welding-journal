@@ -11,7 +11,7 @@ const rows = (): WeldRow[] => Array.from({ length: 20 }, (_, i) => ({
   weldDate: '2026-09-01', connectionType: 'СШ', stamp1K: 'A', hasVik: 'да',
   category: 'II', groupName: 'A', weldControlPercent: 30, pvkControlPercent: 10,
 }))
-const policy = (input: WeldRow[], enabled: boolean) => input.map((row) => ({ ...row, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const }))
+const policy = (input: WeldRow[], enabled: boolean) => input.map((row) => ({ ...row, preHeatTreatmentRequired: enabled }))
 
 describe('disabled pre-TO history stays stored but does not participate in the line program', () => {
   it.each(['ВИК', 'РК', 'УЗК', 'ПВК'])('excludes rejected %s from surcharge, candidates and the fourth-rejection threshold, then restores it on enable', (method) => {

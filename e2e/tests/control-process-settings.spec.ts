@@ -67,7 +67,7 @@ test('owner edits process settings through personal access; legacy password sett
 
   await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
   await expect(page.getByRole('switch', { name: /^ПВК — только годен/ })).not.toBeChecked()
-  await expect(page.getByLabel('Режим НК до ТО')).toHaveValue('allPsto')
+  await expect(page.getByLabel('Режим НК до ТО')).toHaveCount(0)
   await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Параметры РК', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toBeVisible()
@@ -94,7 +94,7 @@ test('owner edits process settings through personal access; legacy password sett
   await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible()
   await expect.poll(() => loadControlSettings()).toEqual({
     pvkGoodOnly: true,
-    preHeatTreatmentMode: 'allPsto',
+    preHeatTreatmentMode: 'selected',
 
   })
 
@@ -124,15 +124,15 @@ test('PVK-only-good never starts the removed automatic layered-document workflow
   expect(await loadLayeredDocumentTypes()).toEqual([])
 })
 
-test('программа линий сохраняет зачтённый ПВК при смене режима НК до ТО', async ({ page }) => {
+test('программа линий сохраняет зачтённый ПВК при изменении доступных настроек контроля', async ({ page }) => {
   const line = 'E2E-PROGRAM-PRE-POLICY'
   await withE2eDatabase(async (client) => {
     const { rows: [program] } = await client.query(`insert into line_programs
       (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent)
       values ($1, 'LP', $2, 'II', 'A', 30, 10) returning id`, [TEST_PROJECT, line])
     await client.query(`insert into weld_joints (line_program_id, project_title, subtitle_code, line, joint, weld_date,
-      connection_type, category, group_name, weld_control_percent, pvk_control_percent, has_vik, stamp_1_k, has_pvk)
-      select $1, $2, 'LP', $3, 'F' || (800+n)::text, '2026-09-01', 'СШ', 'II', 'A', 30, 10, 'да', 'PRE-POLICY',
+      connection_type, category, group_name, weld_control_percent, pvk_control_percent, has_vik, stamp_1_k, pre_heat_treatment_required, has_pvk)
+      select $1, $2, 'LP', $3, 'F' || (800+n)::text, '2026-09-01', 'СШ', 'II', 'A', 30, 10, 'да', 'PRE-POLICY',true,
       case when n=1 then 'отменен' end from generate_series(1,20) n`, [program.id, TEST_PROJECT, line])
     await client.query(`insert into pre_heat_treatment_controls (weld_joint_id, method, result, request_name, request_date, conclusion_name, conclusion_date)
       select id, 'ПВК', 'годен', 'P-POLICY', '2026-09-02', 'C-POLICY', '2026-09-03' from weld_joints where line=$1 and joint='F801'`, [line])
@@ -150,39 +150,38 @@ test('программа линий сохраняет зачтённый ПВК
   await page.goto('/settings')
   let pvk = await openProgram()
   await expect(pvk.getByRole('button', { name: 'ПВК · зачтено / нужно 1 / 2', exact: true })).toBeVisible()
-  for (const mode of ['selected', 'allPsto']) {
+  for (const enabled of [true, false]) {
     await page.getByRole('button', { name: 'Настройки', exact: true }).click()
     await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
-    await changeMode(page, mode)
+    await changePvkOnlyGood(page, enabled)
     pvk = await openProgram()
     await expect(pvk.getByRole('button', { name: 'ПВК · зачтено / нужно 1 / 2', exact: true })).toBeVisible()
     expect(await history()).toEqual(initialHistory)
   }
 })
 
-test('mode changes preserve unfinished history, initial requirements and explicit off choices', async ({ page }) => {
+test('settings have no mode selector and preserve unfinished history and explicit preliminary choices', async ({ page }) => {
   await seedPreHeatTreatmentLines()
+  await withE2eDatabase(client => client.query(`update weld_joints set pre_heat_treatment_required=case
+    when joint=$2 then true when joint=$3 then false else null end where project_title=$1`, [TEST_PROJECT, PRE_JOINTS[0], PRE_JOINTS[1]]))
   const stored = () => withE2eDatabase(async client => ({
     controls: (await client.query('select c.* from pre_heat_treatment_controls c join weld_joints w on w.id=c.weld_joint_id where w.project_title=$1 order by c.id', [TEST_PROJECT])).rows,
     flags: (await client.query('select joint,pre_heat_treatment_required from weld_joints where project_title=$1 order by joint', [TEST_PROJECT])).rows,
   }))
   const before = await stored()
   await openControlProcesses(page)
-  await changeMode(page, 'selected')
-  expect((await stored()).controls).toEqual(before.controls)
-  expect((await stored()).flags.every(row => row.pre_heat_treatment_required === true)).toBe(true)
-  await withE2eDatabase(client => client.query('update weld_joints set pre_heat_treatment_required=false where project_title=$1 and joint=$2', [TEST_PROJECT, PRE_JOINTS[1]]))
-  await changeMode(page, 'allPsto')
-  await changeMode(page, 'selected')
-  expect((await stored()).flags.find(row => row.joint === PRE_JOINTS[1])?.pre_heat_treatment_required).toBe(false)
-  expect((await stored()).controls).toEqual(before.controls)
+  await expect(page.getByLabel('Режим НК до ТО')).toHaveCount(0)
+  for (const enabled of [true, false]) {
+    await changePvkOnlyGood(page, enabled)
+    expect(await stored()).toEqual(before)
+  }
 })
 
-async function changeMode(page: Page, mode: string) {
-  await page.getByLabel('Режим НК до ТО').selectOption(mode)
+async function changePvkOnlyGood(page: Page, enabled: boolean) {
+  await page.getByRole('switch', { name: /^ПВК — только годен/ }).locator('xpath=..').click()
   await page.getByRole('button', { name: 'Сохранить процессы контроля', exact: true }).click()
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
-  await expect.poll(async () => (await loadControlSettings()).preHeatTreatmentMode).toBe(mode)
+  await page.getByRole('button', { name: enabled ? 'Включить' : 'Выключить', exact: true }).click()
+  await expect.poll(() => loadControlSettings()).toEqual({ pvkGoodOnly: enabled, preHeatTreatmentMode: 'selected' })
 }
 
 async function openControlProcesses(page: Page) {

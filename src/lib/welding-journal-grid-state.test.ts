@@ -5,6 +5,18 @@ import { WELD_GRID_PROFILES } from './weld-report-grid-profile'
 
 describe('welding journal grid state', () => {
   beforeEach(() => localStorage.clear())
+  it('adds the new requirement beside PSTO in old layouts without undoing a later custom order', () => {
+    for (const profile of Object.values(WELD_GRID_PROFILES)) {
+      const layout = { columns: [{ colId: 'joint', width: 180 }, { colId: 'pstoRequired', width: 120 }, { colId: 'pstoResult' }], appearance: DEFAULT_JOURNAL_APPEARANCE }
+      writeJournalGridStorage({ ...layout, views: { saved: layout } }, profile.storageKey)
+      const restored = readJournalGridStorage(profile.storageKey)
+      expect(restored.columns.map(column => column.colId)).toEqual(['joint', 'pstoRequired', 'preHeatTreatmentRequired', 'pstoResult'])
+      expect(restored.views.saved.columns).toEqual(restored.columns)
+      const reordered = [...restored.columns].reverse()
+      writeJournalGridStorage({ ...restored, columns: reordered }, profile.storageKey)
+      expect(readJournalGridStorage(profile.storageKey).columns).toEqual(reordered)
+    }
+  })
   it('keeps PSTO layouts and named appearance snapshots separate from the journal', () => {
     const journal = { columns: [{ colId: 'joint', width: 180 }], appearance: DEFAULT_JOURNAL_APPEARANCE, views: {} }
     const psto = { columns: [{ colId: 'pstoResult', width: 280 }], appearance: { ...DEFAULT_JOURNAL_APPEARANCE, theme: 'balham' as const }, views: {} }

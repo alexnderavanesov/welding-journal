@@ -1,3 +1,4 @@
+import { resizeFilterPopup } from '../filter-popup'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { readFile } from 'node:fs/promises'
@@ -9,6 +10,9 @@ const project = 'E2E statistics AG Grid'
 const otherProject = 'ZZ E2E statistics scope'
 
 async function filterValue(page: Page, grid: Locator, column: string, value: string) {
+  // Native AG resizing stops at the viewport edge. Leave room for the
+  // deliberate +100px height check even when summary cards precede the grid.
+  await grid.locator('.ag-header').evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 150))
   await grid.locator(`.ag-header-cell[col-id="${column}"] .ag-header-cell-filter-button`).click()
   const filter = page.locator('.ag-filter').filter({ visible: true })
   await expect(filter.getByRole('textbox')).toHaveCSS('height', '32px')
@@ -21,6 +25,8 @@ async function filterValue(page: Page, grid: Locator, column: string, value: str
     })).toBe(true)
   }
   await filter.getByRole('checkbox', { name: 'Выбрать все', exact: true }).uncheck()
+  if (!await filter.locator('.ag-set-filter-list').evaluate(element => (element as HTMLElement).style.width))
+    await resizeFilterPopup(page, page.locator('.read-only-grid-popup').filter({ visible: true }), true)
   await filter.getByRole('textbox').fill(value)
   await filter.getByRole('checkbox', { name: value, exact: true }).check()
   await filter.getByRole('button', { name: 'Применить', exact: true }).click()
@@ -137,9 +143,9 @@ test('statistics and import: large lists, preserved details and bounded renderin
     const lines = page.locator('[data-statistics-grid="lines"]')
     await expect(lines.getByText('L0001', { exact: true })).toBeVisible()
     observations.lineDomRows = await lines.locator('.ag-row').count()
-    await expect(lines.getByText('Группа трубопровода', { exact: true })).toBeVisible()
-    await expect(lines.getByText('Категория трубопровода', { exact: true })).toBeVisible()
-    await expect(lines.getByText('Контроль швов, (%)', { exact: true })).toBeVisible()
+    await expect(lines.getByText('Группа', { exact: true })).toBeVisible()
+    await expect(lines.getByText('Категория', { exact: true })).toBeVisible()
+    await expect(lines.getByText('Контроль, %', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Параметры', exact: true })).toHaveCount(0)
     await expect(page.getByRole('combobox', { name: 'Проект', exact: true })).toHaveCount(0)
     await expect(page.getByText('Линии с наибольшим остатком', { exact: true })).toHaveCount(0)
@@ -189,9 +195,14 @@ test('statistics and import: large lists, preserved details and bounded renderin
     await preview.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
     const updatedFile = await updatedDownload
     const updatedBook = XLSX.read(await readFile((await updatedFile.path())!), { type: 'buffer' })
-    const updatedRows = updatedBook.SheetNames.flatMap(name => XLSX.utils.sheet_to_json<unknown[]>(updatedBook.Sheets[name], { header: 1 })).filter(row => row[0] === project)
+    const updatedCells = updatedBook.SheetNames.flatMap(name => XLSX.utils.sheet_to_json<unknown[]>(updatedBook.Sheets[name], { header: 1 }))
+    const updatedRows = updatedCells.filter(row => row[0] === project)
+    const summaryHeaders = updatedCells.find(row => row[0] === 'Проект' && row[2] === 'Линия')!
     expect(updatedRows).toHaveLength(1)
-    expect(updatedRows[0].slice(6)).toEqual([10.1, 10.1, 0])
+    // The agreed composition/coverage columns must not change the WDI values.
+    expect(['Всего', 'Выполнено', 'Остаток'].map(label => updatedRows[0][summaryHeaders.indexOf(label)])).toEqual([10.1, 10.1, 0])
+    expect(updatedRows[0][summaryHeaders.indexOf('Состав, сварено/всего (стыки)')]).toBe('F 1/1')
+    expect(updatedRows[0][summaryHeaders.indexOf('% на схеме')]).toBe(0)
     await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
     await resetFilter(page, lines, 'line')
     await expect(lines.getByText('L0001', { exact: true })).toBeVisible()

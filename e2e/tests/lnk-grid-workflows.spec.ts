@@ -24,10 +24,10 @@ test.beforeAll(async () => {
     const rows: WeldRow[] = []
     for (const [line, joint, state] of cases) {
       const id = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,wdi,
-        connection_type,d1,t1,officiality,revision_actuality,has_vik,has_rk,has_uzk,has_pvk,psto_required,
+        connection_type,d1,t1,officiality,revision_actuality,has_vik,has_rk,has_uzk,has_pvk,psto_required,pre_heat_treatment_required,
         vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,
         rk_request,rk_request_date,rk_result,rk_conclusion,rk_conclusion_date,uzk_result,pvk_result)
-        values($1,'LGRID',$2,$3,'2026-09-01',$4,'С17',254,10,'действующий','актуальная',$5,'да','да','да','да',
+        values($1,'LGRID',$2,$3,'2026-09-01',$4,'С17',254,10,'действующий','актуальная',$5,'да','да','да','да',true,
           $6,'2026-09-02',$7,$8,'2026-09-03',$9,'2026-09-02',$10,$11,$12,'годен','годен') returning id`,
       [project,line,joint,joint.endsWith('R1') ? 99 : 10,state === 'cancelled' ? 'отменен' : 'да',
         `MAIN-${joint}`,state === 'error' ? 'ошибка' : 'годен',`VIK-${joint}`,`RK-${joint}`,

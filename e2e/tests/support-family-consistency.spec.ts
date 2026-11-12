@@ -49,7 +49,8 @@ test('support-only lines and statistics include legacy spellings, with the same 
   expect(summary.supportSummary).toMatchObject({ physical: supports.length, produced: supports.length,
     welders: [{ stamp: 'FAMILY-STAMP', total: supports.length, waitingRequest: supports.length }] })
   expect((await computeStatisticsServerResult({ tab: 'general', projectFilter: project.toLowerCase(), from: '', to: '' })).summary.welded).toBe(ordinary.length)
-  expect((await computeStatisticsServerResult({ tab: 'lineSummary', projectFilter: project.toLowerCase(), from: '', to: '' })).lineSummary.total).toBe(ordinary.length)
+  // The agreed line summary includes ОП alongside ordinary physical joints.
+  expect((await computeStatisticsServerResult({ tab: 'lineSummary', projectFilter: project.toLowerCase(), from: '', to: '' })).lineSummary.total).toBe(fixture.length)
   const request = { tab: 'supports' as const, search: project.toLowerCase() }
   expect((await loadLineProgramSection(request)).rows.map(row => row.line)).toEqual(supports.map(row => row.line))
   expect((await loadLineProgramPage({ ...request, page: 0 })).total).toBe(supports.length)

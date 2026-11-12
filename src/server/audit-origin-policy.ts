@@ -75,11 +75,12 @@ export function createAuditOriginResolver(operation: string, input: unknown, set
   const weldDelete = ['deleteWeldJoint', 'deleteWeldJoints', 'deleteObsoleteRepeatedJoint'].includes(operation)
   const psto = ['savePstoRepeatWorkflow', 'correctPstoCycleStage', 'correctPstoTvmtAndRemoveLaterCycles'].includes(operation)
   const pre = ['savePreHeatTreatmentLnkWorkflow', 'correctPreHeatTreatmentLnkResult', 'savePreHeatTreatmentLnkResultEdits', 'updatePreHeatTreatmentRkExposure'].includes(operation)
-  const fill = operation === 'savePreHeatTreatmentFill' || Boolean(object(data.preHeatTreatmentConfirmation).fill)
-  const fillOptions = object(operation === 'savePreHeatTreatmentFill' ? data.options : object(data.preHeatTreatmentConfirmation).fill)
+  const preBatch = operation === 'savePreHeatTreatmentBatch'
+  const fill = operation === 'savePreHeatTreatmentFill' || Boolean(preBatch ? data.fill : object(data.preHeatTreatmentConfirmation).fill)
+  const fillOptions = object(operation === 'savePreHeatTreatmentFill' ? data.options : preBatch ? data.fill : object(data.preHeatTreatmentConfirmation).fill)
   const documentEdit = ['assignDocumentSpecialists', 'changeSystemDocumentDate'].includes(operation)
   const documentDateFields = getDocumentDateFields(object(data.reference))
-  const known = Boolean(simple || direct || weldSave || weldDelete || psto || pre || fill || documentEdit || operation === 'createWeldJoints')
+  const known = Boolean(simple || direct || weldSave || weldDelete || psto || pre || preBatch || fill || documentEdit || operation === 'createWeldJoints')
   const scope = data.mutationScope === 'lnk' ? lnkFields : data.mutationScope === 'psto' ? pstoFields : weldingFields
   // Server preparation can fill/replace fields on the original import objects.
   // Capture only the accepted scope's submitted values before that happens;
@@ -122,8 +123,14 @@ export function createAuditOriginResolver(operation: string, input: unknown, set
       return 'automatic'
     }
     if (operation === 'savePreHeatTreatmentFill') return entity === 'generated_documents' && key === 'specialists' ? 'user' : 'automatic'
+    if (preBatch) {
+      if (entity === 'weld_joints' && key === 'preHeatTreatmentRequired') return 'user'
+      if (entity === 'generated_documents' && key === 'specialists' && fill) return 'user'
+      return 'automatic'
+    }
     if (entity === 'generated_documents' && key === 'specialists' && list(object(data.documentGrouping).specialists).length) return 'user'
     if (weldSave) {
+      if (entity === 'weld_joints' && key === 'preHeatTreatmentRequired' && object(data.newPreHeatTreatmentChoice).required === true) return 'user'
       if (entity === 'weld_joints' && key === 'preHeatTreatmentRequired' && typeof object(data.preHeatTreatmentConfirmation).required === 'boolean') return Number(row.id) === Number(data.id) ? 'user' : 'automatic'
       if (entity !== 'weld_joints' || key === 'hasVik') return 'automatic'
       if (key === 'revisionActuality' && ['updateWeldJoint', 'moveWeldJointChain'].includes(operation) &&

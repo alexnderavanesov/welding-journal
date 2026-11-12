@@ -14,6 +14,16 @@ async function searchProgram(page: Page, search: string) {
   await expect(totals).toBeVisible()
 }
 
+// Collapse before narrowing: WebKit can scroll the page during resize and the
+// application then collapses automatically between a locator count and click.
+async function setCompactViewport(page: Page, width: number) {
+  if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
+    await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
+    await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
+  }
+  await page.setViewportSize({ width, height: 1000 })
+}
+
 async function expectAssignmentDialogFitsViewport(modal: Locator) {
   // The locked background retains its full scroll range for restoration.
   // Assert the visible dialog and every footer action, not the hidden page width.
@@ -360,11 +370,7 @@ test('область действий: клеймо помещается цел�
   const actions = card.getByTestId('program-scope-actions')
   const scope = actions.getByRole('combobox', { name: 'Область действий' })
   for (const width of [1600, 1000, 390]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     for (const value of ['all:', ...stamps.map(stamp => `stamp:${stamp.toLowerCase()}`)]) {
       await scope.selectOption(value)
       const metrics = await scope.evaluate(element => {
@@ -452,11 +458,7 @@ test('карточка по эскизу: явные вкладки, широк�
   await expect(modal.getByRole('combobox', { name: 'F1 · УЗК', exact: true })).toHaveValue('дополнительный')
   await modal.getByRole('button', { name: 'Вернуться к просмотру' }).click()
   for (const width of [1000, 390, 1600]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect(actions.getByRole('button', { name: /Назначения линии/ })).toBeVisible()
   }
@@ -520,11 +522,7 @@ test('вложенность клейма: таблица без зазора, �
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.mouse.move(0, 0)
   for (const width of [1840, 1600, 1000, 390]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     for (const code of ['DENSE-A', 'DENSE-B']) {
       await expect(stamp(code)).toHaveCSS('background-color', code === 'DENSE-A' ? 'rgb(237, 246, 253)' : 'rgb(245, 250, 255)')
       expect(Math.abs((await stamp(code).boundingBox())!.height - baseHeight)).toBeLessThan(1)
@@ -599,11 +597,7 @@ test('плашки не увеличивают строку, НК до ТО пе
   const rows = card.getByTestId('line-program-readonly-joint')
   await expect(rows).toHaveCount(6)
   for (const width of [1840, 1600, 1000, 390]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     await expect.poll(() => rows.evaluateAll(elements => {
       // The first four rows differ only by exclusion badges; additional history may wrap.
       const heights = elements.slice(0, 4).map(element => element.getBoundingClientRect().height)
@@ -654,11 +648,7 @@ test('галочка завершения в правом верхнем угл�
   await expect(completed).toHaveAttribute('data-program-finished', 'true')
   await expect(incomplete).toHaveAttribute('data-program-finished', 'false')
   for (const width of [1840, 1600, 1000, 390]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     const grid = page.getByRole('grid', { name: 'Программа линий', exact: true })
     await grid.evaluate(element => { element.scrollLeft = element.scrollWidth })
     await expect(completed.getByTestId('program-finished-label')).toBeVisible()
@@ -765,11 +755,7 @@ test('ФИО под клеймом: одинаковая высота при р�
     else await expect(label).not.toHaveAttribute('title')
   }
   for (const width of [1840, 1600, 1000, 390]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     await expect.poll(() => rows.evaluateAll(elements => {
       const rects = elements.map(row => row.getBoundingClientRect())
       return elements.every(row => {
@@ -824,11 +810,7 @@ test('расчёт отдельно от результатов: одинако�
   await expect(c.getByTestId('program-stamp-calculation')).toHaveText('—Лишнее: 0Возможное сокращение: 0')
   await expect(c.getByTestId('program-assignment-demand')).toContainText('3')
   for (const width of [1840, 1600, 1280, 1000, 390]) {
-    await page.setViewportSize({ width, height: 1000 })
-    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
-      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
-      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
-    }
+    await setCompactViewport(page, width)
     await expect.poll(() => rows.evaluateAll(elements => {
       const bounds = elements.map(element => element.getBoundingClientRect())
       return bounds.every(rect => rect.height === 88 && Math.abs(rect.height - bounds[0].height) < 1) &&
@@ -849,9 +831,9 @@ test('расчёт отдельно от результатов: одинако�
         buttonsStacked: excess.top >= closed.bottom && reduction.top >= excess.bottom,
         textAligned: Math.abs(firstText.x - secondText.x) < 0.5,
         fontSizes: [closedButton, excessButton].map(button => getComputedStyle(button).fontSize),
-        lineHeights: [closedButton, excessButton].map(button => getComputedStyle(button).lineHeight),
+        lineHeights: [closedButton, excessButton].map(button => Number(parseFloat(getComputedStyle(button).lineHeight).toFixed(3))),
       }
-    })).toEqual({ buttonsStacked: true, textAligned: true, fontSizes: ['12px', '12px'], lineHeights: ['19.2px', '19.2px'] })
+    })).toEqual({ buttonsStacked: true, textAligned: true, fontSizes: ['12px', '12px'], lineHeights: [19.2, 19.2] })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
   await page.setViewportSize({ width: 1840, height: 1000 })

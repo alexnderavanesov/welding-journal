@@ -119,13 +119,13 @@ describe('pre-heat-treatment control updates', () => {
   })
 
   it('does not offer new preliminary work after PSTO cancellation', () => {
-    expect(canCreatePreHeatTreatmentRequest(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
+    expect(canCreatePreHeatTreatmentRequest(makeRow({ preHeatTreatmentRequired: true,
       pstoRequired: 'отменен',
       pstoResult: 'проведено',
       preHeatTreatmentControls: [],
     }), 'ВИК')).toBe(false)
 
-    expect(canCreatePreHeatTreatmentRequest(makeRow({ preHeatTreatmentMode: 'allPsto' as const,
+    expect(canCreatePreHeatTreatmentRequest(makeRow({ preHeatTreatmentRequired: true,
       pstoRequired: 'отменен',
       pstoResult: null,
       pstoDate: null,
@@ -462,7 +462,7 @@ describe('pre-heat-treatment control updates', () => {
 })
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return { preHeatTreatmentMode: 'allPsto' as const,
+  return { preHeatTreatmentRequired: true,
     id: 1,
     joint: 'F1',
     weldDate: '2026-08-01',

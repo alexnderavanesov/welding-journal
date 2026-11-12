@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointChainDialog } from '@/components/joint-chain-dialog'
@@ -366,7 +366,7 @@ describe('JointChainDialog', () => {
     expect(screen.queryByRole('button', { name: /Переименовать S1R1/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the selected joint when opening a line quota from the line picture', () => {
+  it('keeps the selected joint when opening a line quota from the line picture', async () => {
     const selected = row({ id: 2, joint: 'F2' })
     const task: PercentageLineControlTask = {
       ...percentageTask(row({ id: 1, joint: 'F1' }), 'A1'),
@@ -376,7 +376,7 @@ describe('JointChainDialog', () => {
     renderDialog({ rows: [selected], dispatcherTasks: [task], onRunDispatcherTaskAction })
 
     fireEvent.click(screen.getByRole('tab', { name: 'Картина линии · 1' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить контроль' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Назначить контроль' })) })
 
     // The task represents a line quota, not an instruction to switch from
     // the operator's selected joint to its arbitrary representative F1.

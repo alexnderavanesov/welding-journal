@@ -44,7 +44,7 @@ export function parseWorksheetRows(
     const record: WeldInput = {}
     const rowCellErrors: Array<{ message: string; fieldKey: string }> = []
     fieldsByColumn.forEach((field, index) => {
-      if (!field) return
+      if (!field || field.key === 'preHeatTreatmentRequired') return
       try {
         ;(record as Record<string, unknown>)[field.key] = parseImportCell(field, row[index])
       } catch (error) {

@@ -6,7 +6,7 @@ import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 
 describe('calculateFinalStatusInRows', () => {
   it('requires assigned pre-heat-treatment controls and keeps duplicates on their existing path', () => {
-    const base = { preHeatTreatmentMode: 'allPsto' as const,
+    const base = { preHeatTreatmentRequired: true,
       id: 1,
       joint: 'F1',
       weldDate: '2026-08-01',
@@ -56,7 +56,7 @@ describe('calculateFinalStatusInRows', () => {
   })
 
   it('treats a completed PSTO and TVMT cycle as sufficient when no LNK method is assigned', () => {
-    const complete = { preHeatTreatmentMode: 'allPsto' as const,
+    const complete = { preHeatTreatmentRequired: true,
       id: 2,
       joint: 'F2',
       weldDate: '2026-08-01',
@@ -73,7 +73,7 @@ describe('calculateFinalStatusInRows', () => {
 
   it('routes failed TVMT into a repeat cycle without making the weld rejected', () => {
     for (const weldControlPercent of ['10', '100']) {
-      const failedPrimary = { preHeatTreatmentMode: 'allPsto' as const,
+      const failedPrimary = { preHeatTreatmentRequired: true,
         id: 20,
         joint: 'F20',
         weldDate: '2026-08-01',
@@ -115,7 +115,7 @@ describe('calculateFinalStatusInRows', () => {
   })
 
   it('does not require new preliminary work after PSTO cancellation', () => {
-    const completedCycle = { preHeatTreatmentMode: 'allPsto' as const,
+    const completedCycle = { preHeatTreatmentRequired: true,
       id: 30,
       joint: 'F30',
       weldDate: '2026-08-01',
@@ -147,7 +147,7 @@ describe('calculateFinalStatusInRows', () => {
   })
 
   it('keeps a completed cancelled PSTO cycle sufficient when no LNK method is assigned', () => {
-    const completedCycle = { preHeatTreatmentMode: 'allPsto' as const,
+    const completedCycle = { preHeatTreatmentRequired: true,
       id: 31,
       joint: 'F31',
       weldDate: '2026-08-01',
@@ -164,7 +164,7 @@ describe('calculateFinalStatusInRows', () => {
   })
 
   it('does not require a new cycle after failed TVMT on a cancelled line', () => {
-    const failedCycle = { preHeatTreatmentMode: 'allPsto' as const,
+    const failedCycle = { preHeatTreatmentRequired: true,
       id: 32,
       joint: 'F32',
       weldDate: '2026-08-01',
@@ -283,7 +283,7 @@ describe('calculateFinalStatusInRows', () => {
 
   it('carries a rejected pre-heat-treatment result into the same-name repair context', () => {
     const fullRows = [
-      { preHeatTreatmentMode: 'allPsto' as const,
+      { preHeatTreatmentRequired: true,
         id: 1,
         projectTitle: 'Риформинг',
         subtitleCode: '400',

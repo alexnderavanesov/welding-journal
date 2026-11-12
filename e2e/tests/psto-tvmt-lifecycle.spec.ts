@@ -460,12 +460,12 @@ test('новая заявка в другом окне не запрещает �
       insert into weld_joints (
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
         officiality, revision_actuality, welding_method, connection_type, material_group,
-        d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik, psto_required,
+        d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik, psto_required, pre_heat_treatment_required,
         welding_updated_at, lnk_created_at, lnk_updated_at, psto_created_at, psto_updated_at
       ) values (
         '2026-08-24', 'E2E устаревшее окно', 'E2E-STALE', $1, 'ISO-STALE', $2, 'S-STALE',
         'действующий', 'актуальная', 'РД', 'СШ', 'M01',
-        108, 108, 4, 4, 0.42, 'E2K1', 'E2K1', 'да', 'да',
+        108, 108, 4, 4, 0.42, 'E2K1', 'E2K1', 'да', 'да', true,
         now(), now(), now(), now(), now()
       )
     `, [line, joint])
@@ -1504,16 +1504,17 @@ async function seedCancelledCycleJoint() {
 }
 
 async function seedLateAssignmentJoint() {
+  // Historical requirement retained through earlier line/program changes.
   await withE2eDatabase(async (client) => {
     await client.query(`
-      insert into weld_joints (
+      insert into weld_joints (pre_heat_treatment_required,
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
         officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
         vik_control_basis, vik_request, vik_request_date, vik_result,
         vik_conclusion_date, vik_conclusion, final_status,
         welding_updated_at, lnk_created_at, lnk_updated_at
-      ) values (
+      ) values (true,
         '2026-08-01', 'E2E позднее назначение', 'E2E-003', 'E2E-L3', 'ISO-E2E-3', 'F3', 'E2E-S3',
         'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2E-K3', 'E2E-K3', 'да',
@@ -1526,9 +1527,10 @@ async function seedLateAssignmentJoint() {
 }
 
 async function seedReactivationLine() {
+  // Historical requirement retained through earlier line/program changes.
   await withE2eDatabase(async (client) => {
     await client.query(`
-      insert into weld_joints (
+      insert into weld_joints (pre_heat_treatment_required,
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
         officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
@@ -1536,14 +1538,14 @@ async function seedReactivationLine() {
         vik_conclusion_date, vik_conclusion, psto_required, psto_cancellation_date,
         psto_control_basis, final_status, welding_updated_at, lnk_created_at,
         lnk_updated_at, psto_created_at, psto_updated_at
-      ) values (
+      ) values (true,
         '2026-08-01', 'E2E возобновление', 'E2E-004', 'E2E-L4', 'ISO-E2E-4', 'F4', 'E2E-S4',
         'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2E-K4', 'E2E-K4', 'да',
         'проект', 'Заявка ВИК основная E2E-4', '2026-08-02', 'годен',
         '2026-08-03', 'Заключение ВИК основное E2E-4', 'отменен', '2026-08-04',
         'E2E отмена', 'годен', now(), now(), now(), now(), now()
-      ), (
+      ), (false,
         '2026-08-01', 'E2E возобновление', 'E2E-004', 'E2E-L4', 'ISO-E2E-5', 'F5', 'E2E-S4',
         'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2E-K5', 'E2E-K5', null,
@@ -1565,9 +1567,10 @@ async function seedReactivationLine() {
 }
 
 async function seedLineMoveJoint() {
+  // Historical requirement retained through earlier line/program changes.
   await withE2eDatabase(async (client) => {
     await client.query(`
-      insert into weld_joints (
+      insert into weld_joints (pre_heat_treatment_required,
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
         officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
@@ -1575,14 +1578,14 @@ async function seedLineMoveJoint() {
         vik_conclusion_date, vik_conclusion, psto_required, final_status,
         welding_updated_at, lnk_created_at, lnk_updated_at, psto_created_at,
         psto_updated_at
-      ) values (
+      ) values (true,
         '2026-08-01', 'E2E перенос', 'E2E-006', 'E2E-L5', 'ISO-E2E-6', 'F6', 'E2E-S6',
         'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2K6', 'E2K6', 'да',
         'проект', 'Заявка ВИК основная E2E-6', '2026-08-02', 'годен',
         '2026-08-03', 'Заключение ВИК основное E2E-6', null, 'годен',
         now(), now(), now(), now(), now()
-      ), (
+      ), (false,
         '2026-08-01', 'E2E перенос', 'E2E-006', 'E2E-L6', 'ISO-E2E-7', 'F7', 'E2E-S7',
         'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2K6', 'E2K6', null,
@@ -1606,20 +1609,21 @@ async function seedLineMoveJoint() {
 }
 
 async function seedStageSynchronizationLines() {
+  // Historical requirement retained through earlier line/program changes.
   await withE2eDatabase(async (client) => {
     await client.query(`
-      insert into weld_joints (
+      insert into weld_joints (pre_heat_treatment_required,
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
         officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
         vik_control_basis, psto_required, final_status, welding_updated_at,
         lnk_created_at, lnk_updated_at, psto_created_at, psto_updated_at
-      ) values (
+      ) values (true,
         '2026-08-19', 'E2E синхронизация этапа', 'E2E-008', $1,
         'ISO-E2E-8', $2, 'E2E-S8', 'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2K8', 'E2K8', 'да', 'проект', null,
         'ожидает заявку', now(), now(), now(), now(), now()
-      ), (
+      ), (false,
         '2026-08-19', 'E2E синхронизация этапа', 'E2E-008', $3,
         'ISO-E2E-9', 'F9', 'E2E-S9', 'действующий', 'актуальная', 'РД', 'СШ', 'M01',
         108, 108, 4, 4, 0.42, 'E2K9', 'E2K9', null, null, null,

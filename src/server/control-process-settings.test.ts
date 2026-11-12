@@ -17,12 +17,10 @@ describe('control process mode transitions', () => {
       expect(tx.update).not.toHaveBeenCalled()
     }
   })
-  it('preserves existing preliminary history through allPsto to selected and does not block on rejection', async () => {
+  it('ignores retired mode writes; preservation is performed only by the explicit release transition', async () => {
     const tx = transaction([{ id: 1, joint: 'F1', line: 'L', pstoRequired: 'да', preHeatTreatmentRequired: false }], [1])
     await prepareControlProcessSettingsChangeInTransaction({ tx: tx as never, currentValue: { preHeatTreatmentMode: 'allPsto' }, nextValue: DEFAULT_CONTROL_PROCESS_SETTINGS })
-    expect(tx.calls[0]).toBe('lock')
-    expect(tx.update).toHaveBeenCalledOnce()
-    expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({ preHeatTreatmentRequired: true }))
+    expect(tx.update).not.toHaveBeenCalled()
   })
   it('keeps explicit off choices without history across repeated mode changes', async () => {
     const tx = transaction([{ id: 1, joint: 'F1', line: 'L', pstoRequired: 'да', preHeatTreatmentRequired: false }])

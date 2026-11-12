@@ -1,4 +1,5 @@
 import { userStorage } from '@/lib/user-storage'
+import { getPreHeatTreatmentColumnText } from './pre-heat-treatment-column'
 import type { ColumnState } from 'ag-grid-community'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, DATE_TIME_WELD_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
@@ -54,10 +55,16 @@ export function readJournalGridStorage(storageKey = JOURNAL_GRID_STORAGE_KEY): J
   try {
     const value = JSON.parse(userStorage.getItem(storageKey) ?? 'null')
     if (!value || typeof value !== 'object') return fallback
-    const layout = (entry: Partial<JournalLayout>): JournalLayout => ({
-      columns: journalColumnLayout(Array.isArray(entry?.columns) ? entry.columns.filter(Boolean) : []),
-      appearance: normalizeJournalAppearance(entry?.appearance),
-    })
+    const layout = (entry: Partial<JournalLayout>): JournalLayout => {
+      const columns = journalColumnLayout(Array.isArray(entry?.columns) ? entry.columns.filter(Boolean) : [])
+      // Old saved layouts know nothing about the new read-only flag. Insert it
+      // beside PSTO once; preserve the operator's order after it has been saved.
+      const psto = columns.findIndex(column => column.colId === 'pstoRequired')
+      if (psto >= 0 && !columns.some(column => column.colId === 'preHeatTreatmentRequired')) {
+        columns.splice(psto + 1, 0, { colId: 'preHeatTreatmentRequired', pinned: columns[psto].pinned, rowGroup: false, rowGroupIndex: null })
+      }
+      return { columns, appearance: normalizeJournalAppearance(entry?.appearance) }
+    }
     return { ...layout(value), views: Object.fromEntries(
       Object.entries(value.views ?? {}).filter(([, entry]) => entry && typeof entry === 'object')
         .map(([name, entry]) => [name, layout(entry as JournalLayout)]),
@@ -70,6 +77,7 @@ export function writeJournalGridStorage(value: JournalGridStorage, storageKey = 
 }
 
 export function journalClipboardValue(row: WeldRow, fieldKey: WeldFieldKey, value: unknown): string {
+  if (fieldKey === 'preHeatTreatmentRequired') return getPreHeatTreatmentColumnText(row)
   const field = FIELD_BY_KEY.get(fieldKey)
   if (fieldKey === 'finalStatus') return formatFinalStatusDisplay(row, value)
   if (field?.kind === 'date') return formatDate(value)

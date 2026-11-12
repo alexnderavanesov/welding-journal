@@ -43,7 +43,7 @@ function add(line: string, joint: string, note: string, overrides: Partial<WeldR
     stamp1K: STAMP, stamp1KFact: STAMP,
     hasVik: 'да', hasPvk: 'да', hasUzk: 'да', vikControlBasis: 'Демонстрационная программа',
     pvkControlBasis: 'Демонстрационная программа', uzkControlBasis: 'Демонстрационная программа',
-    pstoRequired: heat ? 'да' : null, pstoControlBasis: heat ? 'Демонстрационная программа ПСТО' : null,
+    pstoRequired: heat ? 'да' : null, preHeatTreatmentRequired: heat, pstoControlBasis: heat ? 'Демонстрационная программа ПСТО' : null,
     technologyCardNumber: `${CARD}-${heat ? 'М05' : 'М01'}`, responsible: 'Демонстрационный участок',
     weldingJournalNote: `ДЕМО: ${note}`, ...overrides,
   }
@@ -160,10 +160,8 @@ try {
       category: 'II', groupName: 'Б(а)', weldControlPercent: 100, pvkControlPercent: 100, supportUzkControlPercent: p.rate, supportPvkControlPercent: p.rate,
       pstoAssignment: p.heat ? 'assigned' as const : 'unassigned' as const }))).returning()
     const context = await validation.loadServerWeldValidationContext(tx, fixtures.map(f => f.row))
-    assert(context.controlProcessSettings.preHeatTreatmentMode === 'allPsto', 'This demo requires existing pre-TO setting; no settings changed')
     for (const f of fixtures) {
       if (f.row.technologyCardNumber) assert(checkTechnologyCardApplicability(cards.find(c => c.name === f.row.technologyCardNumber)!, f.row, context.dataListSettings).applicable, `Invalid demo card: ${f.row.joint}`)
-      f.row.preHeatTreatmentMode = context.controlProcessSettings.preHeatTreatmentMode
       f.row.preHeatTreatmentControls = f.pre.map((p, i) => ({ ...p, id: i + 1, weldJointId: f.row.id }))
       // Validate/create primary history before opening its later repeat cycle.
       f.row.pstoRepeatCycles = []
@@ -181,13 +179,13 @@ try {
       const initial = initialRows[index]
       const [record] = await tx.insert(schema.weldJoints).values({ ...persistence.toDbInsert({ ...initial, lineProgramId: line.id }, true), finalStatus: calculateFinalStatus(initial) }).returning()
       const pre = f.pre.length ? await tx.insert(schema.preHeatTreatmentControls).values(f.pre.map(p => ({ ...p, weldJointId: record.id }))).returning() : []
-      let row = { ...record, preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: pre, pstoRepeatCycles: [] } as unknown as WeldRow
+      let row = { ...record, preHeatTreatmentControls: pre, pstoRepeatCycles: [] } as unknown as WeldRow
       const validateNext = (next: WeldRow) => validation.validateServerWeldRecords({ records: [next], previousRows: new Map([[row.id, row as unknown as WeldJoint]]), context, allowSystemJointNames: true })
       const writePrimary = async (action: 'tvmtRequest' | 'tvmtResult', patch: Partial<WeldRow>) => {
         const next = { ...row, ...patch }
         validateNext(next)
         const [updated] = await cycles.persistPstoCycleWorkflowWrites({ tx, action, sourceRows: [row], writes: [{ source: 'primary', row: next }] })
-        row = { ...row, ...updated, preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: pre }
+        row = { ...row, ...updated, preHeatTreatmentControls: pre }
       }
       if (f.row.tvmtRequest) {
         await writePrimary('tvmtRequest', { tvmtRequest: f.row.tvmtRequest, tvmtRequestDate: f.row.tvmtRequestDate, tvmtResult: 'ожидает НК' })
@@ -204,7 +202,7 @@ try {
         const r = f.repeat, saveCheckSettings = context.saveCheckSettings
         const write = async (action: Parameters<typeof cycles.persistPstoCycleWorkflowWrites>[0]['action'], cycle: PstoRepeatCycleWrite) => {
           const [updated] = await cycles.persistPstoCycleWorkflowWrites({ tx, action, sourceRows: [row], writes: [{ source: 'repeat', cycle }] })
-          row = { ...row, ...updated, preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: pre }
+          row = { ...row, ...updated, preHeatTreatmentControls: pre }
         }
         await write('pstoRequest', buildRepeatPstoRequestCycle({ row, requestName: r.pstoRequest!, requestDate: r.pstoRequestDate!, saveCheckSettings }))
         if (r.pstoDate) await write('pstoResult', buildRepeatPstoResultCycle({ row, pstoDate: r.pstoDate, diagramName: r.heatTreatmentDiagram!, saveCheckSettings }))

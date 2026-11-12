@@ -77,9 +77,15 @@
 .program-ag-grid-windowed .ag-grid-viewport { overflow-y: hidden; }
 /* Both windowed details and their auto-height overview can receive a scroll
    sync. Keep the invisible partner measurable, including the zero-sized one
-   in the overview, so AG does not retry its visibility every 10ms. */
+   in the overview, so AG does not retry its visibility every 10ms. AG can also
+   hide that partner with display:none; visibility alone does not expose it. */
 .program-ag-grid-windowed .ag-body-vertical-scroll,
-.program-ag-grid-page .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
+.program-ag-grid-page .ag-body-vertical-scroll { display: flex !important; opacity: 0 !important; visibility: visible !important; pointer-events: none; }
+/* A hidden auto-height partner only mirrors scrollTop. Retain its box without
+   adding invisible width to the document on narrow WebKit viewports. */
+.program-ag-grid-page .ag-layout-auto-height .ag-body-vertical-scroll.ag-hidden { width: 0 !important; min-width: 0 !important; max-width: 0 !important; }
+.program-ag-grid-windowed .ag-body-vertical-scroll *,
+.program-ag-grid-page .ag-body-vertical-scroll * { pointer-events: none !important; }
 .program-joint-history { background: #f8fbfd; padding: 10px 12px 12px; font-size: 12px; border-bottom: 1px solid #dce7f0; }
 .program-line-disclosure { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; margin-top: 1px; color: #2780b3; flex-shrink: 0; }
 [aria-expanded="true"] > .program-line-disclosure { background: #e0effb; }

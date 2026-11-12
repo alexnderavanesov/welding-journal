@@ -9,7 +9,7 @@ import { buildDispatcherTaskCodeIndexRows, buildMergedDispatcherTaskCodes } from
 
 const line = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', category: 'II', groupName: 'A', weldControlPercent: 30, pvkControlPercent: 10, version: '1', configurationIssue: null }
 function fixture(value: string, connectionType = 'С17'): WeldRow[] {
-  return Array.from({ length: 20 }, (_, i) => ({ preHeatTreatmentMode: 'allPsto' as const, ...line, id: i + 1, joint: 'F' + (i + 1), connectionType, hasVik: 'да', vikResult: 'годен',
+  return Array.from({ length: 20 }, (_, i) => ({ preHeatTreatmentRequired: true, ...line, id: i + 1, joint: 'F' + (i + 1), connectionType, hasVik: 'да', vikResult: 'годен',
     officiality: 'действующий', revisionActuality: 'актуальная', weldDate: '2026-09-01', stamp1K: 'A', pstoRequired: 'да',
     hasRk: i < 6 ? value : null, hasPvk: i < 2 ? value : null,
     rkResult: i < 6 ? 'ожидает заявку' : null, pvkResult: i < 2 ? 'ожидает заявку' : null,

@@ -13,7 +13,7 @@ import { getProgramRemovalHints } from './line-program-excess'
 import { getProgramDemandAccounting } from './line-program-accounting'
 
 const line = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', category: 'II', groupName: 'A', weldControlPercent: 50, pvkControlPercent: 50, version: '1', configurationIssue: null }
-const row = (id: number, patch: Partial<WeldRow> = {}): WeldRow => ({ preHeatTreatmentMode: 'allPsto', ...line, id, joint: 'F' + id, connectionType: 'С17', weldDate: '2026-09-01', stamp1K: 'A', ...patch })
+const row = (id: number, patch: Partial<WeldRow> = {}): WeldRow => ({ preHeatTreatmentRequired: true, ...line, id, joint: 'F' + id, connectionType: 'С17', weldDate: '2026-09-01', stamp1K: 'A', ...patch })
 
 describe('additional control counts toward demand once per joint (28 September clarification)', () => {
   it.each([1, 2, 3])('at quota two, two yes plus an additional joint %s produce no excess (4 November decision)', additionalId => {
@@ -93,7 +93,7 @@ describe('additional control counts toward demand once per joint (28 September c
     const rows = [row(1, { hasPvk: 'дополнительный', pvkResult: 'ремонт' }),
       row(2, { hasPvk: 'дополнительный', vikResult: 'ремонт', pvkResult: 'ожидает НК' }),
       row(3, { hasPvk: 'дополнительный', vikResult: 'ремонт', preHeatTreatmentControls: [{ id: 1, weldJointId: 3, method: 'ПВК', result: 'годен' }] }),
-      row(4, { hasPvk: 'дополнительный', vikResult: 'ремонт', preHeatTreatmentMode: 'selected' as const, preHeatTreatmentControls: [{ id: 2, weldJointId: 4, method: 'ПВК', result: 'годен' }] }), row(5)]
+      row(4, { hasPvk: 'дополнительный', vikResult: 'ремонт', preHeatTreatmentRequired: false, preHeatTreatmentControls: [{ id: 2, weldJointId: 4, method: 'ПВК', result: 'годен' }] }), row(5)]
     expect(calculateLineProgram(rows, 100, 100)[0].pvk).toMatchObject({ coveredRowIds: [], completedRowIds: [1, 3], candidateRowIds: [5], missing: 1 })
     // Ordinary PVK, even additional and completed, never silently becomes a layered replacement.
     expect(calculateLineProgram([row(1, { connectionType: 'У19', hasPvk: 'дополнительный', pvkResult: 'годен' })], 100, 100)[0].common.coveredRowIds).toEqual([])

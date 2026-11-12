@@ -34,6 +34,7 @@ export const PSTO_RESULTS_FIELDS = [
 
 export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
+  'preHeatTreatmentRequired',
   'pstoRequest',
   'pstoRequestDate',
   'pstoDate',
@@ -52,6 +53,7 @@ export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
 
 export const PSTO_SECTION_FIELD_ORDER = [
   'pstoRequired',
+  'preHeatTreatmentRequired',
   'pstoCycleSummary',
   'pstoRequest',
   'pstoRequestDate',

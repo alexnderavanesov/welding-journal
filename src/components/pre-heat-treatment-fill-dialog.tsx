@@ -18,20 +18,21 @@ import { runDocumentSave } from '@/lib/run-document-save'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 export type PreHeatTreatmentFillDialogProps = {
-  rowIds: number[]; chainRootId?: number; onClose: () => void
+  rowIds: number[]; chainRootId?: number; markRowIds?: number[]; onClose: () => void
   onConfirm?: (options: PreHeatTreatmentFillOptions) => void; onSaved?: (rows: WeldRow[]) => void
+  onSave?: (options: PreHeatTreatmentFillOptions) => Promise<WeldRow[]>
 }
 
-export function PreHeatTreatmentFillDialog({ rowIds, chainRootId, onClose, onConfirm, onSaved }: PreHeatTreatmentFillDialogProps) {
+export function PreHeatTreatmentFillDialog({ rowIds, chainRootId, markRowIds, onClose, onConfirm, onSaved, onSave }: PreHeatTreatmentFillDialogProps) {
   const [options, setOptions] = useState<PreHeatTreatmentFillOptions>({})
   const [page, setPage] = useState(0)
   const debounced = useDebouncedValue(options, 300)
-  const input = useMemo(() => ({ rowIds, chainRootId, options: debounced }), [rowIds, chainRootId, debounced])
-  const scope = JSON.stringify([chainRootId, rowIds])
+  const input = useMemo(() => ({ rowIds, chainRootId, markRowIds, options: debounced }), [rowIds, chainRootId, markRowIds, debounced])
+  const scope = JSON.stringify([chainRootId, markRowIds, rowIds])
   const preview = useQuery({ queryKey: ['pre-heat-fill-preview', scope, input],
     placeholderData: (previous, query) => query?.queryKey[1] === scope ? previous : undefined, queryFn: () => previewPreHeatTreatmentFill({ data: input }),
     retry: false, staleTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
-  const save = useMutation({ mutationFn: (confirmed: PreHeatTreatmentFillOptions) => runDocumentSave('savePreHeatTreatmentFill', headers => savePreHeatTreatmentFill({ data: { rowIds, options: confirmed }, headers })),
+  const save = useMutation({ mutationFn: (confirmed: PreHeatTreatmentFillOptions) => onSave ? onSave(confirmed) : runDocumentSave('savePreHeatTreatmentFill', headers => savePreHeatTreatmentFill({ data: { rowIds, options: confirmed }, headers })),
     onSuccess: rows => { onSaved?.(rows); onClose() } })
   const lastPreview = useRef<{ scope: string; data: NonNullable<typeof preview.data> } | null>(null)
   if (preview.data) lastPreview.current = { scope, data: preview.data }

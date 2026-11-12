@@ -1,6 +1,7 @@
 import { overflowTitle } from '@/lib/overflow-title'
 import { Check, ChevronRight, Minus, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { FilterResizeHandles } from './filter-resize-handles'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
@@ -37,8 +38,9 @@ export function GridValueFilterPanel({
   children: ReactNode
   footer?: ReactNode
 }) {
+  const panel = useRef<HTMLDivElement>(null)
   const focusSearch = () => inputRef.current?.focus({ preventScroll: true })
-  return <div className="journal-filter" role="dialog" aria-label={`Фильтр: ${title}`}
+  return <div ref={panel} className="journal-filter" role="dialog" aria-label={`Фильтр: ${title}`}
     onKeyDownCapture={event => {
       if (event.key === 'Escape' && !isModalDialogOpen() && !isContextActionMenuOpen()) {
         event.preventDefault(); event.stopPropagation(); onClose()
@@ -61,6 +63,7 @@ export function GridValueFilterPanel({
         : children}
     </div>
     {footer}
+    <FilterResizeHandles panel={panel} />
   </div>
 }
 

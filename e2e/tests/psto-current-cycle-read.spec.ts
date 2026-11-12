@@ -121,7 +121,7 @@ test.beforeEach(async () => {
   await withLineProgramFixture(async db => {
     storedSettings = (await db.query("select value,updated_at from app_settings where key='control-processes'")).rows[0]
     await db.query(`insert into app_settings(key,value) values ('control-processes',$1)
-      on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ preHeatTreatmentMode: 'allPsto' })])
+      on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ preHeatTreatmentMode: 'selected' })])
   })
 })
 test.afterEach(async () => {
@@ -140,10 +140,10 @@ test('ПСТО current SQL: correlated cycles, sparse facts, cancellation and gr
       const { primary } = fixture
       const cancelled = fixture.required === 'отменен'
       const [row] = (await db.query<{ id: number }>(`insert into weld_joints
-        (project_title,subtitle_code,line,joint,weld_date,psto_required,has_vik,vik_result,
+        (project_title,subtitle_code,line,joint,weld_date,psto_required,pre_heat_treatment_required,has_vik,vik_result,
           psto_request,psto_request_date,psto_date,psto_result,tvmt_result,tvmt_conclusion_date,
           psto_cancellation_date,psto_control_basis,heat_treatment_diagram,psto_note,tvmt_request,tvmt_request_date,tvmt_conclusion,final_status)
-        values($1,'CURRENT-SQL','CURRENT-SQL-LINE',$2,'2026-06-01',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        values($1,'CURRENT-SQL','CURRENT-SQL-LINE',$2,'2026-06-01',$3,$3='да',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         returning id`, [project, fixture.joint, fixture.required, fixture.rejectedVik ? 'да' : fixture.hasVik ?? null,
         fixture.rejectedVik ? 'ремонт' : null, primary.request ?? null, primary.requestDate ?? null, primary.date ?? null,
         primary.result ?? null, primary.tvmtResult ?? null, primary.conclusionDate ?? null,

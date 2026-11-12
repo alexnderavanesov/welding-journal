@@ -7,7 +7,7 @@ import { loadSystemIndexSettings, type SystemIndexSettings } from './system-inde
 export type ProgramExclusionReason = 'repair' | 'replaced' | 'incomplete-coil' | 'ineligible'
 export type ProgramTopologyIssue = { rowId: number; message: string; code?: 'missing-replacement' }
 
-export function programJointIdentity(row: WeldRow, joint = String(row.joint ?? '')) {
+export function programJointIdentity(row: Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line' | 'joint'>, joint = String(row.joint ?? '')) {
   return encodeIdentityKey([...([row.projectTitle, row.subtitleCode, row.line].map(value => String(value ?? '').trim().toLocaleLowerCase('ru'))), normalizeJointChainPart(joint)])
 }
 

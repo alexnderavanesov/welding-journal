@@ -37,10 +37,10 @@ describe('workflow selection across server searches', () => {
   beforeEach(() => vi.resetAllMocks())
 
   it.each(['pre', 'psto', 'tvmt'] as const)('warns visibly and preserves all 5,000 selected %s rows', async (kind) => {
-    const rows = Array.from({ length: 5001 }, (_, index) => ({ preHeatTreatmentMode: 'allPsto' as const,
+    const rows = Array.from({ length: 5001 }, (_, index) => ({ preHeatTreatmentRequired: true,
       id: index + 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: `F${index + 1}`,
       weldDate: '2026-08-01', pstoRequired: 'да', hasVik: 'да',
-      ...(kind === 'psto' ? { preHeatTreatmentMode: 'selected' as const } : {}),
+      ...(kind === 'psto' ? { preHeatTreatmentRequired: false } : {}),
       ...(kind === 'tvmt' ? { pstoRequest: 'P1', pstoRequestDate: '2026-08-01',
         pstoResult: 'проведено', pstoDate: '2026-08-02' } : {}),
     } as WeldRow))
@@ -69,10 +69,10 @@ describe('workflow selection across server searches', () => {
   })
 
   it.each(['pre', 'psto', 'tvmt'] as const)('keeps selected %s rows during and after a search without a request per checkbox', async (kind) => {
-    const first = { preHeatTreatmentMode: 'allPsto' as const,
+    const first = { preHeatTreatmentRequired: true,
       id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1',
       weldDate: '2026-08-01', pstoRequired: 'да', hasVik: 'да',
-      ...(kind === 'psto' ? { preHeatTreatmentMode: 'selected' as const } : {}),
+      ...(kind === 'psto' ? { preHeatTreatmentRequired: false } : {}),
       ...(kind === 'tvmt' ? { pstoRequest: 'P1', pstoRequestDate: '2026-08-01',
         pstoResult: 'проведено', pstoDate: '2026-08-02' } : {}),
     } as WeldRow

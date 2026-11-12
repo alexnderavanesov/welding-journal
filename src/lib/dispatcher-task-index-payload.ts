@@ -4,7 +4,7 @@ import type { JointChainContinuation, RepeatedJointTask } from '@/lib/dispatcher
 // to be recalculated without a corresponding database mutation.
 // Persist connectionType in compact task rows so SP-08 opens the correct
 // support/weld program, including tasks already stored without that context.
-export const DISPATCHER_TASK_CALCULATION_VERSION = 87
+export const DISPATCHER_TASK_CALCULATION_VERSION = 88
 export const DISPATCHER_TASK_PAGE_SIZE = 100
 
 type DispatcherTaskIndexPayload = {

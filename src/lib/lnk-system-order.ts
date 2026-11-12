@@ -13,6 +13,7 @@ const completed = (value: unknown) => normalizeResultStatus(value) === 'годе
 
 type OwnLnkStage = 'primary' | 'beforeHeatTreatment'
 const level = (method: string) => method === 'ВИК' ? 0 : method === 'ПВК' ? 1 : 2
+export { level as getSystemLnkMethodOrder }
 
 /** Availability only: the actual dates and result are checked on the final record. */
 export function getSystemLnkPrerequisiteBlockReason(row: WeldInput, method: string, stage: OwnLnkStage = 'primary') {

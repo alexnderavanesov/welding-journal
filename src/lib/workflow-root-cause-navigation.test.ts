@@ -12,9 +12,9 @@ describe('workflow root-cause navigation', () => {
   it('routes pre-TO completion only while the exact stage is still pending on the fresh row', () => {
     const target = { kind: 'lnk-control', rowId: 11, stage: 'beforeHeatTreatment',
       methodCode: 'ВИК', documentPart: 'request', focus: 'name', intent: 'complete-stage' } as const
-    const fresh = row({ pstoRequired: 'да', hasVik: 'да', preHeatTreatmentMode: 'allPsto' as const })
+    const fresh = row({ pstoRequired: 'да', hasVik: 'да', preHeatTreatmentRequired: true })
     expect(getPreHeatTreatmentStageCompletionNextAction(target, fresh)?.kind).toBe('preLnkRequest')
-    expect(getPreHeatTreatmentStageCompletionNextAction(target, { ...fresh, preHeatTreatmentMode: 'selected' as const })).toBeNull()
+    expect(getPreHeatTreatmentStageCompletionNextAction(target, { ...fresh, preHeatTreatmentRequired: false })).toBeNull()
     expect(getPreHeatTreatmentStageCompletionNextAction(target, { ...fresh, hasVik: 'нет' })).toBeNull()
     expect(getPreHeatTreatmentStageCompletionNextAction({ ...target, rowId: 99 }, fresh)).toBeNull()
     const requested = { ...fresh, preHeatTreatmentControls: [{ id: 9, weldJointId: 11, method: 'ВИК', requestName: 'PRE-11' }] }

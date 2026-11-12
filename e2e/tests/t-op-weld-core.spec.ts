@@ -14,7 +14,7 @@ import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldPayload } from '@/server/weld-contracts'
-import type { PstoWeldLineMovePreview } from '@/lib/psto-line-assignment'
+import { getPstoLineIdentityKey, type PstoWeldLineMovePreview } from '@/lib/psto-line-assignment'
 import { deserializeRpcResponse, serializeRpcData, siblingRpcUrl } from '../rpc'
 
 const project = 'E2E T OP weld core', stamp = 'TOP1', cardName = 'E2E T OP TK'
@@ -128,12 +128,11 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) test(`Т НК $
   const pre = stage === 'beforeHeatTreatment'
   const process = (pvkGoodOnly: boolean) => withLineProgramFixture(db => db.query(`insert into app_settings(key,value) values('control-processes',$1)
     on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS,
-      // This matrix exercises method/result rules on an assigned preliminary
-      // stage; the selective default deliberately starts a new chain without it.
-      preHeatTreatmentMode: pre ? 'allPsto' : DEFAULT_CONTROL_PROCESS_SETTINGS.preHeatTreatmentMode, pvkGoodOnly })]))
+      pvkGoodOnly })]))
   await process(false)
   if (pre) await withLineProgramFixture(db => db.query("update line_programs set psto_assignment='assigned' where project_title=$1 and line=$2", [project, scope.line]))
-  const row = await create({ data: { ...base, joint: 'ОП-NK', hasPvk: 'да', hasUzk: 'да' } })
+  const row = await create({ data: { ...base, joint: 'ОП-NK', hasPvk: 'да', hasUzk: 'да',
+    ...(pre ? { newPreHeatTreatmentChoice: { required: true, identityKey: getPstoLineIdentityKey(scope) } } : {}) } })
   if (pre) expect((await stored(row.id)).record.psto_required).toBe('да')
   const rpc = await supportRaceRpc(page)
   const keys = { 'ВИК': 'vik', 'ПВК': 'pvk', 'УЗК': 'uzk', 'РК': 'rk' } as const
@@ -178,7 +177,8 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) test(`Т НК $
   // Off must actually permit a new own rejected PVK, not merely leave a rejected
   // historical value untouched after a settings change.
   await process(false)
-  const pvk = await create({ data: { ...base, joint: 'ОП-PVK', hasPvk: 'да', hasUzk: 'да' } })
+  const pvk = await create({ data: { ...base, joint: 'ОП-PVK', hasPvk: 'да', hasUzk: 'да',
+    ...(pre ? { newPreHeatTreatmentChoice: { required: true, identityKey: getPstoLineIdentityKey(scope) } } : {}) } })
   await request(pvk.id, ['ВИК', 'ПВК'])
   await result(pvk.id, 'ВИК', 'годен')
   await result(pvk.id, 'ПВК', 'ремонт')

@@ -19,10 +19,21 @@ export const SCHEME_LEGEND: Record<SchemeColor, { label: string; fill: string; s
   error: { label: 'Не удалось определить состояние', fill: '#fff', stroke: '#475569' },
 }
 export type SchemeLine = { lineId: number; bundleId: number | null; projectTitle: string; subtitleCode: string; line: string; deleted: boolean; total: number; welded: number; placedCount: number; placedPercent: number | null; revisionCount: number; fileName: string | null }
-export const SCHEME_FILTER_FIELDS = ['projectTitle', 'subtitleCode', 'line'] as const
+export const SCHEME_FILTER_FIELDS = ['projectTitle', 'subtitleCode', 'line', 'total', 'welded', 'placedCount', 'placedPercent', 'pdf', 'files'] as const
 export type SchemeFilterField = typeof SCHEME_FILTER_FIELDS[number]
 export type SchemeFilters = Partial<Record<SchemeFilterField, string[]>>
 export type SchemeRegistryRequest = { page?: number; search?: string; filters?: SchemeFilters }
+export function schemeFilterValue(row: SchemeLine, field: SchemeFilterField): string {
+  if (field === 'pdf') return row.fileName?.replace(/\.pdf$/i, '') ?? ''
+  if (field === 'files') return String(row.revisionCount)
+  if (field === 'placedPercent') return row.placedPercent == null ? '' : row.placedPercent.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 1 })
+  return String(row[field])
+}
+export function schemeFilterLabel(field: SchemeFilterField, value: string): string {
+  if (field === 'pdf') return value || 'Нет основного PDF'
+  if (field === 'placedPercent') return value === '' ? '—' : `${Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
+  return value || '(Пусто)'
+}
 export type SchemeRevision = { id: string; fileName: string; changeNumber: string | null; size: number; pageCount: number; version: number; authorName: string; createdAt: string }
 export type SchemeBundle = { id: number; lineId: number; projectTitle: string; subtitleCode: string; line: string; deleted: boolean; activeRevisionId: string | null; version: number; revisions: SchemeRevision[] }
 export type SchemeLease = { owned: boolean; name: string | null; expiresAt: string | null }

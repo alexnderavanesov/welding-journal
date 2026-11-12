@@ -17,6 +17,17 @@ import { visitReportOutput } from './weld-read'
 export async function createReportExcelResponse(input: ReportOutputRequest, signal: AbortSignal) {
   input = (await import('./access-payload')).accessibleReportInput(input)
   const definition = getReportOutputBuilder(input)([]).exportData!
+  return createTabularExcelResponse({ sheetName: definition.sheetName, filename: definition.filename,
+    header: buildWorksheetHeader(definition.fields) + buildWorksheetRow(definition.fields.map(field => field.label), definition.fields, 0),
+    row: (values, index) => buildWorksheetRow(values, definition.fields, index),
+  }, consume => visitReportOutput(input, ({ exportData }) =>
+    consume(exportData.rows.map(row => definition.fields.map(field => formatReportFieldValue(row, field)))), signal), signal)
+}
+
+/** Shared bounded XLSX delivery for joint reports and document registries. */
+export async function createTabularExcelResponse<T>(definition: {
+  sheetName: string; filename: string; header: string; row: (values: T[], index: number) => string
+}, visit: (consume: (rows: T[][]) => Promise<void>) => Promise<{ generatedAt: string }>, signal: AbortSignal) {
   const directory = await mkdtemp(join(tmpdir(), 'welding-report-'))
   const path = join(directory, 'report.xlsx')
   const cleanup = () => rm(directory, { recursive: true, force: true })
@@ -29,25 +40,25 @@ export async function createReportExcelResponse(input: ReportOutputRequest, sign
       const suffix = sheetNames.length ? ` ${sheetNames.length + 1}` : ''
       sheetNames.push(normalizeSheetName(definition.sheetName).slice(0, 31 - suffix.length) + suffix)
       await archive.start(`xl/worksheets/sheet${sheetNames.length}.xml`)
-      await archive.write(buildWorksheetHeader(definition.fields))
-      await archive.write(buildWorksheetRow(definition.fields.map(field => field.label), definition.fields, 0))
+      await archive.write(definition.header)
       sheetRow = 0
     }
     await startSheet()
-    const snapshot = await visitReportOutput(input, async ({ exportData }) => {
+    const snapshot = await visit(async rows => {
       // One source batch at a time. XML chunks and compression have bounded
       // buffers, including reports expanding one joint into several methods.
       let xml: string[] = []
-      for (const row of exportData.rows) {
+      for (const row of rows) {
+        signal.throwIfAborted()
         if (sheetRow === EXCEL_SHEET_DATA_ROWS) {
           await archive.write(xml.join('')); xml = []
           await archive.write(WORKSHEET_END); await archive.end(); await startSheet()
         }
-        xml.push(buildWorksheetRow(definition.fields.map(field => formatReportFieldValue(row, field)), definition.fields, ++sheetRow))
+        xml.push(definition.row(row, ++sheetRow))
         if (xml.length === 100) { await archive.write(xml.join('')); xml = [] }
       }
       if (xml.length) await archive.write(xml.join(''))
-    }, signal)
+    })
     await archive.write(WORKSHEET_END); await archive.end()
     for (const [name, content] of [
       ['[Content_Types].xml', buildContentTypesXml(sheetNames.length)], ['_rels/.rels', buildRootRelsXml()],

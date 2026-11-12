@@ -37,9 +37,9 @@ test.afterEach(async ({ page }) => {
 async function seed(kind: Kind, method: typeof methods[number]) {
   const ids = await withLineProgramFixture(async db => {
     const ids = (await db.query(`insert into weld_joints
-      (project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,has_vik,has_rk,has_uzk,has_pvk,psto_required,d1)
+      (project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,has_vik,has_rk,has_uzk,has_pvk,psto_required,pre_heat_treatment_required,d1)
       select $1,'MIXED','RESULT-L'||n,case when n<3 then 'F8830'||n else 'F8840'||n end,
-        '2026-09-01'::date,'С17','действующий','актуальная','да',$2,$3,$4,$5,108
+        '2026-09-01'::date,'С17','действующий','актуальная','да',$2,$3,$4,$5,$5='да',108
       from generate_series(1,3) n returning id`, [project, method.field === 'rk' ? 'да' : null, method.field === 'uzk' ? 'да' : null, method.field === 'pvk' ? 'да' : null, kind === 'primary' ? 'нет' : 'да'])).rows.map(row => row.id as number)
     for (let n = 0; n < ids.length; n++) {
       const name = n === 2 ? 'Mixed request 3' : 'Mixed shared name'

@@ -3,11 +3,30 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { getWeldTableBodyCellTooltip, WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldField } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, type WeldField } from '@/lib/weld-fields'
 import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 
 describe.each([false, true])('cell workflow links (journal=%s)', journalTooltips => {
 describe('WeldTableBodyCell background', () => {
+  it('renders and explains all preliminary mark states, preserving the mark without PSTO', () => {
+    const field = FIELD_BY_KEY.get('preHeatTreatmentRequired')!
+    const draw = (row: WeldRow) => <WeldTableBodyCell journalTooltips={journalTooltips} row={row} field={field}
+      displayValue={row.preHeatTreatmentRequired} isEditableCell={false} isResultField={false} />
+    const cases = [
+      { row: { id: 1, preHeatTreatmentRequired: false, pstoRequired: null }, text: '—', tip: 'не применяется' },
+      { row: { id: 2, preHeatTreatmentRequired: false, pstoRequired: 'да' }, text: '', tip: 'не отмечен' },
+      { row: { id: 3, preHeatTreatmentRequired: true, pstoRequired: 'да' }, text: 'Да', tip: 'не его выполнение' },
+      { row: { id: 4, preHeatTreatmentRequired: true, pstoRequired: null }, text: 'Да', tip: 'Отметка НК до ТО сохранена' },
+    ]
+    const view = render(draw(cases[0].row as WeldRow))
+    for (const entry of cases) {
+      view.rerender(draw(entry.row as WeldRow))
+      expect(view.container.textContent).toBe(entry.text)
+      const cell = view.container.querySelector('[data-weld-field-key]')!
+      expect(cell.getAttribute(journalTooltips ? 'data-journal-tip-body' : 'title')).toContain(entry.tip)
+    }
+  })
+
   it.each(['Vik', 'Pvk'] as const)('shows a compact, non-clickable waiting state in the %s cell and removes it on cancellation', (method) => {
     const onOpenDocument = vi.fn()
     const field = { key: `layered${method}Documents`, dbName: '__layered', label: 'Послойный', kind: 'text', group: 'Документы', virtual: true } satisfies WeldField

@@ -928,7 +928,7 @@ test('результаты продолжают строки назначени�
     await db.query("update weld_joints set vik_result='годен',vik_conclusion='STYLE-VIK',vik_conclusion_date='2026-09-02',has_rk='да',rk_result='годен',rk_conclusion='STYLE-RK',rk_conclusion_date='2026-09-03' where line=$1", [name])
     await db.query("insert into pre_heat_treatment_controls (weld_joint_id,method,result,conclusion_name,conclusion_date) select id,'ВИК','годен','STYLE-PRE','2026-09-01' from weld_joints where line=$1 and joint='F2'", [name])
     await db.query("insert into pre_heat_treatment_controls (weld_joint_id,method,result) select id,m,'годен' from weld_joints cross join unnest(array['РК','УЗК','ПВК']) m where line=$1 and joint='F2'", [name])
-    await db.query("update weld_joints set psto_required='да',psto_result='проведено',heat_treatment_diagram='STYLE-PSTO',tvmt_result='годен',tvmt_conclusion='STYLE-TVMT' where line=$1 and joint='F2'", [name])
+    await db.query("update weld_joints set pre_heat_treatment_required=true,psto_required='да',psto_result='проведено',heat_treatment_diagram='STYLE-PSTO',tvmt_result='годен',tvmt_conclusion='STYLE-TVMT' where line=$1 and joint='F2'", [name])
     await db.query("insert into psto_repeat_cycles (weld_joint_id,sequence,psto_result,tvmt_result) select id,2,'проведено','годен' from weld_joints where line=$1 and joint='F2'", [name])
     await db.query("insert into duplicate_controls (weld_joint_id,method,result,conclusion) select id,'РК','годен','STYLE-DUPLICATE' from weld_joints where line=$1 and joint='F2'", [name])
   })

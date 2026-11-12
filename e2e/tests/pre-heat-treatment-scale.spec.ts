@@ -6,11 +6,12 @@ import { weldJoints, appSettings } from '../../src/db/schema'
 import { buildLnkWorkflowRowsWhere, listLnkWorkflowRows } from '../../src/server/lnk-workflow-context'
 import { prepareControlProcessSettingsChangeInTransaction } from '../../src/server/control-process-settings'
 import { initializePreHeatTreatmentMode } from '../../src/server/pre-heat-treatment-mode-transition'
+import { PRE_HEAT_SELECTED_TRANSITION_KEY } from '../../src/lib/release-contract'
 import { withE2eDatabase } from '../database'
 import { asE2eOwner } from '../with-owner-access'
 
 const project = 'E2E PRE MODE SCALE'
-test('200000 rows: candidate pagination stays bounded; mode conversion preserves explicit choices', async () => {
+test('200000 rows: candidate pagination stays bounded; retired mode writes preserve explicit choices', async () => {
   test.setTimeout(120_000)
   const db = requireDb()
   const [settings] = await db.select().from(appSettings).where(eq(appSettings.key, 'control-processes'))
@@ -57,19 +58,21 @@ test('release conversion distinguishes legacy default, explicit off and a new da
   const db = requireDb(), rollback = new Error('fixture rollback')
   for (const input of [undefined, { preHeatTreatmentLnkEnabled: false }, { preHeatTreatmentLnkEnabled: true }]) {
     await expect(db.transaction(async tx => {
+      await tx.delete(appSettings).where(eq(appSettings.key, PRE_HEAT_SELECTED_TRANSITION_KEY))
       await tx.delete(appSettings).where(eq(appSettings.key, 'control-processes'))
       if (input) await tx.insert(appSettings).values({ key: 'control-processes', value: JSON.stringify(input) })
       await tx.insert(weldJoints).values({ projectTitle: project, joint: 'F1', preHeatTreatmentRequired: null })
-      expect(await initializePreHeatTreatmentMode(tx)).toEqual({ skipped: false, mode: input?.preHeatTreatmentLnkEnabled === false ? 'selected' : 'allPsto' })
+      expect(await initializePreHeatTreatmentMode(tx)).toMatchObject({ skipped: false, mode: 'selected', previousFullMode: input?.preHeatTreatmentLnkEnabled !== false })
       expect(await initializePreHeatTreatmentMode(tx)).toEqual({ skipped: true })
       throw rollback
     })).rejects.toBe(rollback)
   }
   // Only the isolated E2E database is used; rollback preserves its base fixture.
   await expect(db.transaction(async tx => {
+    await tx.delete(appSettings).where(eq(appSettings.key, PRE_HEAT_SELECTED_TRANSITION_KEY))
     await tx.delete(appSettings).where(eq(appSettings.key, 'control-processes'))
     await tx.update(weldJoints).set({ preHeatTreatmentRequired: false })
-    expect(await initializePreHeatTreatmentMode(tx)).toEqual({ skipped: false, mode: 'selected' })
+    expect(await initializePreHeatTreatmentMode(tx)).toMatchObject({ skipped: false, mode: 'selected', previousFullMode: false })
     throw rollback
   })).rejects.toBe(rollback)
 })

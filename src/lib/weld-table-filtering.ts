@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getPreHeatTreatmentColumnValue } from './pre-heat-treatment-column'
 import { getLayeredControlWaitingLabel } from '@/lib/layered-control-documents'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import {
@@ -161,6 +162,7 @@ export function normalizeWeldColumnFilterChoiceValues(fieldKey: string, values: 
 }
 
 export function getWeldColumnFilterRowText(row: WeldRow, fieldKey: string) {
+  if (fieldKey === 'preHeatTreatmentRequired') return getPreHeatTreatmentColumnValue(row)
   const value = row[fieldKey as keyof WeldRow]
   return fieldKey === 'finalStatus'
     ? formatFinalStatusDisplay(row, value)

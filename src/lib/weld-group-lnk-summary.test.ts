@@ -15,7 +15,7 @@ const pre = (id: number, method: string, result?: string | null, requestName?: s
 
 describe('LNK physical group results', () => {
   it('keeps each method and stage separate from the final joint status and leaves journal/PSTO unchanged', () => {
-    const rows = [row(1, { finalStatus: 'ошибка', rkResult: 'ремонт', preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да',
+    const rows = [row(1, { finalStatus: 'ошибка', rkResult: 'ремонт', preHeatTreatmentRequired: true, pstoRequired: 'да',
       preHeatTreatmentControls: [pre(11, 'ВИК', 'годен'), pre(12, 'РК', 'вырез'), pre(13, 'УЗК', null, 'PRE')] })]
     expect(summary(rows).lnkResults).toMatchObject({
       vikResult: { status: 'годен', errors: 0 }, rkResult: { status: 'не годен', rejected: 1 },
@@ -61,14 +61,14 @@ describe('LNK physical group results', () => {
     expect(summary([row(1, { hasRk: 'отменен' })]).lnkResults?.rkResult.status).toBe('годен · назначение отменено')
   })
   it('does not inherit line history or demand pre-TO work when the stage is disabled or unnecessary', () => {
-    const historical = row(1, { preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [pre(11, 'ВИК', 'годен')] })
-    const fresh = row(2, { preHeatTreatmentMode: 'allPsto' as const })
+    const historical = row(1, { preHeatTreatmentRequired: true, preHeatTreatmentControls: [pre(11, 'ВИК', 'годен')] })
+    const fresh = row(2, { preHeatTreatmentRequired: true })
     expect(summary([historical, fresh]).lnkResults?.preVikResult).toMatchObject({ status: 'разные результаты', counts: { годен: 1, 'не требуется': 1 } })
     expect(summary([row(1, { preHeatTreatmentMode: 'selected' as const, pstoRequired: 'да', preHeatTreatmentControls: [pre(11, 'ВИК', 'годен')] })]).lnkResults?.preVikResult.status).toBe('этап выключен')
-    expect(summary([row(1, { preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [pre(11, 'ВИК', 'ожидает НК', 'HISTORY')] })]).lnkResults?.preVikResult.status).toBe('не требуется')
+    expect(summary([row(1, { preHeatTreatmentRequired: true, preHeatTreatmentControls: [pre(11, 'ВИК', 'ожидает НК', 'HISTORY')] })]).lnkResults?.preVikResult.status).toBe('не требуется')
   })
   it('shows missing requests and results for a required pre-TO method without reusing main results', () => {
-    const item = row(1, { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да' })
+    const item = row(1, { preHeatTreatmentRequired: true, pstoRequired: 'да' })
     expect(summary([item]).lnkResults?.preRkResult.status).toBe('ожидает заявку')
     item.preHeatTreatmentControls = [pre(11, 'РК', null, 'PRE')]
     expect(summary([item]).lnkResults?.preRkResult.status).toBe('ожидает НК')
@@ -76,7 +76,7 @@ describe('LNK physical group results', () => {
     expect(summary([item]).lnkResults?.preRkResult.status).toBe('годен')
   })
   it('keeps a retained pre-TO rejection after moving to an unassigned line, without contaminating primary facts', () => {
-    const item = row(1, { preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [pre(11, 'УЗК', 'ремонт')] })
+    const item = row(1, { preHeatTreatmentRequired: true, preHeatTreatmentControls: [pre(11, 'УЗК', 'ремонт')] })
     expect(summary([item]).lnkResults).toMatchObject({ preUzkResult: { status: 'не годен', rejected: 1 }, uzkResult: { status: 'годен' } })
   })
   it('normalizes legacy good aliases, counts both coil sides, and handles empty groups', () => {

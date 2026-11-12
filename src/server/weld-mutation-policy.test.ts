@@ -75,7 +75,8 @@ describe('weld mutation policy', () => {
   it.each(['welding', 'lnk', 'psto'] as const)('does not accept client-supplied pre-TO policy through %s', (scope) => {
     const payload = { id: 7, preHeatTreatmentMode: 'selected' as const, preHeatTreatmentRequired: true, preHeatTreatmentLnkExempt: true }
     expect(restrictWeldMutationRecord(payload, scope)).toEqual({ id: 7 })
-    expect(WELD_FIELDS.some((field) => String(field.key) === 'preHeatTreatmentRequired')).toBe(false)
+    expect(WELD_FIELDS.some((field) => String(field.key) === 'preHeatTreatmentRequired')).toBe(true)
+    expect(formHiddenFieldKeys.has('preHeatTreatmentRequired')).toBe(true)
   })
 
   it('allows work-code fields shared with LNK and PSTO reports', () => {

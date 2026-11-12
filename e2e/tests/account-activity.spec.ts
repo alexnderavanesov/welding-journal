@@ -26,7 +26,7 @@ test('активность: свои сеансы, несколько устро
   await expect(page.getByRole('columnheader', { name: /Активность/ })).toBeVisible()
   await expect(page.getByRole('columnheader', { name: /Статус аккаунта/ })).toBeVisible()
   await expect(row).toContainText('Активирован')
-  await expect(row).toContainText('Нет данных')
+  await expect(row).toContainText('Ещё не входил')
   await expect(page.getByRole('row').filter({ hasText: pendingEmail })).toContainText('Ещё не входил')
   const refresh = async () => { await page.getByRole('button', { name: 'Обновить список', exact: true }).click() }
   const call = async (client: APIRequestContext, name: string, data: unknown = {}, method = 'POST', origin = baseURL!) => {

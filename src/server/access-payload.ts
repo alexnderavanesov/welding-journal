@@ -56,7 +56,7 @@ export function requireContextPermission(permission: Parameters<typeof hasPermis
  * in addition to its import permission. Existing business import checks still run. */
 export function assertImportedWeldFields(input: Record<string, unknown>, previous?: Record<string, unknown>) {
   assertNoSubmittedWorkflowAccess(input)
-  if (Object.hasOwn(input, 'preHeatTreatmentRequired')) {
+  if (Object.hasOwn(input, 'preHeatTreatmentRequired') || Object.hasOwn(input, 'newPreHeatTreatmentChoice')) {
     throw new Error('Требование НК до ТО не задаётся импортом. Измените его в карточке исходного стыка и подтвердите состав цепочки.')
   }
   const context = accessContext.getStore()

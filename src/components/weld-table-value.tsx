@@ -23,6 +23,9 @@ export const WeldTableValue = memo(function WeldTableValue({
 }) {
   const fieldKey = field.key as WeldFieldKey
 
+  if (fieldKey === 'preHeatTreatmentRequired') {
+    return isYesText(value) ? <YesBadge label="Да" /> : String(value ?? '')
+  }
   if (field.kind === 'boolean') {
     if (isCancelledText(value)) return <CancelledBadge />
     if (isAdditionalText(value)) return <AdditionalBadge />

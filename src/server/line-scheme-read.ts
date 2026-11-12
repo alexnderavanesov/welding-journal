@@ -15,7 +15,7 @@ import { buildNumberArrayMatch } from './weld-request-utils'
 import { attachSchemeAliasEvidence } from './line-scheme-identity'
 import { collectSchemePointContext } from '@/lib/line-scheme-point-context'
 import { DISPATCHER_SCOPE_WHITESPACE_SQL } from '@/lib/dispatcher-scope-normalization'
-import { SCHEME_FILTER_FIELDS, type SchemeFilterField, type SchemeRegistryRequest, SCHEME_PAGE_SIZE, schemeId, schemeToken, type SchemeBundle, type SchemeJoint, type SchemeLine, type SchemePoint } from '@/lib/line-schemes'
+import { SCHEME_FILTER_FIELDS, schemeFilterLabel, schemeFilterValue, type SchemeFilterField, type SchemeRegistryRequest, SCHEME_PAGE_SIZE, schemeId, schemeToken, type SchemeBundle, type SchemeJoint, type SchemeLine, type SchemePoint } from '@/lib/line-schemes'
 
 export type SchemeDb = Pick<SystemDocumentSequenceTransaction, 'select' | 'execute'>
 export const schemeSnapshot = <T>(run: (tx: SystemDocumentSequenceTransaction) => Promise<T>) => requireDb().transaction(run, { isolationLevel: 'repeatable read', accessMode: 'read only' })
@@ -118,19 +118,28 @@ export async function hydrateSchemeGroups(db: SchemeDb, groups: SchemePhysicalGr
   }))
 }
 
-// Only line metadata participates in registry filters. Opening a value list
-// never reads joints, point states, PDF bytes or archived point coordinates.
-const registryCte = sql`with registry as (
+// Metadata filters stay in SQL. Physical metrics use the same batched topology
+// as the visible rows, only when a metric filter/value list requires it.
+const registryCte = sql`with registry_lines as (
   select l.id as line_id, b.id as bundle_id, l.project_title, l.subtitle_code, l.line, false as deleted
   from ${linePrograms} l left join ${lineSchemeBundles} b on b.line_program_id=l.id
   union all
   select b.line_program_id,b.id,b.project_title,b.subtitle_code,b.line,true from ${lineSchemeBundles} b
   where not exists(select 1 from ${linePrograms} l where l.id=b.line_program_id)
     and exists(select 1 from ${lineSchemeRevisions} r where r.bundle_id=b.id)
+), registry as (
+  select l.*, main.file_name, regexp_replace(coalesce(main.file_name,''), '[.]pdf$', '', 'i') as pdf_name,
+    coalesce(files.count,0)::integer as revision_count
+  from registry_lines l
+  left join ${lineSchemeBundles} b on b.id=l.bundle_id
+  left join ${lineSchemeRevisions} main on main.id=b.active_revision_id and main.bundle_id=b.id
+  left join (select bundle_id,count(*)::integer as count from ${lineSchemeRevisions} group by bundle_id) files on files.bundle_id=b.id
 )`
-const registryColumns: Record<SchemeFilterField, SQL> = {
-  projectTitle: sql`project_title`, subtitleCode: sql`subtitle_code`, line: sql`line`,
+const registryColumns: Partial<Record<SchemeFilterField, SQL>> = {
+  projectTitle: sql`project_title`, subtitleCode: sql`subtitle_code`, line: sql`line`, pdf: sql`pdf_name`, files: sql`revision_count`,
 }
+const metricFields: SchemeFilterField[] = ['total', 'welded', 'placedCount', 'placedPercent']
+const hasMetricFilters = (data: SchemeRegistryRequest, except?: SchemeFilterField) => metricFields.some(field => field !== except && data.filters?.[field]?.length)
 const registrySearch = (value: unknown) => String(value ?? '').trim().slice(0, 200)
 const containsPattern = (value: string) => `%${value.replace(/[\\%_]/g, '\\$&')}%`
 function registryWhere(data: SchemeRegistryRequest, except?: SchemeFilterField) {
@@ -140,56 +149,86 @@ function registryWhere(data: SchemeRegistryRequest, except?: SchemeFilterField) 
     const values = data.filters?.[field]
     if (values === undefined) continue
     if (!Array.isArray(values) || values.length > 1000 || values.some(value => typeof value !== 'string' || value.length > 2000)) throw new Error('Недопустимые значения фильтра схем.')
-    if (field !== except && values.length) conditions.push(sql`${registryColumns[field]} = any(${sql.param([...new Set(values)])}::text[])`)
+    const column = registryColumns[field]
+    if (field !== except && values.length && column) conditions.push(sql`${column}::text = any(${sql.param([...new Set(values)])}::text[])`)
   }
   return conditions.length ? and(...conditions)! : sql`true`
+}
+function filterMetricRows(rows: SchemeLine[], data: SchemeRegistryRequest, except?: SchemeFilterField) {
+  const filters = metricFields.filter(field => field !== except && data.filters?.[field]?.length)
+    .map(field => ({ field, values: new Set(data.filters![field]) }))
+  return rows.filter(row => filters.every(({ field, values }) => values.has(schemeFilterValue(row, field))))
+}
+type RegistryRow = { line_id: number; bundle_id: number | null; project_title: string; subtitle_code: string; line: string; deleted: boolean; file_name: string | null; revision_count: number; matching: number }
+async function registryRowsWithMetrics(db: SchemeDb, selected: RegistryRow[]): Promise<SchemeLine[]> {
+  const metrics = await readSchemeLineMetrics(db, selected)
+  return selected.map(row => {
+    const counts = metrics.get(row.line_id)!
+    return { lineId: row.line_id, bundleId: row.bundle_id, projectTitle: row.project_title, subtitleCode: row.subtitle_code, line: row.line,
+      deleted: row.deleted, total: counts.total, welded: counts.welded, placedCount: counts.placedCount,
+      placedPercent: counts.total ? 100 * counts.activePlacedCount / counts.total : null, revisionCount: row.revision_count, fileName: row.file_name }
+  })
 }
 export async function readSchemeFilterOptions(data: SchemeRegistryRequest & { field: SchemeFilterField; valueSearch?: string }) {
   if (!SCHEME_FILTER_FIELDS.includes(data.field)) throw new Error('Недопустимый столбец фильтра схем.')
   const where = registryWhere(data, data.field), column = registryColumns[data.field], search = registrySearch(data.valueSearch)
   return schemeSnapshot(async db => {
+    if (!column || hasMetricFilters(data, data.field)) {
+      const result = await db.execute(sql`${registryCte} select * from registry where ${where}`)
+      const lines = filterMetricRows(await registryRowsWithMetrics(db, result.rows as unknown as RegistryRow[]), data, data.field)
+      const counts = new Map<string, number>()
+      for (const row of lines) { const value = schemeFilterValue(row, data.field); counts.set(value, (counts.get(value) ?? 0) + 1) }
+      const numeric = metricFields.includes(data.field) || data.field === 'files'
+      const options = [...counts].map(([value, count]) => ({ value, count, label: schemeFilterLabel(data.field, value) }))
+        .filter(option => !search || option.label.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru')))
+        .sort((a, b) => numeric ? (a.value === '' ? -1 : b.value === '' ? 1 : Number(a.value) - Number(b.value)) : a.value.localeCompare(b.value, 'ru'))
+      return { options: options.slice(0, 100), hasMore: options.length > 100 }
+    }
+    const label = sql`coalesce(nullif(${column}::text,''), ${schemeFilterLabel(data.field, '')})`
     const result = await db.execute(sql`${registryCte}
       select ${column} as value, count(*)::integer as count from registry
-      where ${where} ${search ? sql`and ${column} ilike ${containsPattern(search)}` : sql``}
+      where ${where} ${search ? sql`and ${label} ilike ${containsPattern(search)}` : sql``}
       group by ${column} order by ${column} limit 101`)
-    const rows = result.rows as unknown as { value: string; count: number }[]
-    return { options: rows.slice(0, 100).map(row => ({ ...row, label: row.value || '(Пусто)' })), hasMore: rows.length > 100 }
+    const rows = result.rows as unknown as { value: string | number; count: number }[]
+    return { options: rows.slice(0, 100).map(row => ({ value: String(row.value), count: row.count, label: schemeFilterLabel(data.field, String(row.value)) })), hasMore: rows.length > 100 }
   })
 }
+/** Shared by the scheme registry and line statistics, in the caller's snapshot. */
+export async function readSchemeLineMetrics(db: SchemeDb, selected: { line_id: number; bundle_id: number | null; deleted?: boolean }[]) {
+  const topology = await readSchemeTopology(db, selected.filter(row => !row.deleted).map(row => row.line_id))
+  const bundleIds = selected.flatMap(row => row.bundle_id ? [row.bundle_id] : [])
+  // Count only saved points in the current main PDF, across all its sheets.
+  // One grouped query for all requested lines; no per-line requests.
+  // Eligibility is a (bundle, physical) pair: a moved joint on another
+  // visible line must not make its historical point count for the old line.
+  const activePairs = selected.flatMap(row => row.bundle_id ? (topology.groups.get(row.line_id) ?? []).flatMap(group =>
+    !row.deleted && !group.inactive && group.representative && group.physicalId ? [{ bundleId: row.bundle_id, physicalId: group.physicalId }] : []) : [])
+  const placed = bundleIds.length ? await db.select({ bundleId: lineSchemeBundles.id, count: sql<number>`count(*)::integer`, activeCount: sql<number>`count(active.physical_id)::integer` })
+    .from(lineSchemeBundles).innerJoin(lineSchemePoints, eq(lineSchemePoints.revisionId, lineSchemeBundles.activeRevisionId))
+    .leftJoin(sql`unnest(${sql.param(activePairs.map(item => item.bundleId))}::integer[], ${sql.param(activePairs.map(item => item.physicalId))}::integer[]) as active(bundle_id, physical_id)`,
+      sql`active.bundle_id = ${lineSchemeBundles.id} and active.physical_id = ${lineSchemePoints.physicalId}`)
+    .where(buildNumberArrayMatch(lineSchemeBundles.id, bundleIds)).groupBy(lineSchemeBundles.id) : []
+  const placedByBundle = new Map(placed.map(row => [row.bundleId, row]))
+  return new Map(selected.map(row => {
+    const groups = (topology.groups.get(row.line_id) ?? []).filter(group => !group.inactive && group.representative)
+    const placed = placedByBundle.get(row.bundle_id ?? -1)
+    return [row.line_id, { total: groups.length, welded: groups.filter(group => group.welded).length,
+      placedCount: placed?.count ?? 0, activePlacedCount: placed?.activeCount ?? 0 }]
+  }))
+}
+
 export async function readSchemeLines(data: SchemeRegistryRequest) {
   const page = Math.max(0, Math.trunc(Number(data?.page) || 0)), filter = registryWhere(data ?? {})
+  const metricFilters = hasMetricFilters(data ?? {})
   return schemeSnapshot(async db => {
     const result = await db.execute(sql`${registryCte}
       select *, count(*) over()::integer as matching from registry where ${filter}
-      order by project_title,subtitle_code,line,line_id limit ${SCHEME_PAGE_SIZE} offset ${page * SCHEME_PAGE_SIZE}`)
-    const selected = result.rows as unknown as { line_id: number; bundle_id: number | null; project_title: string; subtitle_code: string; line: string; deleted: boolean; matching: number }[]
-    const topology = await readSchemeTopology(db, selected.filter(row => !row.deleted).map(row => row.line_id))
-    const bundleIds = selected.flatMap(row => row.bundle_id ? [row.bundle_id] : [])
-    const revisions = bundleIds.length ? await db.select({ bundleId: lineSchemeRevisions.bundleId, id: lineSchemeRevisions.id, fileName: lineSchemeRevisions.fileName, activeId: lineSchemeBundles.activeRevisionId })
-      .from(lineSchemeRevisions).innerJoin(lineSchemeBundles, eq(lineSchemeBundles.id, lineSchemeRevisions.bundleId))
-      .where(buildNumberArrayMatch(lineSchemeRevisions.bundleId, bundleIds)) : []
-    // Count only saved points in the current main PDF, across all its sheets.
-    // One grouped query for the visible registry page; no per-line requests.
-    // Eligibility is a (bundle, physical) pair: a moved joint on another
-    // visible line must not make its historical point count for the old line.
-    const activePairs = selected.flatMap(row => row.bundle_id ? (topology.groups.get(row.line_id) ?? []).flatMap(group =>
-      !row.deleted && !group.inactive && group.representative && group.physicalId ? [{ bundleId: row.bundle_id, physicalId: group.physicalId }] : []) : [])
-    const placed = bundleIds.length ? await db.select({ bundleId: lineSchemeBundles.id, count: sql<number>`count(*)::integer`, activeCount: sql<number>`count(active.physical_id)::integer` })
-      .from(lineSchemeBundles).innerJoin(lineSchemePoints, eq(lineSchemePoints.revisionId, lineSchemeBundles.activeRevisionId))
-      .leftJoin(sql`unnest(${sql.param(activePairs.map(item => item.bundleId))}::integer[], ${sql.param(activePairs.map(item => item.physicalId))}::integer[]) as active(bundle_id, physical_id)`,
-        sql`active.bundle_id = ${lineSchemeBundles.id} and active.physical_id = ${lineSchemePoints.physicalId}`)
-      .where(buildNumberArrayMatch(lineSchemeBundles.id, bundleIds)).groupBy(lineSchemeBundles.id) : []
-    const placedByBundle = new Map(placed.map(row => [row.bundleId, row]))
-    const revisionSummary = new Map<number, { count: number; name: string | null }>()
-    for (const revision of revisions) { const entry = revisionSummary.get(revision.bundleId) ?? { count: 0, name: null }; entry.count++; if (revision.id === revision.activeId) entry.name = revision.fileName; revisionSummary.set(revision.bundleId, entry) }
-    const lines: SchemeLine[] = selected.map(row => {
-      const groups = (topology.groups.get(row.line_id) ?? []).filter(group => !group.inactive && group.representative)
-      const revision = revisionSummary.get(row.bundle_id ?? -1)
-      return { lineId: row.line_id, bundleId: row.bundle_id, projectTitle: row.project_title, subtitleCode: row.subtitle_code, line: row.line,
-        deleted: row.deleted, total: groups.length, welded: groups.filter(group => group.welded).length, placedCount: placedByBundle.get(row.bundle_id ?? -1)?.count ?? 0,
-        placedPercent: groups.length ? 100 * (placedByBundle.get(row.bundle_id ?? -1)?.activeCount ?? 0) / groups.length : null, revisionCount: revision?.count ?? 0, fileName: revision?.name ?? null }
-    })
-    return { rows: lines, total: selected[0]?.matching ?? 0 }
+      order by project_title,subtitle_code,line,line_id
+      ${metricFilters ? sql`` : sql`limit ${SCHEME_PAGE_SIZE} offset ${page * SCHEME_PAGE_SIZE}`}`)
+    const selected = result.rows as unknown as RegistryRow[]
+    const lines = filterMetricRows(await registryRowsWithMetrics(db, selected), data ?? {})
+    return metricFilters ? { rows: lines.slice(page * SCHEME_PAGE_SIZE, (page + 1) * SCHEME_PAGE_SIZE), total: lines.length }
+      : { rows: lines, total: selected[0]?.matching ?? 0 }
   })
 }
 

@@ -3,14 +3,15 @@ import { isDatabaseReleaseReady } from './release-readiness'
 import { DATA_RELEASE_VALUE, isCompletedTransition } from '@/lib/release-contract'
 import { PgDialect } from 'drizzle-orm/pg-core'
 
-it('requires schema AND both completed data transitions, not just an HTTP 200', async () => {
+it('requires schema AND all completed data transitions, not just an HTTP 200', async () => {
   for (const [row, expected] of [
-    [{ release: DATA_RELEASE_VALUE, transition: '{"status":"complete"}' }, true],
+    [{ release: DATA_RELEASE_VALUE, transition: '{"status":"complete"}', preliminary: '{"status":"complete"}' }, true],
     [{ release: '{"status":"complete","schemaTime":1}', transition: '{"status":"complete"}' }, false],
     [{ release: 'complete', transition: '{"status":"complete"}' }, false],
     [{ release: null, transition: '{"status":"complete"}' }, false],
     [{ release: DATA_RELEASE_VALUE, transition: '{"status":"restored"}' }, false],
     [{ release: DATA_RELEASE_VALUE, transition: 'invalid json' }, false],
+    [{ release: DATA_RELEASE_VALUE, transition: '{"status":"complete"}', preliminary: null }, false],
   ] as const) {
     const execute = vi.fn().mockResolvedValueOnce({ rows: [{ available: true }] }).mockResolvedValueOnce({ rows: [row] })
     expect(await isDatabaseReleaseReady({ execute } as never)).toBe(expected)

@@ -35,7 +35,7 @@ test('raw imports cannot set the chain requirement; each mixed batch rolls back 
   await expect(massFill({ data: { records: [
     { id: first.id, weldingJournalNote: 'Must roll back' }, { id: second.id, preHeatTreatmentRequired: false },
   ], expectedVersions: before.rows.map(row => ({ id: row.id, version: row.version })) } }))
-    .rejects.toThrow('preHeatTreatmentRequired')
+    .rejects.toThrow('Поле "НК до ТО" недоступно')
   expect(await snapshot()).toEqual(before)
 
   const saved = await importRows({ data: { records: [{ ...scope, joint: 'F883', weldingJournalNote: 'Ordinary import' }] } })

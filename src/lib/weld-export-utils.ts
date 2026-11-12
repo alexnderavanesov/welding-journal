@@ -1,4 +1,5 @@
 import { DATE_TIME_WELD_FIELD_KEYS, VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
+import { getPreHeatTreatmentColumnText } from './pre-heat-treatment-column'
 import { parseDate, parseNumber } from './weld-import-parsers'
 import { formatControlAvailabilityForExport } from './report-value-utils'
 import { formatDateTimeWithSeconds } from './weld-table-formatting'
@@ -16,6 +17,7 @@ export function recordsToVisibleExportMatrix(records: WeldInput[], fields: reado
 
 /** One display contract for preview, print and Excel; numeric cells stay numeric. */
 export function formatReportFieldValue(record: WeldInput, field: WeldField) {
+  if (field.key === 'preHeatTreatmentRequired') return getPreHeatTreatmentColumnText(record)
   const defectDescriptor = getLnkDefectDescriptionDescriptor(field.key as never)
   const hasPreControls = (record as WeldInput & { preHeatTreatmentControls?: unknown[] })
     .preHeatTreatmentControls !== undefined

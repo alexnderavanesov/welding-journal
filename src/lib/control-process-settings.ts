@@ -86,12 +86,11 @@ export function normalizeControlProcessSettings(value: unknown): ControlProcessS
   const source = value && typeof value === 'object'
     ? value as Record<string, unknown>
     : {}
-  const preHeatTreatmentMode = source.preHeatTreatmentMode === 'selected' || source.preHeatTreatmentMode === 'allPsto'
-    ? source.preHeatTreatmentMode
-    : value && typeof value === 'object' && source.preHeatTreatmentLnkEnabled !== false ? 'allPsto' : 'selected'
   return {
     pvkGoodOnly: source.pvkGoodOnly === true,
-    preHeatTreatmentMode,
+    // Old settings cannot re-enable implicit requirements after the explicit
+    // release transition has materialized them on existing physical chains.
+    preHeatTreatmentMode: 'selected',
   }
 }
 

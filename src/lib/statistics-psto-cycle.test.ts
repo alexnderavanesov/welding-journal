@@ -10,7 +10,7 @@ import { buildPercentageLineSummaries } from '@/lib/percentage-line-summary'
 
 describe('PSTO cycle values for statistics', () => {
   it.each([false, true])('counts a request before its result, including a repeat (%s)', (repeat) => {
-    const row = { preHeatTreatmentMode: 'allPsto' as const,
+    const row = { preHeatTreatmentRequired: true,
       id: 1, joint: 'F1', weldDate: '2026-10-01', pstoRequired: 'да',
       pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-02',
       ...(repeat ? { pstoResult: 'проведено', pstoDate: '2026-10-03', tvmtResult: 'не годен' } : {}),
@@ -25,12 +25,12 @@ describe('PSTO cycle values for statistics', () => {
     })
   })
 
-  it('applies the current stage setting before the line calculation without deleting saved history', () => {
+  it('applies each joint flag before the line calculation without deleting saved history', () => {
     const input: WeldRow[] = [{ id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01', connectionType: 'СШ', stamp1K: 'A',
       weldControlPercent: 30, pvkControlPercent: 10, hasPvk: 'отменен' }]
     const history = [{ id: 1, weldJointId: 1, method: 'ПВК', result: 'ремонт' }]
     for (const enabled of [true, false, true]) {
-      const prepared = prepareStatisticsHeatTreatmentRows(input, [], history, { preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })
+      const prepared = prepareStatisticsHeatTreatmentRows(input.map(row => ({ ...row, preHeatTreatmentRequired: enabled })), [], history, { preHeatTreatmentMode: 'selected' })
       expect(prepared[0].preHeatTreatmentControls).toEqual(history)
       const stamp = buildPercentageLineSummaries(prepared)[0].stamps[0]
       expect(stamp.rejectedControlRows).toBe(0) // PVK is never an RK/UZK surcharge source.
@@ -40,7 +40,7 @@ describe('PSTO cycle values for statistics', () => {
   })
   it('hydrates pre-TO controls before statistics and percentage-line calculations', () => {
     const [prepared] = prepareStatisticsHeatTreatmentRows(
-      [{ preHeatTreatmentMode: 'allPsto' as const, id: 7, joint: 'F7', pstoRequired: 'да', hasRk: 'да' } as WeldRow],
+      [{ preHeatTreatmentRequired: true, id: 7, joint: 'F7', pstoRequired: 'да', hasRk: 'да' } as WeldRow],
       [],
       [{
         id: 17,
@@ -59,7 +59,7 @@ describe('PSTO cycle values for statistics', () => {
   })
 
   it('uses the latest repeat TVMT instead of the failed primary result', () => {
-    const [row] = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentMode: 'allPsto' as const,
+    const [row] = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentRequired: true,
       id: 1,
       pstoRequired: 'да',
       tvmtRequest: 'ТВМТ-1',
@@ -90,7 +90,7 @@ describe('PSTO cycle values for statistics', () => {
   })
 
   it('clears the old TVMT from current statistics while the repeat cycle is still at PSTO', () => {
-    const [row] = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentMode: 'allPsto' as const,
+    const [row] = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentRequired: true,
       id: 1,
       pstoRequired: 'да',
       tvmtRequest: 'ТВМТ-1',
@@ -137,7 +137,7 @@ describe('PSTO cycle values for statistics', () => {
   })
 
   it('keeps a physically started repeat in statistics after official line cancellation', () => {
-    const rows = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentMode: 'allPsto' as const,
+    const rows = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentRequired: true,
       id: 1,
       weldDate: '2026-08-01',
       pstoRequired: 'отменен',
@@ -175,7 +175,7 @@ describe('PSTO cycle values for statistics', () => {
   })
 
   it('ignores a stale request-only repeat after moving to a line without PSTO', () => {
-    const rows = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentMode: 'allPsto' as const,
+    const rows = applyLatestPstoCycleToStatisticsRows([{ preHeatTreatmentRequired: true,
       id: 2,
       weldDate: '2026-08-01',
       pstoRequired: null,

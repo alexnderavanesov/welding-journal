@@ -169,6 +169,7 @@ describe('weld field order', () => {
     expect(new Set(sectionNames).size).toBe(sectionNames.length)
     expect(pstoSections.find((group) => group.section === 'ПСТО')?.fields.map((field) => field.key)).toEqual([
       'pstoRequired',
+      'preHeatTreatmentRequired',
       'pstoCycleSummary',
       'pstoRequest',
       'pstoRequestDate',
@@ -358,6 +359,7 @@ describe('weld field order', () => {
 
     expect(pstoSection?.fields.map((field) => field.key)).toEqual([
       'pstoRequired',
+      'preHeatTreatmentRequired',
       'pstoCycleSummary',
       'pstoRequest',
       'pstoRequestDate',

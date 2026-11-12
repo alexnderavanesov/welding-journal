@@ -5,6 +5,7 @@ import { buildSystemDocumentSplitGroups, getSystemDocumentSplitSettingId, type S
 import { normalizeSpecialistSelection, type SpecialistSelection } from './document-specialists'
 import { parseDateLikeToIso } from './date-format'
 import { isPendingLnkResultValue } from './report-value-utils'
+import { getSystemLnkMethodOrder } from './lnk-system-order'
 
 export type PreHeatTreatmentFillIssue = {
   message: string; rowId: number; itemKey?: string; method?: string; field?: 'date' | 'name'
@@ -97,7 +98,7 @@ export function groupPreHeatTreatmentFillItems(rows: readonly WeldRow[], items: 
   }
   return { groups: [...groups.values()].sort((a, b) => {
     if (a.action !== b.action) return a.action === 'request' ? -1 : 1
-    const rank = (g: PreHeatTreatmentFillGroup) => PRE_HEAT_TREATMENT_LNK_METHODS.findIndex(m => m.code === g.positions[0]?.methodCode)
+    const rank = (g: PreHeatTreatmentFillGroup) => getSystemLnkMethodOrder(g.positions[0]?.methodCode ?? '')
     return rank(a) - rank(b) || a.key.localeCompare(b.key)
   }), errors, issues }
 }

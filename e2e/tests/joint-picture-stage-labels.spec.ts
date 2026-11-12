@@ -25,8 +25,8 @@ test.afterEach(async () => {
 async function seed(joint: string, assignment: string | null, welded = true, preResult?: string, pstoRequest?: string) {
   return withE2eDatabase(async db => {
     const id = (await db.query<{ id: number }>(`insert into weld_joints
-      (project_title,subtitle_code,line,joint,officiality,revision_actuality,weld_date,has_vik,psto_required,psto_request,psto_request_date)
-      values ($1,'PIC',$2,$2,'действующий','актуальная',$3,'да',$4,$5,$6) returning id`,
+      (project_title,subtitle_code,line,joint,officiality,revision_actuality,weld_date,has_vik,pre_heat_treatment_required,psto_required,psto_request,psto_request_date)
+      values ($1,'PIC',$2,$2,'действующий','актуальная',$3,'да',true,$4,$5,$6) returning id`,
     [PROJECT, joint, welded ? '2026-09-01' : null, assignment, pstoRequest ?? null, pstoRequest ? '2026-09-04' : null])).rows[0]!.id
     if (preResult !== undefined) await db.query(`insert into pre_heat_treatment_controls
       (weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
@@ -84,9 +84,10 @@ test('назначенное ПСТО различает сварку, заяв�
 })
 
 test('legacy chain without pre-TO requirement preserves its conclusion and factual rejection', async ({ page }) => {
-  await seed('F978', 'да', true, 'ремонт')
+  const id = await seed('F978', 'да', true, 'ремонт')
   await withE2eDatabase(async db => {
-    await db.query("update app_settings set value=$1,updated_at=now() where key='control-processes'", [JSON.stringify({ preHeatTreatmentMode: 'selected' })])
+    // Historical disabled requirement, not the destructive operator action.
+    await db.query('update weld_joints set pre_heat_treatment_required=false where id=$1', [id])
   })
   const { pre, psto } = await picture(page, 'F978')
   await expect(pre.getByText('НК до ТО для цепочки не требуется', { exact: true })).toBeVisible()

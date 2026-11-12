@@ -60,6 +60,7 @@ const fixtures: Fixture[] = Array.from({ length: 50 }, (_, offset) => {
       : { fillerWire: 'Св-08Г2С', fillerWireCertificateNumber: 'DEMO-П-001', shieldingGas: 'Аргон', shieldingGasCertificateNumber: 'DEMO-Г-001' }),
     stamp1K: stamp, stamp1Z: stamp, stamp1KFact: stamp, stamp1ZFact: stamp,
     hasVik: 'да', vikControlBasis: 'Проект', pstoRequired: withPsto ? 'да' : null,
+    preHeatTreatmentRequired: withPsto,
     pstoControlBasis: withPsto ? 'Проект, термообработка после сварки' : null,
   } }
 })
@@ -194,17 +195,16 @@ try {
       return { projectTitle: PROJECT, subtitleCode: SUBTITLE, line: String(sample.line), ...properties, configurationIssue: getLineProgramConfigurationIssue(properties) }
     })).returning()
     if (!apply) {
-      // Match the already enabled local setting only inside the rollback test.
-      const value = JSON.stringify({ preHeatTreatmentMode: 'allPsto' as const, pvkGoodOnly: false })
+      // The manual scenarios explicitly mark their joints. Only the independent
+      // PVK rule needs a known setting inside this rollback-only verification.
+      const value = JSON.stringify({ preHeatTreatmentMode: 'selected' as const, pvkGoodOnly: false })
       await tx.insert(schema.appSettings).values({ key: 'control-processes', value })
         .onConflictDoUpdate({ target: schema.appSettings.key, set: { value } })
     }
     const context = await validation.loadServerWeldValidationContext(tx, fixtures.map((v) => v.row))
-    assert(context.controlProcessSettings.preHeatTreatmentMode === 'allPsto', 'Enable pre-TO before using these manual scenarios')
     assert(!context.controlProcessSettings.pvkGoodOnly, 'Rejected PVK scenarios require PVK-good-only to remain off')
     for (const fixture of fixtures) {
       const row = fixture.row
-      row.preHeatTreatmentMode = 'allPsto'
       row.preHeatTreatmentControls = fixture.pre.map((v, i) => ({ ...v, id: i + 1, weldJointId: row.id }))
       row.duplicateControls = fixture.duplicates.map((v, i) => ({ ...v, id: i + 1, weldJointId: row.id })) as WeldRow['duplicateControls']
       row.pstoRepeatCycles = fixture.repeats.map((v, i) => ({ ...v, id: i + 1, weldJointId: row.id }))

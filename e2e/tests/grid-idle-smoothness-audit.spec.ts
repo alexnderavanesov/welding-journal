@@ -63,6 +63,15 @@ test('page grids: idle work after scroll, including hidden scroll partners', asy
             className: element.className, measurable: element.checkVisibility({ checkVisibilityCSS: true }),
             width: element.clientWidth, height: element.clientHeight,
             visibility: getComputedStyle(element).visibility,
+            interceptsPointer: (() => {
+              const rect = element.getBoundingClientRect(), left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right)
+              const top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom)
+              return right > left && bottom > top && element.contains(document.elementFromPoint((left + right) / 2, (top + bottom) / 2))
+            })(),
+            ancestors: [element, element.parentElement, element.parentElement?.parentElement].filter(Boolean).map(node => ({
+              className: node!.className, display: getComputedStyle(node!).display, visibility: getComputedStyle(node!).visibility,
+              width: node!.clientWidth, height: node!.clientHeight,
+            })),
           })),
           partners: [...document.querySelectorAll(`${selector} .ag-body-vertical-scroll-viewport`)].map(element => ({
             measurable: element.checkVisibility({ checkVisibilityCSS: true }),
@@ -71,6 +80,7 @@ test('page grids: idle work after scroll, including hidden scroll partners', asy
         }), selector)
         samples.push({ route, n, ...observation })
         if (process.env.SMOOTHNESS_ASSERT_IDLE === '1') expect.soft(observation.active10, `${route}: idle ${n}`).toBe(0)
+        expect.soft(observation.allPartners.some(partner => partner.grid && partner.className.includes('vertical') && partner.interceptsPointer), `${route}: invisible scrollbar must not intercept table clicks`).toBe(false)
       }
     }
   } finally {

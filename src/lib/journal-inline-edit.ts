@@ -22,7 +22,7 @@ export function normalizeJournalCellEdits(input: unknown): { records: WeldInput[
     const record: WeldInput = { id: item.id }
     for (const [key, value] of Object.entries(item.values)) {
       const field = key as WeldFieldKey
-      if (field === 'id' || !JOURNAL_INLINE_FIELDS.has(field)) throw new Error('Это поле нельзя редактировать прямо в таблице. Откройте карточку стыка.')
+      if (field === 'id' || field === 'preHeatTreatmentRequired' || !JOURNAL_INLINE_FIELDS.has(field)) throw new Error('Это поле нельзя редактировать прямо в таблице. Откройте карточку стыка.')
       if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('Некорректное значение ячейки.')
       const text = String(value ?? '').trim()
       if (FIELD_BY_KEY.get(field)?.kind === 'number') {

@@ -18,6 +18,7 @@ export function StampCheckReferenceFilter({ title, anchor, options, selected, on
 
   useLayoutEffect(() => {
     const panel = popup.current!
+    let lastAnchor = anchor.getBoundingClientRect()
     const position = () => {
       const rect = anchor.getBoundingClientRect()
       const header = anchor.closest('thead')?.getBoundingClientRect()
@@ -26,7 +27,14 @@ export function StampCheckReferenceFilter({ title, anchor, options, selected, on
         onClose(false)
         return
       }
-      const { width, height } = panel.getBoundingClientRect()
+      const bounds = panel.getBoundingClientRect(), { width, height } = bounds
+      if (panel.dataset.filterResized) {
+        panel.style.left = `${Math.max(12, Math.min(bounds.left + rect.right - lastAnchor.right, window.innerWidth - width - 12))}px`
+        panel.style.top = `${Math.max(12, Math.min(bounds.top + rect.bottom - lastAnchor.bottom, window.innerHeight - height - 12))}px`
+        lastAnchor = rect
+        return
+      }
+      lastAnchor = rect
       const below = rect.bottom + 8
       const preferredTop = below + height <= window.innerHeight - 12 ? below : rect.top - height - 8
       panel.style.top = `${Math.max(12, Math.min(preferredTop, window.innerHeight - height - 12))}px`
@@ -52,11 +60,10 @@ export function StampCheckReferenceFilter({ title, anchor, options, selected, on
     }
   }, [anchor, onClose])
 
-  return createPortal(<div ref={popup} className="fixed z-[160] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl [&_.journal-filter-values]:h-auto">
+  return createPortal(<div ref={popup} data-filter-popup className="fixed z-[160] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl [&_.journal-filter-values]:h-auto">
     <GridValueFilterPanel title={title} search={search} onSearchChange={setSearch} inputRef={input}
       onClose={() => onClose()} canSelectFound={found.length > 0} onSelectFound={() => onChange(found.map(option => option.value))}
-      onReset={() => onChange([])} isFetching={false} isError={false} isLoading={false} onRetry={() => {}} empty={!found.length}
-      footer={<p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">{selected.size ? `Выбрано значений: ${selected.size}` : 'Все значения'} · отбор применяется сразу</p>}>
+      onReset={() => onChange([])} isFetching={false} isError={false} isLoading={false} onRetry={() => {}} empty={!found.length}>
       {found.map(option => <GridFilterValue key={option.value} option={option} selectedValues={selected} ariaLabel={option.label}
         onToggleValues={values => {
           const next = new Set(selected)

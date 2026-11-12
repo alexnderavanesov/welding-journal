@@ -2,6 +2,7 @@ import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { lazy, Suspense, memo, type ComponentProps } from 'react'
 const DocumentConnectionsDialog = lazy(() => import('./document-connections-dialog').then(module => ({ default: module.DocumentConnectionsDialog })))
 const CoilRestorationDialog = lazy(() => import('./coil-restoration-dialog').then(module => ({ default: module.CoilRestorationDialog })))
+const PreHeatTreatmentBatchDialog = lazy(() => import('./pre-heat-treatment-batch-dialog').then(module => ({ default: module.PreHeatTreatmentBatchDialog })))
 const PreHeatTreatmentFillDialog = lazy(() => import('./pre-heat-treatment-fill-dialog').then(module => ({ default: module.PreHeatTreatmentFillDialog })))
 import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
 import { ReportDialogs } from '@/components/report-dialogs'
@@ -20,6 +21,7 @@ import { PrintableReportPreview } from '@/components/printable-report-preview'
 import { Button } from './ui/button'
 
 type HomePageViewProps = {
+  preHeatTreatmentBatchProps?: ComponentProps<typeof PreHeatTreatmentBatchDialog> | null
   preHeatTreatmentFillProps?: ComponentProps<typeof PreHeatTreatmentFillDialog> | null
   onCancelEarlyCoil?: (sourceId: number) => void
   coilRestorationDialogProps?: ComponentProps<typeof CoilRestorationDialog> | null
@@ -71,6 +73,7 @@ type HomePageViewProps = {
 }
 
 export function HomePageView({
+  preHeatTreatmentBatchProps,
   preHeatTreatmentFillProps,
   onCancelEarlyCoil,
   coilRestorationDialogProps,
@@ -208,6 +211,7 @@ export function HomePageView({
         }
       />
       {documentConnectionsProps ? <Suspense fallback={null}><DocumentConnectionsDialog {...documentConnectionsProps} /></Suspense> : null}
+      {preHeatTreatmentBatchProps ? <Suspense fallback={null}><PreHeatTreatmentBatchDialog {...preHeatTreatmentBatchProps} /></Suspense> : null}
       {preHeatTreatmentFillProps ? <Suspense fallback={null}><PreHeatTreatmentFillDialog {...preHeatTreatmentFillProps} /></Suspense> : null}
       {documentPreviewProps ? <HistoryDocumentPreview {...documentPreviewProps} /> : null}
     </ReportWorkspace>

@@ -73,7 +73,7 @@ describe('workflow draft root-cause preview', () => {
 
 function row(overrides: Partial<WeldRow> = {}): WeldRow {
   return {
-    preHeatTreatmentMode: 'allPsto',
+    preHeatTreatmentRequired: true,
     id: 1,
     projectTitle: 'Проект',
     subtitleCode: '400',

@@ -4,7 +4,8 @@ import { calculateLineProgram } from '../src/lib/line-program-calculation'
 import type { PercentageLineControlTask } from '../src/lib/dispatcher-types'
 
 // Legacy off+rejected history is injected only into the runner-owned test DB.
-// This does not bypass or change the user's normal settings-disable guard.
+// This is a read-model fixture, not the operator's destructive unmark action;
+// the ordinary rejected-result removal guard remains in force.
 const url = new URL(process.env.DATABASE_URL ?? '')
 assert.equal(url.hostname, '127.0.0.1')
 assert.equal(url.pathname, '/welding_tracker_e2e')
@@ -43,10 +44,11 @@ try {
   for (const enabled of [true, false, true]) {
     const value = JSON.stringify({ ...(previous[0] ? JSON.parse(previous[0].value) : {}), preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })
     await db.insert(appSettings).values({ key, value }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } })
+    await db.update(weldJoints).set({ preHeatTreatmentRequired: enabled }).where(inArray(weldJoints.id, ids))
     const beforeRead = statements
     const rows = await program.loadLineProgramRows(db, identity)
     assert.equal(statements - beforeRead, 6, 'Policy and stable chain state use bounded batched reads')
-    assert(rows.every((row) => row.preHeatTreatmentMode === (enabled ? 'allPsto' : 'selected')))
+    assert(rows.every((row) => row.preHeatTreatmentMode === 'selected' && row.preHeatTreatmentRequired === enabled))
     const calculation = calculateLineProgram(rows, 30, 10)[0]
     assert.equal(calculation.common.required, 8)
     assert.equal(calculation.rejectedRowIds.length, 1)

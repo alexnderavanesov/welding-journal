@@ -217,6 +217,7 @@ const WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS = [
   'hasUzk',
   'hasPvk',
   'pstoRequired',
+  'preHeatTreatmentRequired',
   'hasTvmt',
 ] as const satisfies readonly WeldFieldKey[]
 

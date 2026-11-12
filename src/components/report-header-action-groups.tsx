@@ -2,9 +2,10 @@ import { CUSTOM_DOCUMENT_TYPES } from '@/lib/custom-document-types'
 import { useCustomDocumentNames } from '@/lib/custom-document-settings'
 import type { CustomDocumentType } from '@/lib/custom-document-types'
 import { useAccess } from '@/lib/security-context'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ComponentProps, type RefObject } from 'react'
 import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, Gauge, ListChecks, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
+import { PreHeatTreatmentMenu } from '@/components/pre-heat-treatment-menu'
 import { Button } from '@/components/ui/button'
 import { useCancelPendingWorkflowAction, WorkflowActionMenuItem, type WorkflowAvailability } from '@/components/workflow-action-menu-item'
 
@@ -354,6 +355,7 @@ export function HeatTreatmentHeaderActions({
 }
 
 type LnkHeaderActionsProps = {
+  preHeatTreatmentMenu?: ComponentProps<typeof PreHeatTreatmentMenu>
   onCreateRequest: () => void
   createRequestDisabled?: boolean
   onExtendRequest: () => void
@@ -381,6 +383,7 @@ type LnkHeaderActionsProps = {
 }
 
 export function LnkHeaderActions({
+  preHeatTreatmentMenu,
   onCreateRequest,
   createRequestDisabled = false,
   onExtendRequest,
@@ -538,6 +541,7 @@ export function LnkHeaderActions({
         <ShieldCheck className="mr-2 h-4 w-4" />
         Официальность
       </Button>
+      {preHeatTreatmentMenu ? <PreHeatTreatmentMenu {...preHeatTreatmentMenu} /> : null}
       <Button
         variant="outline"
         className={REPORT_WORKFLOW_BUTTON_CLASS}

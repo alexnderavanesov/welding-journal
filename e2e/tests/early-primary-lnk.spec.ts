@@ -104,9 +104,9 @@ async function seedJoint(joint: string, historical: boolean) {
     const { rows: [inserted] } = await client.query<{ id: number }>(`insert into weld_joints (
       joint, project_title, subtitle_code, line, weld_date, psto_required, has_vik,
       officiality, revision_actuality, material_group, connection_type, welding_method,
-      d1, d2, t1, t2, wdi, vik_control_basis, pre_heat_treatment_lnk_exempt, stamp_1_k, stamp_1_k_fact
+      d1, d2, t1, t2, wdi, vik_control_basis, pre_heat_treatment_lnk_exempt, stamp_1_k, stamp_1_k_fact, pre_heat_treatment_required
     ) values ($1, 'E2E early primary', 'P', 'E2E-EARLY-L', '2026-03-14', 'да', 'да',
-      'действующий', 'актуальная', 'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект', $2, 'EARLY-K', 'EARLY-K') returning id`, [joint, historical])
+      'действующий', 'актуальная', 'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект', $2, 'EARLY-K', 'EARLY-K',$3) returning id`, [joint, historical, !historical])
     if (historical) await client.query(`update weld_joints set
       psto_request = 'P-EARLY', psto_request_date = '2026-03-15', psto_date = '2026-03-15',
       psto_result = 'проведено', heat_treatment_diagram = 'D-EARLY',

@@ -29,8 +29,7 @@ function PstoTableGridFilter({ column, api, onModelChange }: CustomFilterDisplay
   return <GridValueFilterPanel title={column.getColDef().headerName} search={search} onSearchChange={setSearch} inputRef={input}
     onClose={() => { close.current?.(); api.setFocusedHeader(column) }} legacyFilter={value && !parsed ? value : undefined}
     canSelectFound={!waiting && options.length > 0} onSelectFound={() => apply(match)} onReset={() => apply('')}
-    isFetching={waiting} isLoading={query.isLoading || search.trim() !== match} isError={query.isError} onRetry={() => { void query.refetch() }} empty={!options.length}
-    footer={<p className="journal-filter-legacy">Отбор действует по всей таблице. «Выбрать найденные» включает все совпадения.</p>}>
+    isFetching={waiting} isLoading={query.isLoading || search.trim() !== match} isError={query.isError} onRetry={() => { void query.refetch() }} empty={!options.length}>
     <fieldset disabled={waiting} className="m-0 min-w-0 border-0 p-0">{options.map(option => <GridFilterValue key={option.value} option={{ ...option, values: [option.value] }} selectedValues={selected}
       onToggleValues={values => { const next = new Set(selected); for (const key of values) next.has(key) ? next.delete(key) : next.add(key); apply(buildWeldColumnValueFilter([...next])) }} />)}</fieldset>
     {query.hasNextPage && <button type="button" className="w-full p-2 text-sm text-sky-700" disabled={waiting} onClick={() => { void query.fetchNextPage() }}>Ещё значения</button>}

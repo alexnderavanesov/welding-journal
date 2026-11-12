@@ -1,21 +1,13 @@
 import { and, or, sql, type SQLWrapper } from 'drizzle-orm'
 
-import { appSettings, preHeatTreatmentControls, pstoRepeatCycles, weldJoints } from '@/db/schema'
-import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import { preHeatTreatmentControls, pstoRepeatCycles, weldJoints } from '@/db/schema'
 import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
 import { PRE_HEAT_TREATMENT_LNK_METHODS } from '@/lib/lnk-control-stage'
 import { buildNullableControlEnabledWhere } from '@/server/control-availability-sql'
 
-/** Uncorrelated setting lookup: PostgreSQL evaluates it once, not once per weld. */
+/** The flag is authoritative; legacy full-mode requirements are migrated explicitly. */
 export function buildPreHeatTreatmentEnabledWhere() {
-  return sql<boolean>`(${weldJoints.preHeatTreatmentRequired} is true or coalesce((
-    select case when ${appSettings.value} is json then case
-      when (${appSettings.value}::jsonb ->> 'preHeatTreatmentMode') in ('selected', 'allPsto')
-        then (${appSettings.value}::jsonb ->> 'preHeatTreatmentMode') = 'allPsto'
-      else (${appSettings.value}::jsonb -> 'preHeatTreatmentLnkEnabled') is distinct from 'false'::jsonb end
-      else false end
-    from ${appSettings} where ${appSettings.key} = ${PROJECT_SETTING_KEYS.controlProcesses}
-  ), false))`
+  return sql<boolean>`${weldJoints.preHeatTreatmentRequired} is true`
 }
 
 type CycleSqlFields = Record<'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' |

@@ -1,9 +1,16 @@
 import { test, expect } from '@playwright/test'
+import pg from 'pg'
 import { eq, inArray } from 'drizzle-orm'
 import { requireDb } from '../../src/db'
-import { weldJoints, preHeatTreatmentControls } from '../../src/db/schema'
+import { weldJoints, preHeatTreatmentControls, appSettings } from '../../src/db/schema'
+import { PRE_HEAT_SELECTED_TRANSITION_KEY } from '../../src/lib/release-contract'
+import { initializePreHeatTreatmentMode } from '../../src/server/pre-heat-treatment-mode-transition'
+import { previewNewPreHeatTreatment } from '../../src/server/new-pre-heat-treatment'
+import { getPstoLineIdentityKey } from '../../src/lib/psto-line-assignment'
 import { readPreHeatTreatmentChain, prepareCardPreHeatTreatment, finishCardPreHeatTreatment } from '../../src/server/pre-heat-treatment-chain'
-import { lockPreHeatTreatmentFillCounters, planPreHeatTreatmentFill, savePreHeatTreatmentFillInTransaction } from '../../src/server/pre-heat-treatment-fill'
+import { lockPreHeatTreatmentFillCounters, planPreHeatTreatmentFill, savePreHeatTreatmentFillInTransaction, previewPreHeatTreatmentFill, savePreHeatTreatmentFill } from '../../src/server/pre-heat-treatment-fill'
+import { buildWeldColumnValueFilter } from '../../src/lib/weld-column-choice-filter'
+import { previewPreHeatTreatmentBatch, savePreHeatTreatmentBatch, readPreHeatTreatmentBatch } from '../../src/server/pre-heat-treatment-batch'
 import { attachHeatTreatmentControlRelations } from '../../src/server/heat-treatment-control-relations'
 import { buildLnkWorkflowRowsWhere, listLnkWorkflowRows } from '../../src/server/lnk-workflow-context'
 import { prepareControlProcessSettingsChangeInTransaction } from '../../src/server/control-process-settings'
@@ -11,7 +18,7 @@ import { listWeldingJournalPage, listWeldColumnFilterOptions } from '../../src/s
 import { computeStatisticsServerResult } from '../../src/server/statistics'
 import { persistPreHeatTreatmentTouchedRows } from '../../src/server/pre-heat-treatment-lnk-workflow'
 import { previewChainActualityInTransaction } from '../../src/server/chain-actuality'
-import { updateWeldJoint } from '../../src/server/weld-mutations'
+import { updateWeldJoint, createWeldJoint } from '../../src/server/weld-mutations'
 import { moveWeldJointChainRecord } from '../../src/server/weld-chain-line-move'
 import { markDispatcherTaskIndexDirty, getDispatcherDirtyScopes } from '../../src/server/dispatcher-task-index-dirty'
 import { asE2eOwner } from '../with-owner-access'
@@ -55,11 +62,204 @@ const previewFill = (rowIds: number[]) => requireDb().transaction(async tx => {
 })
 const confirmed = (plan: Awaited<ReturnType<typeof planPreHeatTreatmentFill>>): PreHeatTreatmentFillOptions => ({ token: plan.token,
   confirmedGroups: plan.groups.map(g => ({ key: g.key, name: g.name, date: g.date, itemKeys: g.items.map(i => i.key) })) })
+test('standalone fill uses only selected marked continuation and the requirement column filters actual flags', async () => {
+  const rowIds = [ids[1], ids[3]]
+  const plan = await owner(previewPreHeatTreatmentFill)({ data: { rowIds, options: {} } })
+  expect(plan.selectedCount).toBe(1)
+  expect(plan.errors).toEqual([])
+  expect(new Set(plan.items.map(item => item.rowId))).toEqual(new Set([ids[1]]))
+  await owner(savePreHeatTreatmentFill)({ data: { rowIds, options: { token: plan.token,
+    confirmedGroups: plan.groups.map(g => ({ key: g.key, name: g.name, date: g.date, itemKeys: g.items.map(i => i.key) })) } } })
+  expect((await snapshot()).controls.map(control => control.weld_joint_id)).toEqual([ids[1]])
+  for (const [value, expectedIds] of [['да', [ids[0], ids[1], ids[2], ids[5]]], ['', [ids[3], ids[4]]]] as const) {
+    const page = await owner(listWeldingJournalPage)({ data: { projectTitle: project, columnFilters: { preHeatTreatmentRequired: buildWeldColumnValueFilter([value]) } } })
+    expect(page.rows.map(row => row.id).sort()).toEqual([...expectedIds].sort())
+  }
+  const options = await owner(listWeldColumnFilterOptions)({ data: { projectTitle: project, fieldKey: 'preHeatTreatmentRequired' } })
+  expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ value: 'да', count: 4 }), expect.objectContaining({ value: '', count: 2 })]))
+})
+
+for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], ['/psto', 'heatTreatment']] as const) {
+  test(`${report}: preliminary column separates three states with tooltips and named filters`, async ({ page }, info) => {
+    await withLineProgramFixture(async db => {
+      await db.query("update weld_joints set line='NO-PSTO',psto_required=null,psto_request='Historical PSTO' where id=any($1::int[])", [[...ids.slice(0, 3), ids[5]]])
+      await db.query('update weld_joints set pre_heat_treatment_required=false where id=$1', [ids[5]])
+    })
+    const options = await owner(listWeldColumnFilterOptions)({ data: { report, projectTitle: project, fieldKey: 'preHeatTreatmentRequired' } })
+    expect(options).toHaveLength(3)
+    expect(options).toEqual(expect.arrayContaining([
+      { value: 'да', label: 'Отметка включена (Да)', count: 3 },
+      { value: '', label: 'Отметка выключена (пусто)', count: 2 },
+      { value: '—', label: 'Не применяется (—)', count: 1 },
+    ]))
+    await page.setViewportSize({ width: 1800, height: 1000 })
+    await page.goto(path)
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
+    const grid = page.locator(`[data-weld-report-grid="${report}"]`)
+    const rows = grid.locator('.ag-grid-scrolling-rows .ag-row')
+    await expect(rows).toHaveCount(6)
+    const viewport = grid.locator('.ag-grid-viewport')
+    const header = grid.locator('.ag-header-cell[col-id="preHeatTreatmentRequired"]')
+    for (let step = 0; step < 25 && !await header.count(); step++) {
+      await viewport.evaluate(async element => { element.scrollLeft += 500; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
+    }
+    await expect(header).toBeAttached()
+    await header.evaluate(element => element.scrollIntoView({ inline: 'center', block: 'nearest' }))
+    for (const [id, text, tip] of [[ids[5], '—', 'не применяется'], [ids[3], '', 'не отмечен'], [ids[0], 'Да', 'Отметка НК до ТО сохранена']] as const) {
+      const cell = rows.filter({ has: page.locator(`[data-weld-field-key="preHeatTreatmentRequired"]`) })
+        .and(grid.locator(`[row-id="${id}"]`)).locator('[col-id="preHeatTreatmentRequired"]')
+      await expect(cell).toHaveText(text)
+      await cell.hover()
+      await expect(page.getByRole('tooltip')).toContainText(tip)
+      await header.hover()
+      await expect(page.getByRole('tooltip')).toBeHidden()
+    }
+    await page.screenshot({ path: info.outputPath('preliminary-column-states.png') })
+    await header.locator('.ag-header-cell-filter-button').click()
+    const filter = page.getByRole('dialog', { name: 'Фильтр: НК до ТО', exact: true })
+    for (const [label, count] of [['Отметка включена (Да)', 3], ['Отметка выключена (пусто)', 2], ['Не применяется (—)', 1]] as const) {
+      const option = filter.getByRole('checkbox', { name: new RegExp(label.replace(/[()]/g, '\\$&')) })
+      await option.check()
+      await expect(rows).toHaveCount(count)
+      await option.uncheck()
+      await expect(rows).toHaveCount(6)
+    }
+    await filter.getByRole('textbox').fill('выключена')
+    await expect(filter.getByRole('checkbox')).toHaveCount(1)
+    await filter.getByRole('button', { name: 'Выбрать найденные', exact: true }).click()
+    await expect(rows).toHaveCount(2)
+    await page.screenshot({ path: info.outputPath('preliminary-column-filter.png') })
+    await page.keyboard.press('Escape')
+    await expect(filter).toBeHidden()
+  })
+}
+test('new unsaved joint uses the draft line, saves its explicit choice once and defaults other independent joints off', async () => {
+  const draft = { projectTitle: project, subtitleCode: 'NK', line: 'NK-L', joint: 'F883' }
+  const preview = await owner(previewNewPreHeatTreatment)({ data: draft })
+  expect(preview).toMatchObject({ applicable: true, inherited: false, required: false })
+  const inherited = await owner(previewNewPreHeatTreatment)({ data: { ...draft, joint: 'F881R2' } })
+  expect(inherited).toMatchObject({ inherited: true, required: true })
+  const created = await owner(createWeldJoint)({ data: { ...draft, newPreHeatTreatmentChoice: { required: true, identityKey: preview.identityKey } } })
+  expect(created.preHeatTreatmentRequired).toBe(true)
+  const ordinary = await owner(createWeldJoint)({ data: { ...draft, joint: 'F884' } })
+  expect(ordinary.preHeatTreatmentRequired).toBe(false)
+  const before = await snapshot()
+  await expect(owner(createWeldJoint)({ data: { ...draft, joint: 'F885', line: 'other', newPreHeatTreatmentChoice: { required: true, identityKey: preview.identityKey } } })).rejects.toThrow('Линия изменилась')
+  const noPsto = { ...draft, joint: 'F885', line: 'other' }
+  await expect(owner(createWeldJoint)({ data: { ...noPsto, newPreHeatTreatmentChoice: { required: true, identityKey: getPstoLineIdentityKey(noPsto) } } })).rejects.toThrow('ПСТО не назначено')
+  expect(await snapshot()).toEqual(before)
+})
+
+test('release transition preserves masked false requirements in full mode, retains selective choices and is idempotent', async () => {
+  const rollback = new Error('test rollback')
+  for (const oldMode of ['allPsto', 'selected']) {
+    try {
+      await requireDb().transaction(async tx => {
+        await tx.delete(appSettings).where(eq(appSettings.key, PRE_HEAT_SELECTED_TRANSITION_KEY))
+        await tx.update(appSettings).set({ value: JSON.stringify({ preHeatTreatmentMode: oldMode, pvkGoodOnly: true }) }).where(eq(appSettings.key, 'control-processes'))
+        await tx.update(weldJoints).set({ preHeatTreatmentRequired: false }).where(inArray(weldJoints.id, ids.slice(0, 3)))
+        await tx.update(weldJoints).set({ preHeatTreatmentRequired: null }).where(eq(weldJoints.id, ids[5]))
+        await tx.insert(preHeatTreatmentControls).values({ weldJointId: ids[5], method: 'ВИК', result: 'ремонт', conclusionName: 'Preserved historical result' })
+        const result = await initializePreHeatTreatmentMode(tx)
+        expect(result).toMatchObject({ skipped: false, mode: 'selected', previousFullMode: oldMode === 'allPsto' })
+        const rows = await tx.select().from(weldJoints).where(inArray(weldJoints.id, ids))
+        expect(rows.filter(row => row.preHeatTreatmentRequired).length).toBe(oldMode === 'allPsto' ? 6 : 0)
+        expect(await tx.select().from(preHeatTreatmentControls).where(eq(preHeatTreatmentControls.weldJointId, ids[5]))).toEqual([expect.objectContaining({ result: 'ремонт', conclusionName: 'Preserved historical result' })])
+        expect(await initializePreHeatTreatmentMode(tx)).toEqual({ skipped: true })
+        throw rollback
+      })
+    } catch (error) { if (error !== rollback) throw error }
+  }
+})
 const saveFill = owner(async (rowIds: number[], options: PreHeatTreatmentFillOptions) => requireDb().transaction(async tx => {
   await lockPreHeatTreatmentFillCounters(tx)
   const rows = await tx.select().from(weldJoints).where(inArray(weldJoints.id, rowIds)).for('update')
   return savePreHeatTreatmentFillInTransaction(tx, await attachHeatTreatmentControlRelations(rows, tx), options)
 }))
+test('bulk preview batches one line instead of rereading it for every selected chain', async () => {
+  const added = await withE2eDatabase(async db => (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,psto_required,pre_heat_treatment_required)
+    select $1,'NK','NK-L','F' || (9000+n)::text,'да',false from generate_series(1,500) n returning id`, [project])).rows.map(row => row.id))
+  const counts: number[] = []
+  for (const selection of [added.slice(0, 1), added]) {
+    const original = pg.Client.prototype.query
+    let count = 0
+    pg.Client.prototype.query = function(this: unknown, ...args: unknown[]) {
+      count++; return (original as (...args: unknown[]) => unknown).apply(this, args)
+    } as typeof original
+    try {
+      const start = performance.now()
+      const preview = await owner(previewPreHeatTreatmentBatch)({ data: { rowIds: selection, required: true } })
+      expect(preview.chains).toHaveLength(selection.length)
+      counts.push(count)
+      console.log(JSON.stringify({ preliminaryBatch: selection.length, queries: count, milliseconds: Math.round(performance.now() - start) }))
+    } finally { pg.Client.prototype.query = original }
+  }
+  expect(counts[1]).toBe(counts[0])
+})
+test('bulk marking expands and deduplicates physical chains; combined fill keeps all method prerequisites', async () => {
+  await withE2eDatabase(db => db.query("update weld_joints set officiality=null,pre_heat_treatment_required=false,has_pvk='да',has_rk='да',has_uzk='да' where id=any($1::int[])", [ids]))
+  const rowIds = [ids[1], ids[2], ids[5]]
+  const preview = await owner(previewPreHeatTreatmentBatch)({ data: { rowIds, required: true } })
+  expect(preview.selectedCount).toBe(3)
+  expect(preview.affectedCount).toBe(4)
+  expect(preview.chains).toHaveLength(2)
+  expect(preview.chains.flatMap(c => c.rows.map(r => r.id)).sort()).toEqual([ids[0], ids[1], ids[2], ids[5]].sort())
+  const plan = await owner(async () => requireDb().transaction(async tx => {
+    const batch = await readPreHeatTreatmentBatch(tx, { rowIds, required: true })
+    return planPreHeatTreatmentFill(tx, batch.rows.map(row => ({ ...row, preHeatTreatmentRequired: true })), {})
+  }))()
+  expect(plan.errors).toEqual([])
+  await owner(savePreHeatTreatmentBatch)({ data: { rowIds, required: true, token: preview.token, fill: confirmed(plan) } })
+  const saved = await snapshot()
+  expect(saved.controls).toHaveLength(16)
+  expect(saved.controls.every(control => control.result === 'годен')).toBe(true)
+  expect(saved.rows.filter(row => row.pre_heat_treatment_required).map(row => row.id)).toEqual([ids[0], ids[1], ids[2], ids[5]])
+  // Two expanded chains share all five documents. The preview must count every
+  // removed position once, then delete only this stage in one transaction.
+  const removal = await owner(previewPreHeatTreatmentBatch)({ data: { rowIds, required: false } })
+  expect(removal.removals).toHaveLength(5)
+  expect(removal.removals.every(doc => doc.remaining === 0)).toBe(true)
+  await owner(savePreHeatTreatmentBatch)({ data: { rowIds, required: false, token: removal.token } })
+  expect((await snapshot()).controls).toEqual([])
+  expect((await snapshot()).documents).toEqual([])
+})
+
+test('bulk removal rejects stale preview and preliminary rejection without changing any selected chain', async () => {
+  const rowIds = [ids[1], ids[5]]
+  const preview = await owner(previewPreHeatTreatmentBatch)({ data: { rowIds, required: false } })
+  await withE2eDatabase(db => db.query("insert into pre_heat_treatment_controls(weld_joint_id,method,result) values($1,'ВИК','ремонт')", [ids[5]]))
+  const before = await snapshot()
+  await expect(owner(savePreHeatTreatmentBatch)({ data: { rowIds, required: false, token: preview.token } })).rejects.toThrow('изменились')
+  const fresh = await owner(previewPreHeatTreatmentBatch)({ data: { rowIds, required: false } })
+  expect(fresh.chains.some(chain => chain.reason?.includes('нельзя отключить'))).toBe(true)
+  await expect(owner(savePreHeatTreatmentBatch)({ data: { rowIds, required: false, token: fresh.token } })).rejects.toThrow('нельзя отключить')
+  expect(await snapshot()).toEqual(before)
+})
+
+test('LNK toolbar marks and fills all selected methods, then explicitly removes the preliminary package', async ({ page }, info) => {
+  await withE2eDatabase(db => db.query("update weld_joints set pre_heat_treatment_required=false,has_rk='да',has_pvk='да' where id=$1", [ids[5]]))
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
+  await selectLnkRow(page, 'F882')
+  const menu = page.getByRole('button', { name: 'НК до ТО', exact: true })
+  await menu.click()
+  await page.getByRole('button', { name: 'Поставить отметку', exact: true }).click()
+  const batch = page.getByRole('dialog', { name: 'Поставить отметку НК до ТО', exact: true })
+  await expect(batch.getByText(/Затронуто записей: 1/)).toBeVisible()
+  await batch.screenshot({ path: info.outputPath('preliminary-batch-mark.png') })
+  await batch.getByRole('button', { name: 'Поставить и заполнить как «Годен»', exact: true }).click()
+  const fill = page.getByRole('dialog', { name: 'Заполнить недостающий НК до ТО', exact: true })
+  await fill.getByRole('button', { name: 'Заполнить недостающее как «Годен»', exact: true }).click()
+  await expect(fill).toBeHidden()
+  expect((await snapshot()).controls).toHaveLength(3)
+  await menu.click()
+  await page.getByRole('button', { name: 'Снять отметку', exact: true }).click()
+  const remove = page.getByRole('dialog', { name: 'Снять отметку НК до ТО', exact: true })
+  await expect(remove.getByText('Удалится целиком', { exact: true })).toHaveCount(4)
+  await remove.getByRole('button', { name: 'Подтвердить снятие и удаление', exact: true }).click()
+  await expect(remove).toBeHidden()
+  expect((await snapshot()).controls).toEqual([])
+})
 async function snapshot() { return withE2eDatabase(async db => ({
   rows: (await db.query('select id,pre_heat_treatment_required,updated_at from weld_joints where project_title=$1 order by id', [project])).rows,
   controls: (await db.query('select p.* from pre_heat_treatment_controls p join weld_joints w on w.id=p.weld_joint_id where w.project_title=$1 order by p.id', [project])).rows,
@@ -217,8 +417,8 @@ test('LNK quick fill preserves explicit dates and names across regrouping and sa
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
   await selectLnkRow(page, 'F882')
   await lnkRow(page, 'F882').getByRole('button', { name: 'F882', exact: true }).click({ button: 'right' })
-  await page.getByRole('button', { name: 'Дополнительно', exact: true }).hover()
-  await page.getByRole('button', { name: 'Заполнить недостающее НК до ТО', exact: true }).click()
+  await page.getByTestId('context-action-menu').getByRole('button', { name: 'НК до ТО', exact: true }).hover()
+  await page.getByRole('button', { name: 'Заполнить недостающее как «Годен»', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Заполнить недостающий НК до ТО', exact: true })
   const requestKey = `${ids[5]}:request:all`, resultKey = `${ids[5]}:result:ВИК`
   await expect(dialog.getByLabel(`Дата ${requestKey}`, { exact: true })).toHaveValue('2026-11-01')
@@ -282,8 +482,8 @@ test('fill highlights exact chronology fields, keeps healthy positions valid and
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
   await selectLnkRow(page, 'F881')
   await lnkRow(page, 'F881').getByRole('button', { name: 'F881', exact: true }).click({ button: 'right' })
-  await page.getByRole('button', { name: 'Дополнительно', exact: true }).hover()
-  await page.getByRole('button', { name: 'Заполнить недостающее НК до ТО', exact: true }).click()
+  await page.getByTestId('context-action-menu').getByRole('button', { name: 'НК до ТО', exact: true }).hover()
+  await page.getByRole('button', { name: 'Заполнить недостающее как «Годен»', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Заполнить недостающий НК до ТО', exact: true })
   const date = dialog.getByLabel(`Дата ${ids[0]}:result:УЗК`, { exact: true })
   await expect(date).toHaveAttribute('aria-invalid', 'true')

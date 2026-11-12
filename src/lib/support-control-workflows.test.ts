@@ -41,7 +41,7 @@ describe('Т-06/07 support control and continuation workflows', () => {
   })
 
   it('blocks RK requests and results at both stages even with stale assignment, settings override or empty result', () => {
-    const row = support({ hasRk: 'да', pstoRequired: 'да', preHeatTreatmentMode: 'allPsto' as const })
+    const row = support({ hasRk: 'да', pstoRequired: 'да', preHeatTreatmentRequired: true })
     expect(getPrimaryLnkRequestAccess(row, 'РК', { preHeatTreatmentMode: 'selected' as const,  }).reason).toContain('Для Т РК запрещён')
     expect(getPrimaryLnkStageAccess(row, 'РК').reason).toContain('Для Т РК запрещён')
     expect(getPreHeatTreatmentRequestBlockReason(row, 'РК')).toContain('Для Т РК запрещён')
@@ -57,9 +57,9 @@ describe('Т-06/07 support control and continuation workflows', () => {
   })
 
   it('retains stage order for supports instead of treating their permitted methods as exempt', () => {
-    const row = support({ pstoRequired: 'да', preHeatTreatmentMode: 'allPsto' as const })
+    const row = support({ pstoRequired: 'да', preHeatTreatmentRequired: true })
     expect(getPrimaryLnkRequestAccess(row, 'УЗК').status).toBe('ready')
-    expect(getPrimaryLnkStageAccess(row, 'УЗК', { preHeatTreatmentMode: 'allPsto' as const,  }).status).toBe('allowed-with-warning')
+    expect(getPrimaryLnkStageAccess(row, 'УЗК', { preHeatTreatmentMode: 'selected' }).status).toBe('allowed-with-warning')
     const rejected = { ...row, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'УЗК', requestName: 'НК', result: 'ремонт' }] }
     expect(getPrimaryLnkRequestAccess(rejected, 'ВИК').status).toBe('blocked')
     expect(getPrimaryLnkStageAccess(rejected, 'УЗК').status).toBe('blocked')
@@ -82,7 +82,7 @@ describe('Т-06/07 support control and continuation workflows', () => {
   })
 
   it('creates a fresh support repair with full length and preserved assignments, without copying facts or allowing W/Y', () => {
-    const row = support({ preHeatTreatmentMode: 'allPsto' as const, joint: 'ОП-1R10', weldLength: 600.123456, pstoRequired: 'да', pvkResult: 'годен', uzkResult: 'ремонт',
+    const row = support({ preHeatTreatmentRequired: true, joint: 'ОП-1R10', weldLength: 600.123456, pstoRequired: 'да', pvkResult: 'годен', uzkResult: 'ремонт',
       duplicateControls: [{ id: 2, weldJointId: 1, method: 'УЗК', result: 'ремонт' }] as WeldRow['duplicateControls'],
       preHeatTreatmentControls: [{ id: 3, weldJointId: 1, method: 'УЗК', result: 'годен' }],
       pstoRepeatCycles: [{ id: 4, weldJointId: 1, sequence: 2, pstoResult: 'проведено' }] as WeldRow['pstoRepeatCycles'] })

@@ -21,3 +21,8 @@ it('creates a joint without client supplied system defaults', async () => {
   await createWeldRowOrThrow({ joint: 'F1', officiality: 'действующий', finalStatus: 'ожидает сварку' })
   expect(rpc.createWeldJoint.mock.calls[0][0].data).toEqual({ joint: 'F1' })
 })
+it('sends the explicit new-card choice while stripping the read-only raw requirement', async () => {
+  const newPreHeatTreatmentChoice = { required: true as const, identityKey: 'line-key' }
+  await createWeldRowOrThrow({ joint: 'F1', preHeatTreatmentRequired: true, newPreHeatTreatmentChoice })
+  expect(rpc.createWeldJoint.mock.calls[0][0].data).toEqual({ joint: 'F1', newPreHeatTreatmentChoice })
+})

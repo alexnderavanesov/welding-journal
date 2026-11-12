@@ -1,3 +1,4 @@
+import { PRE_HEAT_ACTIONS, type PreHeatTreatmentAction } from '@/components/pre-heat-treatment-menu'
 import { isPreHeatTreatmentLnkAvailable } from '@/lib/lnk-control-stage'
 import { CHAIN_ACTUALITY_REASON } from '@/lib/dispatcher-check-reasons'
 import { CUSTOM_DOCUMENT_TYPES } from '@/lib/custom-document-types'
@@ -315,6 +316,7 @@ type WorkflowRootCauseNavigationFrame = {
 
 export function useHomePageController(options: UseHomePageControllerOptions = {}) {
   const { can } = useAccess()
+  const [preHeatTreatmentBatch, setPreHeatTreatmentBatch] = useState<{ rowIds: number[]; required: boolean } | null>(null)
   const [preHeatTreatmentFillRowIds, setPreHeatTreatmentFillRowIds] = useState<number[] | null>(null)
   const canReadFinalStatusContext = can('welding.view') && can('lnk.view') && can('psto.view')
   const queryClient = useQueryClient()
@@ -2681,6 +2683,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       : activeReport === 'heatTreatment'
         ? selectedHeatTreatmentIds
         : selectedWeldingJournalIds
+  const openPreHeatTreatmentAction = (action: PreHeatTreatmentAction, rowIds: number[]) => {
+    if (!rowIds.length) return
+    const definition = PRE_HEAT_ACTIONS.find(item => item.action === action)!
+    if (!can(definition.permission)) {
+      setMessage('Недостаточно прав для этого действия. Обратитесь к администратору.')
+      return
+    }
+    // Marking belongs to the welding journal, even when opened from LNK.
+    // The preview/save additionally check the rights for actual fill/removal.
+    if (action === 'fill') setPreHeatTreatmentFillRowIds(rowIds)
+    else setPreHeatTreatmentBatch({ rowIds, required: action === 'enable' })
+  }
   const setActiveSelectedRowIds =
     activeReport === 'lnk'
       ? setSelectedLnkIds
@@ -3194,14 +3208,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           : [...primaryEditingActions, ...preEditingActions],
         additional: [
           {
-            id: 'pre-heat-treatment-fill', label: 'Заполнить недостающее НК до ТО', icon: ClipboardCheck,
-            disabled: !can('lnk.edit') || !contextRows.some(isPreHeatTreatmentLnkAvailable),
-            title: 'Только выбранные применимые стыки; существующие документы сохраняются.',
-            onSelect: () => runProtectedEdit('заполнение НК до ТО', () => {
-              setPreHeatTreatmentFillRowIds(contextRows.filter(isPreHeatTreatmentLnkAvailable).map(row => row.id))
-            }),
-          },
-          {
             id: 'layered-control-assign', label: 'Назначить послойный контроль', icon: ClipboardCheck,
             disabled: Boolean(layeredAssignmentBlockReason),
             title: layeredAssignmentBlockReason || 'После собственного основного результата ПВК, только для У-стыков.',
@@ -3240,6 +3246,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           },
         ],
       }))
+      items.push({
+        id: 'pre-heat-treatment', label: 'НК до ТО', icon: ClipboardCheck, onSelect: () => {},
+        children: PRE_HEAT_ACTIONS.map(action => ({ id: `pre-heat-${action.action}`, label: action.label,
+          disabled: !can(action.permission), onSelect: () => openPreHeatTreatmentAction(action.action, contextRows.map(row => row.id)) })),
+      })
       return items
     }
 
@@ -3696,6 +3707,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenLnkConclusionsReport: openLnkConclusionsReport,
     onLnkWorkflowMenuOpenChange: setIsLnkWorkflowMenuOpen,
   })
+  reportHeaderActionsProps.preHeatTreatmentMenu = {
+    selectedCount: selectedLnkIds.size,
+    onAction: action => openPreHeatTreatmentAction(action, [...selectedLnkIds]),
+  }
+
 
   const reportImportDialogProps = {
     open: isImportDialogOpen,
@@ -5335,13 +5351,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeTitle,
     reportPreviewProps,
     documentConnectionsProps: documentConnectionsReference ? { reference: documentConnectionsReference, onClose: closeDocumentConnections } : null,
+    preHeatTreatmentBatchProps: preHeatTreatmentBatch ? {
+      ...preHeatTreatmentBatch,
+      onClose: () => setPreHeatTreatmentBatch(null),
+      onSaved: (rows: WeldRow[]) => scheduleWeldDataRefresh(queryClient, { upsertRows: rows }),
+    } : null,
     preHeatTreatmentFillProps: preHeatTreatmentFillRowIds ? {
       rowIds: preHeatTreatmentFillRowIds,
       onClose: () => setPreHeatTreatmentFillRowIds(null),
       onSaved: (rows: WeldRow[]) => scheduleWeldDataRefresh(queryClient, { upsertRows: rows }),
     } : null,
     documentPreviewProps: documentPreviewRequest ? { request: documentPreviewRequest, onClose: closeDocumentPreview } : null,
-    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps) || Boolean(documentPreviewRequest) || Boolean(documentConnectionsReference) || Boolean(preHeatTreatmentFillRowIds),
+    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps) || Boolean(documentPreviewRequest) || Boolean(documentConnectionsReference) || Boolean(preHeatTreatmentFillRowIds) || Boolean(preHeatTreatmentBatch),
     navCollapsed,
     registerMinWidth,
     stickyLeft,

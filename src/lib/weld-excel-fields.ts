@@ -23,6 +23,7 @@ export const EXCEL_FIELDS = WELD_FIELDS.filter(
 )
 export const FULL_EXCEL_HEADERS = EXCEL_FIELDS.map((field) => field.label)
 export const REQUIRED_EXCEL_HEADERS = EXCEL_FIELDS
+  .filter((field) => field.key !== 'preHeatTreatmentRequired')
   .filter((field) => !CONTROL_BASIS_FIELD_KEYS.includes(field.key as (typeof CONTROL_BASIS_FIELD_KEYS)[number]))
   .map((field) => field.label)
 

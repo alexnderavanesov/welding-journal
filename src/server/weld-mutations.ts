@@ -1,4 +1,6 @@
+import { isControlEnabledValue } from '@/lib/control-availability-values'
 import { prepareCardPreHeatTreatment, finishCardPreHeatTreatment } from './pre-heat-treatment-chain'
+import { getNewPreHeatTreatmentInheritance } from '@/lib/new-pre-heat-treatment'
 import { lockPreHeatTreatmentFillCounters } from './pre-heat-treatment-fill'
 import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-save-receipt'
@@ -219,7 +221,15 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
     await lockWeldLineMemberships(tx, [record])
     await prepareLineProgramWeldRecords(tx, [record])
     const validationContext = await loadServerWeldValidationContext(tx, [record])
+    if (data.newPreHeatTreatmentChoice !== undefined) {
+      const choice = data.newPreHeatTreatmentChoice
+      if (choice?.required !== true || choice.identityKey !== getPstoLineIdentityKey(record)) throw new Error('Линия изменилась. Выберите необходимость НК до ТО заново.')
+      const inherited = getNewPreHeatTreatmentInheritance(record, validationContext.programRules?.rows ?? [], validationContext.systemIndexSettings)
+      if (inherited.inherited && !inherited.required) throw new Error('Отметка НК до ТО наследуется от исходного стыка. Измените её для всей цепочки.')
+      record.preHeatTreatmentRequired = true
+    }
     prepareServerWeldRecords({ records: [record], previousRows: new Map(), context: validationContext })
+    if (data.newPreHeatTreatmentChoice && !isControlEnabledValue(record.pstoRequired)) throw new Error('На выбранной линии ПСТО не назначено. НК до ТО включить нельзя.')
     validateServerWeldRecords({
       records: [record],
       previousRows: new Map(),

@@ -34,7 +34,7 @@ for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИ
   await withE2eDatabase(async db => {
     if (beforeHeatTreatment) {
       await db.query(`update weld_joints set vik_result=null,vik_request=null,vik_request_date=null,vik_conclusion=null,vik_conclusion_date=null,
-        uzk_result=null,uzk_request=null,uzk_request_date=null,uzk_conclusion=null,uzk_conclusion_date=null,psto_required='да' where id=$1`, [id])
+        uzk_result=null,uzk_request=null,uzk_request_date=null,uzk_conclusion=null,uzk_conclusion_date=null,psto_required='да',pre_heat_treatment_required=true where id=$1`, [id])
       await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
         values ($1,'ВИК','UG-PRE-VIK','2026-09-01','ожидает НК',null,null),
           ($1,'УЗК','UG-PRE-UZK','2026-09-02','ремонт','UG-PRE-UZK-C','2026-09-03')`, [id])

@@ -1,10 +1,10 @@
 import type { WeldFieldKey } from './weld-fields'
 
-// Shared presentation policy for report fields. Applied only by the welding
-// journal for now; LNK/PSTO adopt it when their AG Grid migration is authorised.
+// Shared presentation policy for the welding journal, LNK and PSTO grids.
 // Keep alignment stable by column, never by the length of an individual value.
 export const REPORT_LEFT_ALIGNED_FIELDS: ReadonlySet<WeldFieldKey> = new Set<WeldFieldKey>([
   'projectTitle', 'subtitleCode', 'line', 'groupName', 'isometry', 'spool', 'spoolId',
+  'preHeatTreatmentRequired',
   'element1', 'element2', 'material1', 'material2', 'materialId1', 'materialId2',
   'orderCode1', 'orderCode2', 'materialUniqueNumber1', 'materialUniqueNumber2',
   'materialFullName1', 'materialFullName2', 'materialNormativeDocument1', 'materialNormativeDocument2',

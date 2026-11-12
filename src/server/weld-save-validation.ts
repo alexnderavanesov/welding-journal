@@ -284,8 +284,7 @@ export function prepareServerWeldRecords({
   }
   additions.forEach((record, index) => {
     record.preHeatTreatmentRequired = inherited.has(index) ? inherited.get(index)!
-      : record.preHeatTreatmentRequired ?? (context.controlProcessSettings.preHeatTreatmentMode === 'allPsto'
-        ? (isControlEnabledValue(record.pstoRequired) ? true : null) : false)
+      : record.preHeatTreatmentRequired ?? false
   })
   records.forEach((record) => {
     record.hasVik = 'да'

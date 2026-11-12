@@ -8,12 +8,12 @@ import { SchemeFilterContext, SCHEME_SERVER_FILTER } from './line-scheme-grid-fi
 import './line-schemes-registry.css'
 import { useSchemeRegistryHeader } from './line-scheme-registry-header'
 import { getLineSchemes } from '@/server/line-schemes-api'
-import { SCHEME_PAGE_SIZE, type SchemeLine, type SchemeFilters, type SchemeFilterField } from '@/lib/line-schemes'
+import { SCHEME_PAGE_SIZE, schemeFilterLabel, schemeFilterValue, type SchemeLine, type SchemeFilters, type SchemeFilterField } from '@/lib/line-schemes'
 import { useAccess } from '@/lib/security-context'
 import { LineSchemeOpening } from './line-scheme-navigation-guard'
 
 const SchemeWorkspace = lazy(() => import('./line-scheme-workspace').then(module => ({ default: module.LineSchemeWorkspace })))
-const registryDefaults = { sortable: false, filter: false, filterParams: { buttons: [] } }
+const registryDefaults = { sortable: false, filter: SCHEME_SERVER_FILTER, filterParams: { buttons: [] } }
 const rowId = ({ data }: { data: SchemeLine }) => String(data.lineId)
 export function SchemePagination({ page, total, onChange, busy = false }: { page: number; total: number; onChange: (page: number) => void; busy?: boolean }) {
   if (page === 0 && total <= SCHEME_PAGE_SIZE) return null
@@ -38,15 +38,15 @@ export function LineSchemesPage({ onOpenJoint }: { onOpenJoint?: (id: number) =>
   const refresh = () => { void query.refetch(); setFilterRevision(value => value + 1) }
   const hasFilters = Object.keys(filters).length > 0
   const columns = useMemo<ColDef<SchemeLine>[]>(() => [
-    { field: 'projectTitle', headerName: 'Проект', flex: 1.1, minWidth: 100, filter: SCHEME_SERVER_FILTER },
-    { field: 'subtitleCode', headerName: 'Шифр', flex: .8, minWidth: 110, filter: SCHEME_SERVER_FILTER },
-    { field: 'line', headerName: 'Линия', flex: 1, minWidth: 110, filter: SCHEME_SERVER_FILTER, cellRenderer: ({ data }: ICellRendererParams<SchemeLine>) => data && <span>{data.line}{data.deleted && <span className="ml-2 text-slate-400">Линия удалена</span>}</span> },
-    { field: 'total', headerName: 'Физических стыков', width: 110, cellClass: 'statistics-number' },
-    { field: 'welded', headerName: 'Сварено', width: 80, cellClass: 'statistics-number' },
+    { field: 'projectTitle', headerName: 'Проект', flex: 1.1, minWidth: 90 },
+    { field: 'subtitleCode', headerName: 'Шифр', flex: .8, minWidth: 100 },
+    { field: 'line', headerName: 'Линия', flex: 1, minWidth: 100, cellRenderer: ({ data }: ICellRendererParams<SchemeLine>) => data && <span>{data.line}{data.deleted && <span className="ml-2 text-slate-400">Линия удалена</span>}</span> },
+    { field: 'total', headerName: 'Физических стыков', width: 120, cellClass: 'statistics-number' },
+    { field: 'welded', headerName: 'Сварено', width: 90, cellClass: 'statistics-number' },
     { field: 'placedCount', headerName: 'На схеме', headerTooltip: 'Количество сохранённых точек на всех листах основного PDF, включая серые. Архивные редакции не учитываются.', width: 90, cellClass: 'statistics-number' },
-    { field: 'placedPercent', headerName: '% на схеме', headerTooltip: 'Действующие физические стыки на основном PDF / все действующие физические стыки линии. Аннулированные и исторические точки исключены.', width: 100, cellClass: 'statistics-number', valueFormatter: ({ value }) => value == null ? '—' : `${Number(value).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%` },
+    { field: 'placedPercent', headerName: '% на схеме', headerTooltip: 'Действующие физические стыки на основном PDF / все действующие физические стыки линии. Аннулированные и исторические точки исключены.', width: 100, cellClass: 'statistics-number', valueFormatter: ({ data }) => data ? schemeFilterLabel('placedPercent', schemeFilterValue(data, 'placedPercent')) : '' },
     { colId: 'pdf', headerName: 'Рабочая документация', flex: 1.5, minWidth: 140, cellRenderer: ({ data }: ICellRendererParams<SchemeLine>) => data && <div className="flex h-full min-w-0 items-center gap-3">{data.fileName ? <button className="truncate text-sky-600 hover:text-sky-700 hover:underline" title={data.fileName} onClick={() => setSelected({ line: data, mode: 'drawing' })}>{data.fileName.replace(/\.pdf$/i, '')}</button> : canEdit && !data.deleted ? <button className="text-slate-500 hover:text-slate-700 hover:underline" onClick={() => choosePdf(data)}>Загрузить PDF</button> : <span className="text-slate-400">Нет основного PDF</span>}</div> },
-    { colId: 'files', headerName: 'Файлы и архив', width: 125, minWidth: 120, cellRenderer: ({ data }: ICellRendererParams<SchemeLine>) => data && <button className="flex h-full items-center gap-2 text-slate-600 hover:text-sky-700" aria-label={`Файлы и архив: ${data.line}`} onClick={() => setSelected({ line: data, mode: 'files' })}><Archive size={14} /><span>Файлы</span><span className="rounded bg-slate-100 px-1.5 text-xs text-slate-500">{data.revisionCount}</span></button> },
+    { colId: 'files', headerName: 'Файлы и архив', headerTooltip: 'Количество всех файлов линии, включая основной PDF и архивные редакции.', width: 135, minWidth: 120, cellRenderer: ({ data }: ICellRendererParams<SchemeLine>) => data && <button className="flex h-full items-center gap-2 text-slate-600 hover:text-sky-700" aria-label={`Файлы и архив: ${data.line}`} onClick={() => setSelected({ line: data, mode: 'files' })}><Archive size={14} /><span>Файлы</span><span className="rounded bg-slate-100 px-1.5 text-xs text-slate-500">{data.revisionCount}</span></button> },
   ], [canEdit])
   return <section ref={root} className="line-schemes-registry w-full min-w-0 space-y-3" aria-label="Схемы линий">
     <input ref={fileInput} className="hidden" type="file" accept="application/pdf,.pdf" aria-label="Загрузить PDF линии" onChange={event => { const file = event.target.files?.[0], line = uploadLine.current; event.target.value = ''; if (file && line) setSelected({ line, mode: 'files', file }) }} />

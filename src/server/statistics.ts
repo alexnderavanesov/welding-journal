@@ -34,6 +34,8 @@ import { attachProgramChainStates } from '@/server/line-program-chain-state'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { packStatisticsResult, STATISTICS_TRANSPORT, type StatisticsRpcRequest } from '@/lib/statistics-result-payload'
 import { supportConnectionTypeWhere } from './connection-type-sql'
+import { readLineSchemeStatisticsVersion, readLineSummarySchemes } from './line-summary-schemes'
+import { STATISTICS_RESULT_VERSION } from '@/lib/statistics-result-version'
 
 const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
@@ -133,8 +135,9 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .validator((data: StatisticsRpcRequest) => normalizeStatisticsRpcRequest(data))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
+    const schemesVersion = data.request.tab === 'lineSummary' ? await readLineSchemeStatisticsVersion() : undefined
     const result = await getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v36', data.request),
+      buildDerivedCalculationCacheKey(`statistics:v${STATISTICS_RESULT_VERSION}`, { ...data.request, schemesVersion }),
       () => computeStatisticsServerResult(data.request),
     )
     // Already-open clients keep their existing response shape after an update.
@@ -151,7 +154,7 @@ export async function computeStatisticsServerResult(
     : undefined
   const rowSelect = getStatisticsRowSelect(data.tab)
   const needsControlHistory = data.tab !== 'lineSummary'
-  const { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows } = await db.transaction(async (db) => {
+  const { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows, schemes } = await db.transaction(async (db) => {
     const sourceRows = await db
         .select(rowSelect)
         .from(weldJoints)
@@ -219,7 +222,8 @@ export async function computeStatisticsServerResult(
         .from(appSettings)
         .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other, PROJECT_SETTING_KEYS.controlProcesses]))
     if (data.tab === 'general' || data.tab === 'supports' || data.tab === 'lineSummary') await attachProgramChainStates(sourceRows, db)
-    return { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows }
+    const schemes = data.tab === 'lineSummary' ? await readLineSummarySchemes(db, sourceRows) : undefined
+    return { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows, schemes }
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   const otherSettings = normalizeOtherSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
@@ -248,6 +252,7 @@ export async function computeStatisticsServerResult(
     systemIndexSettings,
     request: data,
   })
+  if (schemes) for (const row of result.lineSummary.rows) row.scheme = schemes.get(row.lineKey)
   return {
     ...result,
     projectOptions: toFilterOptions(projectRows.map((row) => row.value)),
@@ -326,7 +331,7 @@ function getStoredSetting(rows: Array<{ key: string; value: string }>, key: stri
 function buildStatisticsScopeWhere(data: StatisticsServerRequest) {
   const clauses: SQL[] = []
   if (data.tab === 'supports') clauses.push(supportConnectionTypeWhere(weldJoints.connectionType))
-  else if (data.tab === 'general' || data.tab === 'welders' || data.tab === 'lineSummary') clauses.push(sql`not (${supportConnectionTypeWhere(weldJoints.connectionType)})`)
+  else if (data.tab === 'general' || data.tab === 'welders') clauses.push(sql`not (${supportConnectionTypeWhere(weldJoints.connectionType)})`)
   if (data.projectFilter) {
     clauses.push(sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`)
   }

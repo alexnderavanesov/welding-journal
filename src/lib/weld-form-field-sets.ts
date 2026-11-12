@@ -58,6 +58,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'checklistDocument',
   'zniDocument', 'custom1Document', 'custom2Document',
   'pstoRequired',
+  'preHeatTreatmentRequired',
   'pstoCancellationDate',
   ...CONTROL_BASIS_FIELD_KEYS,
   'hasTvmt',

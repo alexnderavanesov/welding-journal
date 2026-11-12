@@ -157,7 +157,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('reports invalid dates in primary, pre-TO and duplicate controls for dispatcher diagnostics', () => {
-    const issues = getDispatcherLnkChronologyIssues([{ preHeatTreatmentMode: 'allPsto',
+    const issues = getDispatcherLnkChronologyIssues([{ preHeatTreatmentRequired: true,
       id: 1,
       joint: 'F2',
       vikRequest: 'Заявка-ВИК',
@@ -270,7 +270,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('keeps request ordering mandatory despite the old toggle', () => {
-    const issues = getLnkChronologyIssues([{ preHeatTreatmentMode: 'allPsto',
+    const issues = getLnkChronologyIssues([{ preHeatTreatmentRequired: true,
       joint: 'F4',
       vikResult: 'годен',
       weldDate: '2026-07-10',
@@ -288,7 +288,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('enforces ZV-15 for pre-TO LNK independently from ZV-16', () => {
-    const issues = getLnkChronologyIssues([{ preHeatTreatmentMode: 'allPsto',
+    const issues = getLnkChronologyIssues([{ preHeatTreatmentRequired: true,
       id: 4,
       joint: 'F4',
       weldDate: '2026-07-10',
@@ -313,7 +313,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('keeps pre-heat-treatment documents no later than the first PSTO', () => {
-    const issues = getLnkChronologyIssues([{ preHeatTreatmentMode: 'allPsto',
+    const issues = getLnkChronologyIssues([{ preHeatTreatmentRequired: true,
       id: 1,
       joint: 'F5',
       weldDate: '2026-08-01',
@@ -333,7 +333,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('keeps actual post-heat-treatment results after good TVMT', () => {
-    const issues = getLnkChronologyIssues([{ preHeatTreatmentMode: 'allPsto' as const,
+    const issues = getLnkChronologyIssues([{ preHeatTreatmentRequired: true,
       joint: 'F6',
       weldDate: '2026-08-01',
       pstoRequired: 'да',
@@ -357,7 +357,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('keeps DZ-20 temporary while legacy primary LNK is completed with a separate pre-TO chain', () => {
-    const legacyPrimary = { preHeatTreatmentMode: 'allPsto' as const,
+    const legacyPrimary = { preHeatTreatmentRequired: true,
       id: 8,
       joint: 'F8',
       weldDate: '2026-08-01',
@@ -413,7 +413,7 @@ describe('getLnkChronologyIssues', () => {
   })
 
   it('does not treat duplicate controls as pre/post chronology records', () => {
-    const issues = getLnkChronologyIssues([{ preHeatTreatmentMode: 'allPsto' as const,
+    const issues = getLnkChronologyIssues([{ preHeatTreatmentRequired: true,
       joint: 'F7',
       pstoRequired: 'да',
       duplicateControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'годен', controlDate: '2026-01-01' }],

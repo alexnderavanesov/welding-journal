@@ -129,8 +129,8 @@ test('preliminary quick fill: 100 joints, paged fields and document composition'
       const dialog = page.getByRole('dialog', { name: 'Заполнить недостающий НК до ТО', exact: true })
       await probe.measure(`pre-fill:open-100:${round}`, async () => {
         await page.locator('[data-weld-report-grid] .ag-row [col-id="joint"]').getByRole('button').first().click({ button: 'right' })
-        await page.getByRole('button', { name: 'Дополнительно', exact: true }).hover()
-        await page.getByRole('button', { name: 'Заполнить недостающее НК до ТО', exact: true }).click()
+        await page.getByTestId('context-action-menu').getByRole('button', { name: 'НК до ТО', exact: true }).hover()
+        await page.getByRole('button', { name: 'Заполнить недостающее как «Годен»', exact: true }).click()
         await expect(dialog.locator('input[aria-label^="Дата "]').first()).toBeVisible()
       })
       await probe.scroll(`pre-fill:fields-scroll:${round}`, dialog)

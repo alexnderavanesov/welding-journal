@@ -3,7 +3,7 @@ import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints, preHeatTreatmentControls, weldJoints } from '@/db/schema'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { PreHeatTreatmentConfirmation } from '@/lib/pre-heat-treatment-change'
-import { loadPhysicalChainContext } from './physical-chain-context'
+import { loadPhysicalChainContexts } from './physical-chain-context'
 import { loadControlProcessSettingsFromTransaction } from './control-process-settings'
 import { attachHeatTreatmentControlRelations } from './heat-treatment-control-relations'
 import { attachDuplicateControlRelations } from './duplicate-control-relations'
@@ -21,11 +21,13 @@ type Tx = SystemDocumentSequenceTransaction
 export const PRE_HEAT_CHAIN_CHANGED = 'Данные для НК до ТО изменились после подтверждения. Ничего не сохранено. Откройте карточку стыка заново, повторите изменение НК до ТО и нажмите «Сохранить».'
 
 export async function readPreHeatTreatmentChain(tx: Tx, rowId: number) {
+  return (await readPreHeatTreatmentChains(tx, [rowId]))[0]
+}
+
+export async function readPreHeatTreatmentChains(tx: Tx, rowIds: number[]) {
   const settings = await loadControlProcessSettingsFromTransaction(tx)
-  const chain = await loadPhysicalChainContext(tx, rowId)
-  const rows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(chain.locked, tx), tx)
-  const root = rows.find(row => row.id === chain.group.id)!
-  if (!root) throw new Error('Исходный стык цепочки не найден.')
+  const chains = await loadPhysicalChainContexts(tx, rowIds)
+  const rows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(chains.flatMap(chain => chain.locked), tx), tx)
   const controls = rows.flatMap(row => row.preHeatTreatmentControls ?? [])
   // Shared documents are versioned as whole documents, including foreign positions.
   if (controls.length) {
@@ -36,28 +38,45 @@ export async function readPreHeatTreatmentChain(tx: Tx, rowId: number) {
     .from(generatedDocuments).where(and(
       sql`case when ${generatedDocuments.sourceMetadata} is json then ${generatedDocuments.sourceMetadata}::jsonb ->> 'sourceKind' = 'beforeHeatTreatment' else false end`,
       sql`exists (select 1 from ${generatedDocumentWeldJoints} where ${generatedDocumentWeldJoints.documentId} = ${generatedDocuments.id}
-        and ${buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, chain.ids)})`,
+        and ${buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, rows.map(row => row.id))})`,
     )).orderBy(asc(generatedDocuments.id)) : []
-  const idSet = new Set(chain.ids)
-  const affectedDocuments = [...new Map(documents.map(item => [item.document.id, item.document])).values()].flatMap(document => {
+  const owner = new Map(chains.flatMap(chain => chain.ids.map(id => [id, chain.group.id] as const)))
+  const byId = new Map(rows.map(row => [row.id, row]))
+  type Positions = NonNullable<ReturnType<typeof parseSystemDocumentMetadata>>['sourcePositions']
+  type AffectedDocument = { document: typeof documents[number]['document']; removed: Positions; remaining: number }
+  const affectedByRoot = new Map<number, AffectedDocument[]>(), documentTokens = new Map<number, string>()
+  for (const { document } of documents) {
     const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
-    if (metadata?.sourceKind !== 'beforeHeatTreatment') return []
-    const removed = metadata.sourcePositions.filter(position => position.kind === 'beforeHeatTreatment' && idSet.has(position.weldJointId))
-    if (!removed.length) return []
-    return [{ document, removed, remaining: metadata.sourcePositions.length - removed.length }]
+    if (metadata?.sourceKind !== 'beforeHeatTreatment') continue
+    const positions = new Map<number, Positions>()
+    for (const position of metadata.sourcePositions) {
+      const root = position.kind === 'beforeHeatTreatment' ? owner.get(position.weldJointId) : undefined
+      if (root === undefined) continue
+      const group = positions.get(root) ?? []; group.push(position); positions.set(root, group)
+    }
+    documentTokens.set(document.id, hashJsonRecordTuple([document]))
+    for (const [root, removed] of positions) {
+      const affected = affectedByRoot.get(root) ?? []
+      affected.push({ document, removed, remaining: metadata.sourcePositions.length - removed.length })
+      affectedByRoot.set(root, affected)
+    }
+  }
+  return chains.map(chain => {
+    const rows = chain.ids.map(id => byId.get(id)!), root = byId.get(chain.group.id)!
+    if (!root) throw new Error(chain.reason ?? 'Исходный стык цепочки не найден.')
+    const controls = rows.flatMap(row => row.preHeatTreatmentControls ?? [])
+    const affectedDocuments = affectedByRoot.get(chain.group.id) ?? []
+    const rejections = controls.filter(control => ['ремонт', 'вырез'].includes(String(control.result ?? '').trim().toLowerCase()))
+    const token = hashJsonRecordTuple([settings, chain.settings, rows, chain.linked,
+      affectedDocuments.map(item => [documentTokens.get(item.document.id), item.removed, item.remaining])])
+    const required = root.preHeatTreatmentRequired === true
+    return { chain, settings, rows, root, controls, rejections, affectedDocuments, token, required }
   })
-  const rejections = controls.filter(control => ['ремонт', 'вырез'].includes(String(control.result ?? '').trim().toLowerCase()))
-  const token = hashJsonRecordTuple([settings, chain.settings, rows, chain.linked, affectedDocuments])
-  const required = root.preHeatTreatmentRequired === true || settings.preHeatTreatmentMode === 'allPsto' && (isControlEnabledValue(root.pstoRequired) || controls.length > 0)
-  return { chain, settings, rows, root, controls, rejections, affectedDocuments, token, required }
 }
 
 export function assertPreHeatTreatmentChainChange(context: Awaited<ReturnType<typeof readPreHeatTreatmentChain>>, required: boolean) {
-  const { chain, root, settings, rejections } = context
+  const { chain, root, rejections } = context
   if (chain.reason) throw new Error(chain.reason)
-  if (settings.preHeatTreatmentMode === 'allPsto' && isControlEnabledValue(root.pstoRequired)) {
-    throw new Error('НК до ТО обязателен по настройкам проекта. Для индивидуальной настройки выберите режим «На выбранных стыках».')
-  }
   if (required && !isControlEnabledValue(root.pstoRequired)) throw new Error('На линии исходного стыка ПСТО не назначено. Включить НК до ТО нельзя.')
   if (!required && rejections.length) {
     const labels = rejections.map(control => `${context.rows.find(row => row.id === control.weldJointId)?.joint ?? control.weldJointId}: ${control.method} — ${control.result}`)

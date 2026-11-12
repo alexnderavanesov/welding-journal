@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { resizeFilterPopup } from '../filter-popup'
 
 const project = 'E2E subtitle dropdown', otherProject = 'E2E other subtitle dropdown'
 
@@ -34,6 +35,7 @@ test('subtitle dropdown keeps a compact header, multiple choices, search and pro
     const search = dropdown.getByRole('searchbox', { name: 'Найти шифр' })
     await expect(dropdown.getByRole('checkbox')).toHaveCount(80)
     expect((await dropdown.boundingBox())!.height).toBeLessThan(350)
+    await resizeFilterPopup(page, dropdown)
     const beforeSearch = calls.filter(name => name.startsWith('getStatisticsServerResult')).length
     await search.fill('code-080')
     await expect(dropdown.getByRole('checkbox')).toHaveCount(1)

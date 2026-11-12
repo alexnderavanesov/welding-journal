@@ -173,9 +173,9 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
     const id = await withLineProgramFixture(async db => {
       const { rows: [row] } = await db.query(`insert into weld_joints
         (project_title,subtitle_code,line,joint,connection_type,weld_date,stamp_1_k,has_vik,has_rk,has_uzk,psto_required,officiality,
-        material_group,welding_method,d1,d2,t1,t2,wdi,vik_control_basis,rk_control_basis,uzk_control_basis)
+        material_group,welding_method,d1,d2,t1,t2,wdi,vik_control_basis,rk_control_basis,uzk_control_basis,pre_heat_treatment_required)
         values ('E2E system rules','SYS','SYS-BACKFILL',$1,'СШ','2026-09-01','A','да','да','да',$2,'действующий',
-        'M01','РД',108,108,4,4,0.42,'проект','проект','проект') returning id`, [joint, beforeHeatTreatment ? 'да' : null])
+        'M01','РД',108,108,4,4,0.42,'проект','проект','проект',$3) returning id`, [joint, beforeHeatTreatment ? 'да' : null, beforeHeatTreatment])
       if (beforeHeatTreatment) {
         await db.query(`insert into pre_heat_treatment_controls (weld_joint_id,method,request_name,request_date,result,conclusion_date,conclusion_name)
           values ($1,'ВИК','VIK-BF','2026-09-09','годен','2026-09-09','VIK-BF-C'),

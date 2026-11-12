@@ -21,10 +21,10 @@ test.beforeAll(async () => {
   test.setTimeout(300000)
   await withLineProgramFixture(async db => {
     await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,
-      connection_type,d1,t1,has_vik,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,psto_required)
+      connection_type,d1,t1,has_vik,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,psto_required,pre_heat_treatment_required)
       select $1,'TRANSFER','TRANSFER-'||case when n <= $2/2 then 'A' else 'B' end,'F'||lpad(n::text,6,'0'),
       '2026-10-01','действующий','актуальная','С17',108,4,'да','V','2026-10-01','годен','V','2026-10-01',
-      case when n%2=0 then 'да' else null end from generate_series(1,$2::int) n`, [PROJECT,total])
+      case when n%2=0 then 'да' else null end,n%2=0 from generate_series(1,$2::int) n`, [PROJECT,total])
     await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,officiality,has_vik)
       values($1,'TRANSFER','TRANSFER-A','UNWELDED','действующий','да')`, [PROJECT])
     await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id)

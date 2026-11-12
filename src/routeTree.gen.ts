@@ -26,6 +26,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppStatisticsRouteImport } from './routes/_app.statistics'
 import { Route as AppUserGuideRouteImport } from './routes/_app.user-guide'
 import { Route as AppWelderStampsRouteImport } from './routes/_app.welder-stamps'
+import { Route as ApiDocumentHistoryReportRouteImport } from './routes/api/document-history-report'
 import { Route as ApiLineSchemeFileRouteImport } from './routes/api/line-scheme-file'
 import { Route as ApiReportExcelRouteImport } from './routes/api/report-excel'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -115,6 +116,12 @@ const AppWelderStampsRoute = AppWelderStampsRouteImport.update({
   path: '/welder-stamps',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiDocumentHistoryReportRoute =
+  ApiDocumentHistoryReportRouteImport.update({
+    id: '/api/document-history-report',
+    path: '/api/document-history-report',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiLineSchemeFileRoute = ApiLineSchemeFileRouteImport.update({
   id: '/api/line-scheme-file',
   path: '/api/line-scheme-file',
@@ -154,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
+  '/api/document-history-report': typeof ApiDocumentHistoryReportRoute
   '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -176,6 +184,7 @@ export interface FileRoutesByTo {
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
+  '/api/document-history-report': typeof ApiDocumentHistoryReportRoute
   '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -200,6 +209,7 @@ export interface FileRoutesById {
   '/_app/statistics': typeof AppStatisticsRoute
   '/_app/user-guide': typeof AppUserGuideRoute
   '/_app/welder-stamps': typeof AppWelderStampsRoute
+  '/api/document-history-report': typeof ApiDocumentHistoryReportRoute
   '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/user-guide'
     | '/welder-stamps'
+    | '/api/document-history-report'
     | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/user-guide'
     | '/welder-stamps'
+    | '/api/document-history-report'
     | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
@@ -269,6 +281,7 @@ export interface FileRouteTypes {
     | '/_app/statistics'
     | '/_app/user-guide'
     | '/_app/welder-stamps'
+    | '/api/document-history-report'
     | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
@@ -281,6 +294,7 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   AccountLinkRoute: typeof AccountLinkRoute
   ActivityRoute: typeof ActivityRoute
+  ApiDocumentHistoryReportRoute: typeof ApiDocumentHistoryReportRoute
   ApiLineSchemeFileRoute: typeof ApiLineSchemeFileRoute
   ApiReportExcelRoute: typeof ApiReportExcelRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -408,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWelderStampsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/document-history-report': {
+      id: '/api/document-history-report'
+      path: '/api/document-history-report'
+      fullPath: '/api/document-history-report'
+      preLoaderRoute: typeof ApiDocumentHistoryReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/line-scheme-file': {
       id: '/api/line-scheme-file'
       path: '/api/line-scheme-file'
@@ -477,6 +498,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   AccountLinkRoute: AccountLinkRoute,
   ActivityRoute: ActivityRoute,
+  ApiDocumentHistoryReportRoute: ApiDocumentHistoryReportRoute,
   ApiLineSchemeFileRoute: ApiLineSchemeFileRoute,
   ApiReportExcelRoute: ApiReportExcelRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

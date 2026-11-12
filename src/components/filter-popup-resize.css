@@ -1,0 +1,29 @@
+.journal-filter, .activity-column-filter { position: relative; }
+.filter-resize-handle { position: absolute; z-index: 10; touch-action: none; user-select: none; }
+.filter-resize-right { right: 0; top: 6px; bottom: 12px; width: 6px; cursor: ew-resize; }
+.filter-resize-bottom { bottom: 0; left: 6px; right: 12px; height: 6px; cursor: ns-resize; }
+.filter-resize-corner, .ag-filter-menu .ag-resizer-bottomRight { bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; border-radius: 0 0 10px 0; }
+.filter-resize-corner::after, .ag-filter-menu .ag-resizer-bottomRight::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; background: repeating-linear-gradient(135deg, transparent 0 2px, #94a3b8 2px 3px, transparent 3px 5px); clip-path: polygon(100% 0, 100% 100%, 0 100%); opacity: .65; }
+.filter-resize-handle:hover, .filter-resize-handle[data-resizing] { background-color: #0ea5e914; }
+.filter-resize-handle:focus-visible { outline: 2px solid #7dd3fc; outline-offset: -2px; }
+
+/* Leave each family's initial size intact. Only a user resize releases caps. */
+[data-filter-resized] { overflow: hidden !important; }
+[data-filter-resized] :is(.ag-filter, .ag-filter-wrapper, .ag-react-container, .document-grid-filter, .journal-filter, .activity-column-filter),
+.journal-filter[data-filter-resized], .activity-column-filter[data-filter-resized] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; height: 100%; max-height: none; width: 100%; max-width: none; }
+[data-filter-resized] :is(.journal-filter-values, [data-filter-scroll]) { flex: 1 1 auto; min-height: 0; height: auto; max-height: none; overflow-y: auto; }
+[data-filter-resized] .journal-filter > :not(.journal-filter-values, .filter-resize-handle),
+[data-filter-resized] .activity-column-filter > :not([data-filter-scroll], .filter-resize-handle) { flex-shrink: 0; }
+
+/* AG Grid's Set Filter already resizes its list. Let its popup follow the
+   explicit width/height instead of clipping it at our initial compact size. */
+.ag-filter-menu:has(.ag-set-filter-list:is([style^="width:"], [style*="; width:"])) { width: max-content; }
+.ag-filter-menu .ag-set-filter-list:is([style^="height:"], [style*="; height:"]) { max-height: none !important; }
+.ag-filter-menu .ag-set-filter-list:is([style^="height:"], [style*="; height:"]) .ag-virtual-list-viewport { height: 100%; max-height: 100%; }
+.ag-filter-menu .ag-set-filter-list:is([style^="width:"], [style*="; width:"]) { max-width: calc(100vw - 26px); }
+/* Keep a manually resized popup steady when a search has no matches. The
+   invisible list retains its dimensions; the empty message shares its area. */
+.ag-filter-menu .ag-set-filter:has(.ag-set-filter-list:is([style^="width:"], [style*="; width:"], [style^="height:"], [style*="; height:"])) { display: grid; grid-template-columns: minmax(0, 1fr); }
+.ag-filter-menu .ag-set-filter:has(.ag-set-filter-list:is([style^="width:"], [style*="; width:"], [style^="height:"], [style*="; height:"])) > :is(.ag-set-filter-list, .ag-filter-no-matches) { grid-area: 2 / 1; }
+.ag-filter-menu .ag-set-filter-list.ag-hidden:is([style^="width:"], [style*="; width:"], [style^="height:"], [style*="; height:"]) { display: block !important; visibility: hidden; }
+.ag-filter-menu .ag-set-filter-list .ag-resizer-wrapper { visibility: visible; }

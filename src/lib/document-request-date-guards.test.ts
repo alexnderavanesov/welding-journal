@@ -24,13 +24,13 @@ const builders: Array<[string, (requestDate: string) => unknown]> = [
   ['ТВМТ', requestDate => buildPrimaryTvmtResultRows({ records: [{ ...base, tvmtRequestDate: requestDate }],
     controlDate: '2026-08-05', result: 'годен', conclusionName: 'ТВМТ-1', saveCheckSettings: settings })],
   ['НК до ТО: создание', requestDate => {
-    const row: WeldRow = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentMode: 'allPsto' as const,
+    const row: WeldRow = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentRequired: true,
       preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', requestName: 'ВИК-до-ТО', requestDate }] }
     return buildPreHeatTreatmentResultWrite({ row, methodCode: 'ВИК', result: 'годен', controlDate: '2026-08-05', conclusionName: 'ВИК-1', saveCheckSettings: settings })
   }],
   ['НК до ТО: исправление', requestDate => {
     const control = { id: 1, weldJointId: 1, method: 'ВИК', requestName: 'ВИК-до-ТО', requestDate, result: 'годен' }
-    const row: WeldRow = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentMode: 'allPsto' as const, preHeatTreatmentControls: [control] }
+    const row: WeldRow = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentRequired: true, preHeatTreatmentControls: [control] }
     return buildPreHeatTreatmentResultCorrectionWrite({ row, control, result: 'годен', controlDate: '2026-08-05', conclusionName: 'ВИК-1', saveCheckSettings: settings })
   }],
   ['повторная ПСТО', requestDate => buildRepeatPstoResultCycle({ row: { ...base, tvmtResult: 'не годен', tvmtConclusionDate: '2026-08-03', tvmtConclusion: 'ТВМТ-1',

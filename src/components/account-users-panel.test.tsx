@@ -28,7 +28,7 @@ async function submitInvitation() {
   fireEvent.click(screen.getByRole('button', { name: 'Пригласить пользователя' }))
   fireEvent.change(screen.getByLabelText('Фамилия и имя'), { target: { value: 'Новый сотрудник' } })
   fireEvent.change(screen.getByLabelText('Почта'), { target: { value: 'new@example.test' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Создать и отправить приглашение' }))
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Создать и отправить приглашение' })) })
 }
 beforeEach(() => { vi.resetAllMocks(); mocks.listAccounts.mockResolvedValue([user]) })
 

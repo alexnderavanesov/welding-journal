@@ -39,13 +39,13 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
         joint, project_title, subtitle_code, line, weld_date, psto_required, has_vik,
         officiality, revision_actuality, material_group, connection_type, welding_method,
         d1, d2, t1, t2, wdi, vik_control_basis, stamp_1_k, stamp_1_k_fact,
-        pre_heat_treatment_lnk_exempt, final_status,
+        pre_heat_treatment_lnk_exempt, pre_heat_treatment_required, final_status,
         psto_request, psto_request_date, psto_result, psto_date, heat_treatment_diagram,
         tvmt_request, tvmt_request_date, tvmt_result, tvmt_conclusion, tvmt_conclusion_date,
         vik_request, vik_request_date, vik_result, vik_conclusion, vik_conclusion_date
       ) values ($1, 'E2E historical SP', 'P', 'L-HISTORY', '2026-07-10', 'да', 'да',
         'действующий', 'актуальная', 'M01', 'СШ', 'РД', 108, 108, 4, 4, 0.42, 'проект', 'SP-K', 'SP-K',
-        true, 'годен', 'P-626', '2026-07-10', 'проведено', '2026-07-10', 'D-626',
+        true, true, 'годен', 'P-626', '2026-07-10', 'проведено', '2026-07-10', 'D-626',
         'T-626', '2026-07-10', 'годен', 'TC-626', '2026-07-10',
         'V-До ТО', '2026-07-11', 'годен', 'VC-626', '2026-07-11') returning id`, [joint])
       ids.push(inserted.rows[0].id)
@@ -122,8 +122,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     // The action must re-check fresh server metadata, not an old UI setting.
     warning = await openWarning()
     await withE2eDatabase(async (client) => {
-      await client.query(`update app_settings set value =
-        jsonb_set(value::jsonb, '{preHeatTreatmentMode}', '"selected"')::text where key = 'control-processes'`)
+      await client.query('update weld_joints set pre_heat_treatment_required=false where id=$1', [id])
     })
     await warning.getByRole('button', { name: 'Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByText('Этап НК до ТО уже изменился или выключен. Обновите расчет диспетчера и повторите действие.', { exact: true })).toBeVisible()
@@ -134,8 +133,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     await expectFinalStatus(id, 'годен')
     expect(await readPreservedState(id)).toEqual(before)
     await withE2eDatabase(async (client) => {
-      await client.query(`update app_settings set value =
-        jsonb_set(value::jsonb, '{preHeatTreatmentMode}', '"allPsto"')::text where key = 'control-processes'`)
+      await client.query('update weld_joints set pre_heat_treatment_required=true where id=$1', [id])
     })
     await markDispatcherTaskIndexDirty(requireDb())
     await ensureDispatcherTaskIndexFresh()

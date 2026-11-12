@@ -15,9 +15,9 @@ it.each<[string, Partial<WeldRow>, string]>([
   ['weld', { weldDate: '' }, 'ожидает сварку'],
   ['repair', { joint: 'F1R1', weldDate: '' }, 'ожидает ремонт'],
   ['partial results', { vikResult: 'годен', hasRk: 'да' }, 'ожидает заявку'],
-  ['pre-TO', { preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', vikResult: 'годен' }, 'ожидает заявку до ТО'],
-  ['PSTO', { preHeatTreatmentMode: 'allPsto' as const, hasVik: '', pstoRequired: 'да' }, 'ожидает заявку'],
-  ['TVMT', { preHeatTreatmentMode: 'allPsto' as const, hasVik: '', pstoRequired: 'да', pstoResult: 'проведено', pstoDate: '2026-11-02' }, 'ожидает заявку'],
+  ['pre-TO', { preHeatTreatmentRequired: true, pstoRequired: 'да', vikResult: 'годен' }, 'ожидает заявку до ТО'],
+  ['PSTO', { preHeatTreatmentRequired: true, hasVik: '', pstoRequired: 'да' }, 'ожидает заявку'],
+  ['TVMT', { preHeatTreatmentRequired: true, hasVik: '', pstoRequired: 'да', pstoResult: 'проведено', pstoDate: '2026-11-02' }, 'ожидает заявку'],
 ])('replaces %s waiting with inactivity and restores the current calculation on reactivation', (_name, fields, waiting) => {
   const active = { ...base, ...fields }
   const inactive = { ...active, revisionActuality: 'не актуален', finalStatus: waiting }
@@ -49,11 +49,11 @@ it('does not revive a stale waiting-repair status in the repair report', () => {
 })
 
 it.each(['joints', 'wdi'] as const)('excludes inactive pending work from statistics and drilldowns, retaining historical results (%s)', unit => {
-  const inactive = { preHeatTreatmentMode: 'allPsto' as const, ...base, revisionActuality: 'не актуален', hasRk: 'да', hasUzk: 'да', hasPvk: 'да', pstoRequired: 'да' }
+  const inactive = { preHeatTreatmentRequired: true, ...base, revisionActuality: 'не актуален', hasRk: 'да', hasUzk: 'да', hasPvk: 'да', pstoRequired: 'да' }
   const rows: WeldRow[] = [
     inactive,
     { ...inactive, id: 2, vikRequest: 'V2', vikRequestDate: '2026-11-02', pstoRequest: 'P2', pstoRequestDate: '2026-11-02' },
-    { preHeatTreatmentMode: 'allPsto' as const, ...base, id: 3, revisionActuality: 'не актуален', hasVik: '', pstoRequired: 'да', pstoRequest: 'P3', pstoRequestDate: '2026-11-02', pstoResult: 'проведено', pstoDate: '2026-11-03', tvmtRequest: 'T3', tvmtRequestDate: '2026-11-03' },
+    { preHeatTreatmentRequired: true, ...base, id: 3, revisionActuality: 'не актуален', hasVik: '', pstoRequired: 'да', pstoRequest: 'P3', pstoRequestDate: '2026-11-02', pstoResult: 'проведено', pstoDate: '2026-11-03', tvmtRequest: 'T3', tvmtRequestDate: '2026-11-03' },
     { ...base, id: 4, revisionActuality: 'не актуален', vikRequest: 'V4', vikRequestDate: '2026-11-02', vikResult: 'годен', vikConclusionDate: '2026-11-03' },
     { ...base, id: 5, revisionActuality: 'не актуален', vikRequest: 'V5', vikRequestDate: '2026-11-02', vikResult: 'ремонт', vikConclusionDate: '2026-11-03' },
     { ...base, id: 6 },

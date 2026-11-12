@@ -187,23 +187,32 @@ export async function loadRemoteGeneratedDocumentHistoryGrid(
 ): Promise<DocumentHistoryGridResult<RemoteGeneratedDocument>> {
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+  const result = await db.execute(buildGeneratedDocumentHistoryGridSql(data, otherSettings))
+  return normalizeDocumentHistoryGridResult(result.rows[0], data, 'generated', toRemoteGeneratedDocumentHistoryRow,
+    (key, row) => generatedDocumentGridValue(key, row, isLayeredControlDocumentType(row.type)))
+}
+
+function buildGeneratedDocumentHistoryGridSql(data: ReturnType<typeof normalizeGeneratedDocumentHistoryGridRequest>, otherSettings: OtherSettings, output = false) {
   const sortExpressions = Object.fromEntries(GENERATED_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
   Object.assign(sortExpressions, {
     rowCount: sql`"rowCount"`, wdi: sql`"wdiTotal"`, updatedAt: sql`"updatedAt"`,
     period: sql`"periodFrom"`,
   })
-  const result = await db.execute(buildDocumentHistoryGridSql({
+  return buildDocumentHistoryGridSql({
     baseQuery: buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings),
     columnFilters: data.columnFilters, filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
-    request: data, idKind: 'generated', sortExpressions,
+    output, request: data, idKind: 'generated', sortExpressions,
     defaultOrder: sql`"updatedAt" desc, "id" desc`,
     // Ordinary registries show a period separator even without dates; layered
     // registries show one date and leave the cell empty when none is available.
     populatedExpressions: { period: sql`case when "type" = any(${sql.param([...LAYERED_CONTROL_DOCUMENT_TYPES])}::text[])
       then coalesce("periodFrom", "periodTo")::text else '-' end` },
-  }))
-  return normalizeDocumentHistoryGridResult(result.rows[0], data, 'generated', toRemoteGeneratedDocumentHistoryRow,
-    (key, row) => generatedDocumentGridValue(key, row, isLayeredControlDocumentType(row.type)))
+  })
+}
+
+export async function prepareGeneratedDocumentHistoryOutput(db: Pick<ReturnType<typeof requireDb>, 'select'>, data: ReturnType<typeof normalizeGeneratedDocumentHistoryGridRequest>) {
+  return { query: buildGeneratedDocumentHistoryGridSql(data, await loadGeneratedDocumentOtherSettings(db), true),
+    cells: (keys: string[], raw: Record<string, unknown>) => { const row = toRemoteGeneratedDocumentHistoryRow(raw); return keys.map(key => generatedDocumentGridValue(key, row, isLayeredControlDocumentType(row.type))) } }
 }
 
 export async function loadRemoteGeneratedDocumentHistory(

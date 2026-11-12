@@ -119,8 +119,9 @@ const MULTIPLE_LABELS: Record<string, string> = {
 }
 
 export function buildDocumentHistoryGridSql({
-  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue, compact,
+  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue, compact, output = false,
 }: {
+  output?: boolean
   baseQuery: SQL
   columnFilters: Record<string, string>
   filterKeys: readonly string[]
@@ -163,6 +164,17 @@ export function buildDocumentHistoryGridSql({
   const leafOrder = requestedSorts.length
     ? sql`${sql.join(requestedSorts, sql`, `)}, ${idColumn} desc`
     : defaultOrder
+  if (output) {
+    const groupOrder = request.rowGroupCols.flatMap(key => {
+      const direction = request.sortModel.find(item => item.colId === key)?.sort ?? 'asc'
+      return [sql`${sortExpressions[key]} ${sql.raw(direction)} nulls last`, sql`${groupKeyExpression(key)}::text ${sql.raw(direction)}`]
+    })
+    return sql`with "document_history" as not materialized (${baseQuery})
+      select *, count(*) over()::integer as "__outputTotal" from "document_history"
+      where ${buildDocumentHistoryWhere(columnFilters, [...filterKeys])}
+        and ${buildDocumentHistoryGridSearch(request.search, filterKeys)}
+      order by ${groupOrder.length ? sql`${sql.join(groupOrder, sql`, `)},` : sql``} ${leafOrder}`
+  }
   const direction = request.sortModel.find(item => item.colId === groupColumn)?.sort ?? 'asc'
   const groupOrder = sql`"groupSort" ${sql.raw(direction)} nulls last, "groupKey" ${sql.raw(direction)}`
   const levelQuery = groupColumn ? sql`

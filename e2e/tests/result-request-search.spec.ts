@@ -11,8 +11,8 @@ test.afterEach(async ({ page }) => { await page.close(); await cleanupLineProgra
 
 async function seed(scope: Scope) {
   return withLineProgramFixture(async db => {
-    const rows = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,has_vik,has_rk,has_uzk,has_pvk,psto_required,lnk_created_at,psto_created_at)
-      select $1,'FAR','FAR-L'||lpad(n::text,4,'0'),'F990'||lpad(n::text,4,'0'),'2026-10-01','С17','действующий','актуальная','да','нет','нет','нет',$2,'2026-10-01','2026-10-01'
+    const rows = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,has_vik,has_rk,has_uzk,has_pvk,psto_required,pre_heat_treatment_required,lnk_created_at,psto_created_at)
+      select $1,'FAR','FAR-L'||lpad(n::text,4,'0'),'F990'||lpad(n::text,4,'0'),'2026-10-01','С17','действующий','актуальная','да','нет','нет','нет',$2,$2='да','2026-10-01','2026-10-01'
       from generate_series(1,601)n returning id`, [project, scope === 'primary' ? 'нет' : 'да'])).rows.map(row => Number(row.id))
     await db.query(`update weld_joints set vik_request='Wrong primary stage',vik_request_date='2026-10-02',vik_result='ожидает НК' where project_title=$1`, [project])
     if (scope === 'primary') {

@@ -35,7 +35,7 @@ describe('dispatcher data quality tasks', () => {
   })
 
   it('moves an incomplete staged-control sequence from DZ-20 to the required SP-01 warning', () => {
-    const legacyPrimary = row({ preHeatTreatmentMode: 'allPsto' as const,
+    const legacyPrimary = row({ preHeatTreatmentRequired: true,
       id: 8,
       weldDate: '2026-08-01',
       pstoRequired: 'да',
@@ -106,7 +106,7 @@ describe('dispatcher data quality tasks', () => {
   })
 
   it('keeps real LNK date errors as DZ-20 alongside SP-01', () => {
-    const incomplete = row({ preHeatTreatmentMode: 'allPsto' as const,
+    const incomplete = row({ preHeatTreatmentRequired: true,
       weldDate: '2026-08-01',
       pstoRequired: 'да',
       hasVik: 'да',
@@ -120,7 +120,7 @@ describe('dispatcher data quality tasks', () => {
   })
 
   it('aggregates methods into one SP-01 and advances its contextual action', () => {
-    const base = row({ preHeatTreatmentMode: 'allPsto' as const,
+    const base = row({ preHeatTreatmentRequired: true,
       pstoRequired: 'да',
       hasVik: 'да',
       hasRk: 'да',
@@ -198,17 +198,17 @@ describe('dispatcher data quality tasks', () => {
   })
 
   it('does not create SP-01 for a request alone, including with pre-TO disabled', () => {
-    const rowWithoutPrimaryTrace = row({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: 'да', hasVik: 'да' })
+    const rowWithoutPrimaryTrace = row({ preHeatTreatmentRequired: true, pstoRequired: 'да', hasVik: 'да' })
     expect(buildPrimaryLnkStageDebtSystemWarnings([rowWithoutPrimaryTrace])).toEqual([])
 
-    const staleTraceForUnassignedMethod = row({ preHeatTreatmentMode: 'allPsto' as const,
+    const staleTraceForUnassignedMethod = row({ preHeatTreatmentRequired: true,
       pstoRequired: 'да',
       hasVik: 'нет',
       vikRequest: 'Старая заявка ВИК',
     })
     expect(buildPrimaryLnkStageDebtSystemWarnings([staleTraceForUnassignedMethod])).toEqual([])
 
-    const rowWithPrimaryTrace = row({ preHeatTreatmentMode: 'allPsto' as const,
+    const rowWithPrimaryTrace = row({ preHeatTreatmentRequired: true,
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Основная заявка ВИК',
@@ -221,7 +221,7 @@ describe('dispatcher data quality tasks', () => {
   })
 
   it('persists exact F5 chronology correction targets on the DZ-20 task', () => {
-    const [task] = buildLnkChronologyCheckTasks([row({ preHeatTreatmentMode: 'allPsto' as const,
+    const [task] = buildLnkChronologyCheckTasks([row({ preHeatTreatmentRequired: true,
       id: 5,
       joint: 'F5',
       weldDate: '2026-08-01',
@@ -365,7 +365,7 @@ describe('dispatcher data quality tasks', () => {
       row({ id: 1, hasRk: '', rkResult: 'годен' }),
       row({ id: 2, joint: 'F2', hasRk: '', rkRequest: 'Заявка РК' }),
       row({ id: 3, joint: 'F3', hasRk: 'отменен', rkResult: 'годен' }),
-      row({ preHeatTreatmentMode: 'allPsto' as const, id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', pstoBoq: 'Учтено' }),
+      row({ preHeatTreatmentRequired: true, id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', pstoBoq: 'Учтено' }),
     ])
 
     expect(tasks).toHaveLength(1)
@@ -411,7 +411,7 @@ describe('dispatcher data quality tasks', () => {
 
   it('checks a pre-TO repair against the same official repair limit through SP-05', () => {
     const tasks = buildLnkResultRuleCheckTasks([
-      row({ preHeatTreatmentMode: 'allPsto' as const,
+      row({ preHeatTreatmentRequired: true,
         joint: 'F1R2',
         d1: 159,
         d2: 159,

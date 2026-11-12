@@ -134,7 +134,7 @@ describe('topology reuse preserves the full-line semantic matrix', () => {
   })
 
   it.each([false, true])('pre-TO stage enabled=%s preserves surcharge and candidates', enabled => {
-    const rows = [row(1, { pstoRequired: 'да', preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const,
+    const rows = [row(1, { pstoRequired: 'да', preHeatTreatmentRequired: enabled,
       preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }), row(2), row(3)]
     expect(summary(rows).stamps[0]).toMatchObject({ rejectedRowIds: enabled ? [1] : [],
       calculatedRequiredControls: enabled ? 3 : 1, completedRowIds: enabled ? [1] : [],

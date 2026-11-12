@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { computeStatisticsServerResult, normalizeStatisticsServerRequest } from '../../src/server/statistics'
 import { buildDerivedCalculationCacheKey } from '../../src/lib/derived-calculation-cache-key'
+import { STATISTICS_RESULT_VERSION } from '../../src/lib/statistics-result-version'
 import { withE2eDatabase } from '../database'
 
 const project = 'E2E two stamp contributions'
@@ -27,7 +28,7 @@ test('server, table, details and downloaded Excel preserve half-joints; missing 
   // A persisted pre-transition payload must not survive the rule change, even
   // when its data revision is already above the new rule's revision floor.
   const welderRequest = normalizeStatisticsServerRequest({ ...request, tab: 'welders' })
-  const newKey = buildDerivedCalculationCacheKey('statistics:v36', welderRequest)
+  const newKey = buildDerivedCalculationCacheKey(`statistics:v${STATISTICS_RESULT_VERSION}`, { ...welderRequest, schemesVersion: undefined })
   const oldKey = newKey.replace(/^rules:v\d+:/, 'rules:v11:')
   await withE2eDatabase(async db => {
     await db.query('update derived_calculation_state set source_revision=500000000 where id=1')

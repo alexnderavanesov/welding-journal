@@ -61,7 +61,11 @@ await db.transaction(async (tx) => {
     const value = JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentMode: enabled ? 'allPsto' as const : 'selected' as const })
     await tx.insert(appSettings).values({ key: 'control-processes', value })
       .onConflictDoUpdate({ target: appSettings.key, set: { value } })
-    const hydrated = await relations.attachHeatTreatmentControlRelations(rows, tx)
+    await tx.update(weldJoints).set({ preHeatTreatmentRequired: enabled }).where(inArray(weldJoints.id, ids))
+    const current = rows.map(row => ({ ...row, preHeatTreatmentRequired: enabled }))
+    const hydrated = await relations.attachHeatTreatmentControlRelations(current, tx)
+    assert.equal(canCreatePreHeatTreatmentRequest(hydrated[0], 'ВИК'), enabled)
+    assert.equal(canCreatePreHeatTreatmentRequest(hydrated.find(row => row.joint === 'CANCELLED')!, 'ВИК'), false)
     // An unperformed repeat becomes history on cancellation/move, not a new debt.
     // The performed failed TVMT cycle closes there; an active line still needs the repeat.
     for (const row of hydrated.filter(row => row.joint?.startsWith('PENDING-REPEAT-'))) {
@@ -94,14 +98,11 @@ await db.transaction(async (tx) => {
   const [offSaved] = await tx.select().from(weldJoints).where(eq(weldJoints.id, rows[6].id))
   assert.equal(offSaved.preHeatTreatmentLnkExempt, false)
   const plan = await tx.execute(sql`explain (analyze, format json) select ${policy.buildPreHeatTreatmentEnabledWhere()} from ${weldJoints} where ${inArray(weldJoints.id, ids)}`)
-  const nodes = JSON.stringify(plan.rows)
-  assert(nodes.includes('InitPlan'), 'Setting must be an uncorrelated init plan, never an N+1 lookup')
   type PlanNode = { 'Relation Name'?: string; 'Actual Loops'?: number; Plans?: PlanNode[] }
   const root = (plan.rows[0]['QUERY PLAN'] as Array<{ Plan: PlanNode }>)[0].Plan
   const walk = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(walk)]
   const settingScans = walk(root).filter((node) => node['Relation Name'] === 'app_settings')
-  assert.equal(settingScans.length, 1)
-  assert.equal(settingScans[0]['Actual Loops'], 1)
+  assert.equal(settingScans.length, 0, 'The permanent selective policy reads the joint flag without settings lookups')
   throw rolledBack
 }).catch((error) => { if (error !== rolledBack) throw error })
-console.log(JSON.stringify({ comparisons, obsoleteFlagsUnchanged: true, settingInitPlan: true, fixtureRolledBack: true }))
+console.log(JSON.stringify({ comparisons, obsoleteFlagsUnchanged: true, settingLookupFree: true, fixtureRolledBack: true }))

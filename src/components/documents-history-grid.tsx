@@ -7,6 +7,8 @@ import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import { positionGridPopup } from './grid-popup-position'
 import { DocumentsGridToolbar } from './documents-grid-toolbar'
+import { DocumentHistoryReportButton } from './document-history-report-button'
+import { documentHistoryReportColumns, type DocumentHistoryReportSource } from '@/lib/document-history-report'
 import { DocumentGridCheckbox } from './document-grid-checkbox'
 import { JournalLoadingCell } from './journal-loading-cell'
 import { JournalColumnHeading } from './welding-journal-column-heading'
@@ -57,6 +59,8 @@ export type DocumentsHistoryGridProps<T extends DocumentRow> = {
   selectedDocuments: DocumentRow[]
   onSelectionChange: (documents: DocumentRow[]) => void
   onRowContextMenu: (document: T, position: Position) => void
+  reportSource?: DocumentHistoryReportSource
+  reportTitle?: string
   toolbarActions?: ReactNode
   sourceRevision?: string | number
   filterSourceRevision?: string | number
@@ -568,7 +572,13 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         search={searchText} onSearchChange={setSearchText}
         groupingControls={<JournalGroupingControls scope="documents" groups={groupings.map(group => ({ id: group.colId, label: props.columns.find(column => column.key === group.colId)?.label ?? group.colId }))}
           onChange={ids => api?.setRowGroupColumns(ids)} />}
-        actions={props.toolbarActions} actionsDisabled={selectionPending || fullQuery.selecting}
+        actions={<>{props.reportSource ? <DocumentHistoryReportButton context={props.viewId} disabled={!api || selectionPending || loading || searchText.trim() !== search} request={() => ({
+          source: props.reportSource!, title: props.reportTitle ?? 'Список документов', search,
+          columns: documentHistoryReportColumns(api?.getAllDisplayedColumns().map(column => column.getColId()) ?? [], props.columns),
+          rowGroupCols: api?.getRowGroupColumns().map(column => column.getColId()) ?? [],
+          sortModel: (api?.getColumnState() ?? []).filter(column => column.sort).sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0))
+            .filter(column => props.columns.some(item => item.key === column.colId)).map(column => ({ colId: column.colId, sort: column.sort! })),
+        })} /> : null}{props.toolbarActions}</>} actionsDisabled={selectionPending || fullQuery.selecting}
         hasFilters={Object.values(props.columnFilters).some(Boolean) || Boolean(search)} onClearFilters={clearFilters}
         settingsOpen={settingsOpen} onSettingsOpenChange={setSettingsOpen} openColumnsRequest={openColumnsRequest} />
       {error ? <div role="alert" className="document-grid-error">{error}<button type="button" onClick={() => setRefreshAttempt(value => value + 1)}>Повторить</button></div> : null}

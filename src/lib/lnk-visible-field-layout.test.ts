@@ -70,6 +70,7 @@ describe('LNK visible field layout', () => {
       'hasPvk',
       'controlBasisSummary',
       'pstoRequired',
+      'preHeatTreatmentRequired',
     ])
     expect(LNK_EDITABLE_FIELD_KEYS.has('pstoRequired')).toBe(false)
   })

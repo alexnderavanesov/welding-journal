@@ -12,6 +12,8 @@ import {
   ClipboardList,
   Download,
   FlaskConical,
+  FileText,
+  MapPin,
   Gauge,
   LineChart,
   Minus,
@@ -48,7 +50,7 @@ import {
   type StatisticsSummary,
   type StatisticsUnit,
 } from '@/lib/statistics-summary'
-import type { LineSummary, LineSummaryRow } from '@/lib/line-summary'
+import { summarizeLineCoverage, lineSchemePercent, formatSchemeCoveragePercent, type LineSummary, type LineSummaryRow } from '@/lib/line-summary'
 import { summarizeLineGridRows, summarizeWelderGridRows } from '@/lib/statistics-grid-summary'
 import {
   type PercentageLineNavigationOutcome,
@@ -539,7 +541,7 @@ function StatisticsReports({
                 : activeTab === 'welders'
                   ? 'Статистика сварщиков считается по дате сварки стыка; распределение идет только по фактическим клеймам.'
                   : activeTab === 'lineSummary'
-                    ? 'Неактуальные по изменению строки и исторические стыки цепочки до годного результата не включаются.'
+                    ? 'F/S/ОП входят в общий объём. Ремонты одной физической цепочки не увеличивают количество стыков.'
                     : 'Процентная линия определяется как линия с единым % контроля меньше 100; расчет идет отдельно по каждому официальному клейму.'}
             </p> : null}
           </div>
@@ -2902,22 +2904,23 @@ function LineSummaryPanel({
   onRowsChange: (rows: LineSummaryRow[]) => void
   unit: StatisticsUnit
 }) {
-  const completedLines = summary.rows.filter((row) => row.remaining <= 0)
-  const remainingLines = summary.rows.filter((row) => row.remaining > 0)
+  const coverage = summarizeLineCoverage(summary.rows)
+  const completedLines = summary.rows.filter((row) => coverage.completedLineKeys.has(row.lineKey))
+  const remainingLines = summary.rows.filter((row) => !coverage.completedLineKeys.has(row.lineKey))
   const completedLineRowIds = mergeStatisticRowIds(completedLines.map((row) => row.rowIds))
   const remainingRowIds = mergeStatisticRowIds(remainingLines.map((row) => row.remainingRowIds))
   const completedRowIds = mergeStatisticRowIds(summary.rows.map((row) => row.completedRowIds))
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-flow-col auto-cols-[minmax(170px,1fr)] gap-3 overflow-x-auto pb-1" aria-label="Итоги полинейной сводки">
         <MetricCard
           compact
           wrapDetail
           wrapLabel
           icon={Gauge}
           label="Линий всего"
-          value={String(summary.rows.length)}
+          value={String(coverage.lines)}
           detail="Количество линий в выбранном срезе"
           accent="slate"
         />
@@ -2927,7 +2930,7 @@ function LineSummaryPanel({
           wrapLabel
           icon={ClipboardCheck}
           label="Сварено полностью"
-          value={String(completedLines.length)}
+          value={String(coverage.completedLines)}
           detail="По датам сварки, без оценки годности НК"
           accent="green"
           actionTitle="Открыть стыки сваренных линий"
@@ -2939,7 +2942,7 @@ function LineSummaryPanel({
           wrapLabel
           icon={TimerReset}
           label="Линий с остатком"
-          value={String(remainingLines.length)}
+          value={String(coverage.lines - coverage.completedLines)}
           detail="Требуют завершения сварки"
           accent="amber"
           actionTitle="Открыть незаваренные стыки этих линий"
@@ -2969,7 +2972,14 @@ function LineSummaryPanel({
           actionTitle="Открыть выполненные стыки"
           onClick={onOpenRows && completedRowIds.length > 0 ? () => onOpenRows(completedRowIds, `Показаны выполненные стыки по линиям: ${completedRowIds.length}.`) : undefined}
         />
+        <MetricCard compact wrapDetail wrapLabel icon={FileText} label="Линий с PDF"
+          value={coverage.lines ? formatSchemeCoveragePercent(coverage.pdfLines / coverage.lines * 100) : '—'}
+          detail={`${coverage.pdfLines} из ${coverage.lines} линий`} accent="indigo" />
+        <MetricCard compact wrapDetail wrapLabel icon={MapPin} label="Стыков на схемах"
+          value={coverage.total ? formatSchemeCoveragePercent(coverage.placed / coverage.total * 100) : '—'}
+          detail={`${coverage.placed} из ${coverage.total} стыков`} accent="blue" />
       </div>
+      {unit === 'wdi' ? <p className="text-xs text-slate-500">WDI относится к F/S; ОП учитываются в режиме «Стыки». «Состав» и показатели схем всегда показаны в физических стыках.</p> : null}
 
       <Panel
         title="Полинейная сводка"
@@ -2988,6 +2998,13 @@ function LineSummaryPanel({
 }
 
 const lineGridRowId = ({ data }: { data: LineSummaryRow }) => data.key
+const lineCompositionTypes = [
+  { key: 'f', label: 'F', color: 'border-sky-200 bg-sky-50 text-sky-700' },
+  { key: 's', label: 'S', color: 'border-violet-200 bg-violet-50 text-violet-700' },
+  { key: 'op', label: 'ОП', color: 'border-amber-200 bg-amber-50 text-amber-800' },
+] as const
+const visibleLineComposition = (row: LineSummaryRow) => lineCompositionTypes.filter(({ key }) =>
+  row.composition[key].total > 0 || row.composition[key].completed > 0)
 
 function LineSummaryGrid({ onOpenRows, rows, onRowsChange, unit }: {
   onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
@@ -3004,31 +3021,43 @@ function LineSummaryGrid({ onOpenRows, rows, onRowsChange, unit }: {
         {onOpenRows && data.rowIds.length > 0 ? <button type="button" className="shrink-0 rounded p-1 text-sky-600 hover:bg-sky-50" title={`Открыть стыки линии ${data.line}`} onClick={() => onOpenRows(data.rowIds, `Показаны стыки линии ${data.line}: ${data.rowIds.length}.`)}><ArrowUpRight className="h-4 w-4" /></button> : null}
       </div>,
     },
-    { field: 'groupName', headerName: 'Группа трубопровода', minWidth: 110, initialFlex: .6 },
-    { field: 'category', headerName: 'Категория трубопровода', minWidth: 110, initialFlex: .6 },
-    { field: 'weldControlPercent', headerName: 'Контроль швов, (%)', minWidth: 115, initialFlex: .6 },
+    { field: 'groupName', headerName: 'Группа', headerTooltip: 'Группа трубопровода', minWidth: 110, initialFlex: .6 },
+    { field: 'category', headerName: 'Категория', headerTooltip: 'Категория трубопровода', minWidth: 110, initialFlex: .6 },
+    { field: 'weldControlPercent', headerName: 'Контроль, %', headerTooltip: 'Контроль швов, %', minWidth: 115, initialFlex: .6 },
     { colId: 'completed', headerName: `Выполнение, ${unit === 'joints' ? 'стыки' : 'WDI'}`, minWidth: 220, initialFlex: 1.3,
       valueGetter: ({ data }) => data?.completed,
       cellRenderer: ({ data }: ICellRendererParams<LineSummaryRow>) => data && <LineCompletionCell row={data} unit={unit} /> },
+    { colId: 'composition', headerName: 'Состав', minWidth: 175, initialFlex: 1,
+      headerTooltip: 'F / S / ОП: сварено / всего, в физических стыках, независимо от выбранной единицы.',
+      valueGetter: ({ data }) => data ? formatLineComposition(data) : '',
+      cellRenderer: ({ data }: ICellRendererParams<LineSummaryRow>) => data && <div className="flex flex-wrap gap-1 py-1 text-xs text-slate-600">
+        {visibleLineComposition(data).map(({ key, label, color }) => <span key={key} className={`rounded border px-1.5 py-0.5 whitespace-nowrap tabular-nums ${color}`}>{label} {data.composition[key].completed}/{data.composition[key].total}</span>)}
+        {visibleLineComposition(data).length === 0 ? <span className="text-slate-400">—</span> : null}
+      </div> },
     { colId: 'remaining', headerName: `Остаток ${unit === 'joints' ? 'стыки' : 'WDI'}`, minWidth: 150, initialFlex: 1,
       valueGetter: ({ data }) => data?.remaining,
-      cellRenderer: ({ data }: ICellRendererParams<LineSummaryRow>) => data && <LineValueWithSplit total={data.remaining} f={data.remainingF} s={data.remainingS} unit={unit} /> },
+      valueFormatter: ({ value }) => formatStatisticValue(Number(value ?? 0), unit) },
+    { colId: 'schemePercent', headerName: '% на схеме', minWidth: 115, initialFlex: .6,
+      headerTooltip: 'Действующие физические стыки на основном PDF / все действующие физические стыки линии. Вся линия, включая ОП; архивные и серые исторические точки исключены.',
+      valueGetter: ({ data }) => data ? lineSchemePercent(data) : null,
+      valueFormatter: ({ value }) => formatSchemeCoveragePercent(value),
+      cellRenderer: ({ value }: ICellRendererParams<LineSummaryRow, number | null>) => <LineSchemeProgressCell percent={value ?? null} /> },
   ] satisfies ColDef<LineSummaryRow>[]).map(column => ({ ...column, cellClass: 'statistics-cell', wrapText: true, autoHeight: true })), [onOpenRows, unit])
   return <div data-statistics-grid="lines">
     <ReadOnlyGrid label="Полинейная сводка" columnFilters onDisplayedRowsChange={onRowsChange} pageScroll rowData={rows} columnDefs={columns} rowHeight={76} getRowId={lineGridRowId} />
   </div>
 }
 
-function LineValueWithSplit({ total, f, s, unit }: { total: number; f: number; s: number; unit: StatisticsUnit }) {
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <span>{formatStatisticValue(total, unit)}</span>
-      <span className="flex flex-wrap justify-end gap-1 text-[11px] font-normal text-slate-500">
-        <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F: {formatStatisticValue(f, unit)}</span>
-        <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S: {formatStatisticValue(s, unit)}</span>
-      </span>
-    </div>
-  )
+function formatLineComposition(row: LineSummaryRow) {
+  return visibleLineComposition(row).map(({ key, label }) => `${label} ${row.composition[key].completed}/${row.composition[key].total}`).join(' · ') || '—'
+}
+
+function LineSchemeProgressCell({ percent }: { percent: number | null }) {
+  if (percent == null) return <span className="block text-right text-slate-400">—</span>
+  return <div className="ml-auto w-full max-w-[140px]">
+    <div className="text-right text-xs tabular-nums text-slate-600">{formatSchemeCoveragePercent(percent)}</div>
+    <div aria-hidden="true" className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} /></div>
+  </div>
 }
 
 function LineCompletionCell({ row, unit }: { row: LineSummaryRow; unit: StatisticsUnit }) {
@@ -3037,7 +3066,6 @@ function LineCompletionCell({ row, unit }: { row: LineSummaryRow; unit: Statisti
     <div className="ml-auto w-full max-w-[240px]">
       <div className="flex items-center justify-end gap-2 text-xs tabular-nums text-slate-500"><strong className="text-slate-800">{formatStatisticValue(row.completed, unit)} / {formatStatisticValue(row.total, unit)}</strong><span>{formatPercent(percent)}</span></div>
       <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} /></div>
-      <div className="mt-1 flex justify-end gap-1 text-[10px] text-slate-500"><span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F {formatStatisticValue(row.completedF, unit)}/{formatStatisticValue(row.totalF, unit)}</span><span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S {formatStatisticValue(row.completedS, unit)}/{formatStatisticValue(row.totalS, unit)}</span></div>
     </div>
   )
 }
@@ -3441,12 +3469,13 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
   }
 
   if (activeTab === 'lineSummary') {
+    const coverage = summarizeLineCoverage(lineSummary.rows)
     return {
       title: 'Полинейная сводка',
       subtitle: 'Актуальный объем, выполнение и остаток по проектам, шифрам и линиям.',
       meta: baseMeta,
       metrics: [
-        { label: 'Линий', value: String(lineSummary.rows.length), detail: 'В текущем срезе', tone: 'slate' },
+        { label: 'Линий', value: String(coverage.lines), detail: 'В текущем срезе', tone: 'slate' },
         { label: `Всего, ${unitLabel}`, value: formatStatisticValue(lineSummary.total, unit), tone: 'blue' },
         {
           label: 'Выполнено',
@@ -3455,6 +3484,8 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           tone: 'green',
         },
         { label: `Остаток, ${unitLabel}`, value: formatStatisticValue(lineSummary.remaining, unit), tone: 'amber' },
+        { label: 'Линий с PDF', value: coverage.lines ? formatSchemeCoveragePercent(coverage.pdfLines / coverage.lines * 100) : '—', detail: `${coverage.pdfLines} из ${coverage.lines} линий`, tone: 'slate' },
+        { label: 'Стыков на схемах', value: coverage.total ? formatSchemeCoveragePercent(coverage.placed / coverage.total * 100) : '—', detail: `${coverage.placed} из ${coverage.total} стыков`, tone: 'blue' },
       ],
       charts: [
         {
@@ -3474,8 +3505,8 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       tables: [
         {
           title: 'Линии',
-          columns: ['Проект', 'Шифр', 'Линия', 'Группа трубопровода', 'Категория трубопровода', 'Контроль, %', 'Всего', 'Выполнено', 'Остаток'],
-          numericColumns: [5, 6, 7, 8],
+          columns: ['Проект', 'Шифр', 'Линия', 'Группа трубопровода', 'Категория трубопровода', 'Контроль, %', 'Всего', 'Выполнено', 'Состав, сварено/всего (стыки)', 'Остаток', '% на схеме'],
+          numericColumns: [5, 6, 7, 9, 10],
           rows: lineSummary.rows.map((row) => [
             row.projectTitle,
             row.subtitleCode,
@@ -3485,7 +3516,9 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
             row.weldControlPercent,
             formatStatisticValue(row.total, unit),
             formatStatisticValue(row.completed, unit),
+            formatLineComposition(row),
             formatStatisticValue(row.remaining, unit),
+            formatSchemeCoveragePercent(lineSchemePercent(row)),
           ]),
         },
       ],

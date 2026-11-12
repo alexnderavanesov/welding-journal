@@ -7,6 +7,7 @@ import { schemeFixtureCleanup } from '../line-scheme-fixtures'
 const trackProject = schemeFixtureCleanup(test)
 
 test('реестр схем: ширина окна, поиск в фильтре всей выборки и точки только основной редакции', async ({ page }, testInfo) => {
+  test.setTimeout(90_000)
   const project = `E2E registry ${testInfo.project.name}`
   trackProject(testInfo, project)
   await withE2eDatabase(async db => {
@@ -35,6 +36,7 @@ test('реестр схем: ширина окна, поиск в фильтре
       await db.query('insert into line_scheme_points(id,revision_id,physical_id,page,x,y) values($1,$2,$3,$4,.5,.5)', [randomUUID(), i < 2 ? active : archive, physical, i === 1 ? 4 : 1])
     }
   })
+  await withE2eDatabase(db => db.query("update weld_joints set weld_date='2026-11-01' where project_title=$1 and joint='S1'", [project]))
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
   await page.setViewportSize({ width: 1904, height: 933 })
   await page.goto('/line-schemes')
@@ -97,5 +99,60 @@ test('реестр схем: ширина окна, поиск в фильтре
   await expect(registry.getByRole('columnheader', { name: 'На схеме', exact: true })).toBeVisible()
   await expect.poll(async () => { const box = await registry.locator('.ag-header-cell[col-id="files"]').boundingBox(); return box ? box.x + box.width : Infinity }).toBeLessThanOrEqual(1256)
   await page.screenshot({ path: testInfo.outputPath('registry-laptop.png') })
+  // Each new facet finds LINE-464 outside the first page. Saved grey points
+  // count in placedCount, while the percentage uses only active physicals.
+  for (const [field, title, value] of [
+    ['total', 'Физических стыков', '2'], ['welded', 'Сварено', '1'],
+    ['placedCount', 'На схеме', '4'], ['placedPercent', '% на схеме', '50%'],
+    ['pdf', 'Рабочая документация', 'Working drawing'], ['files', 'Файлы и архив', '2'],
+  ]) {
+    await registry.getByRole('button', { name: /Сбросить фильтры/ }).click()
+    await filterSchemeProject(page, project)
+    await openFilter(field)
+    const facet = page.getByRole('dialog', { name: `Фильтр: ${title}`, exact: true })
+    const option = facet.locator('label').filter({ has: page.getByText(value, { exact: true }) })
+    await expect(option.locator('.journal-count')).toHaveText('1')
+    await option.getByRole('checkbox').check()
+    await facet.getByRole('button', { name: 'Закрыть фильтр' }).click()
+    await expect(registry.getByText('Линий: 1', { exact: true })).toBeVisible()
+    await expect(row.locator('[col-id="placedCount"]')).toHaveText('4')
+  }
+  // Combine a metadata facet with a calculated one, then remove only its own
+  // selection: the remaining facets must still constrain the available values.
+  await openFilter('placedPercent')
+  let facet = page.getByRole('dialog', { name: 'Фильтр: % на схеме', exact: true })
+  await expect(facet.getByRole('checkbox')).toHaveCount(1)
+  await facet.getByRole('checkbox').check()
+  await facet.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  await openFilter('pdf')
+  facet = page.getByRole('dialog', { name: 'Фильтр: Рабочая документация', exact: true })
+  await expect(facet.getByRole('checkbox')).toHaveCount(1)
+  await expect(facet).toContainText('Working drawing')
+  await facet.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  await registry.getByRole('button', { name: /Сбросить фильтры/ }).click()
+  await filterSchemeProject(page, project)
+  await openFilter('pdf')
+  await facet.getByRole('textbox').fill('Нет основного PDF')
+  await expect(facet.getByRole('checkbox')).toHaveCount(1)
+  await expect(facet.locator('.journal-count')).toHaveText('464')
+  await facet.getByRole('checkbox').check()
+  await facet.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  await expect(registry.getByText('1–50 из 464', { exact: true })).toBeVisible()
+  await openFilter('placedPercent')
+  facet = page.getByRole('dialog', { name: 'Фильтр: % на схеме', exact: true })
+  await expect(facet.getByRole('checkbox')).toHaveCount(1)
+  await expect(facet.locator('.journal-filter-option')).toContainText('—')
+  await facet.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  // Removing the main revision leaves both archived files in the file count.
+  await withE2eDatabase(db => db.query('update line_scheme_bundles set active_revision_id=null where project_title=$1', [project]))
+  await registry.getByRole('button', { name: 'Обновить список' }).click()
+  await expect(registry.getByText('1–50 из 465', { exact: true })).toBeVisible()
+  await openFilter('files')
+  facet = page.getByRole('dialog', { name: 'Фильтр: Файлы и архив', exact: true })
+  await facet.locator('label').filter({ has: page.getByText('2', { exact: true }) }).getByRole('checkbox').check()
+  await facet.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  await expect(registry.getByText('Линий: 1', { exact: true })).toBeVisible()
+  await expect(row.locator('[col-id="placedCount"]')).toHaveText('0')
+  await expect(row.locator('[col-id="placedPercent"]')).toHaveText('0%')
   expect(errors).toEqual([])
 })

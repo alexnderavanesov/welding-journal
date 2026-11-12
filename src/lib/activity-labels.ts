@@ -76,6 +76,7 @@ const operationLabels: Record<string, string> = {
   importWeldJoints: 'Импорт стыков', massFillWeldJoints: 'Массовое заполнение стыков', replaceWeldJoints: 'Замена стыков при импорте',
   moveWeldJointChain: 'Перенос цепочки стыка', setChainActuality: 'Изменение актуальности цепочки',
   savePreHeatTreatmentLnkWorkflow: 'Заявки и результаты НК до ТО', savePreHeatTreatmentLnkResultEdits: 'Изменение результатов НК до ТО',
+  savePreHeatTreatmentBatch: 'Массовое изменение отметки НК до ТО', savePreHeatTreatmentFill: 'Заполнение недостающего НК до ТО',
   correctPreHeatTreatmentLnkResult: 'Корректировка результата НК до ТО', updatePreHeatTreatmentRkExposure: 'Изменение схемы просвечивания РК',
   savePstoRepeatWorkflow: 'Заявки и результаты ПСТО / ТВМТ', correctPstoCycleStage: 'Корректировка этапа ПСТО / ТВМТ',
   correctPstoTvmtAndRemoveLaterCycles: 'Корректировка ТВМТ с удалением последующих циклов',

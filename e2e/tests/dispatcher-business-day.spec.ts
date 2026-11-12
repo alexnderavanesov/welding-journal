@@ -142,6 +142,7 @@ for (const source of ['main', 'duplicate', 'pre-TO'] as const) {
         select id,'РК','вырез',$2 from weld_joints where project_title=$1`, [project, today])
       if (source === 'pre-TO') await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,result,conclusion_date)
         select id,'РК','вырез',$2 from weld_joints where project_title=$1`, [project, today])
+      if (source === 'pre-TO') await db.query('update weld_joints set pre_heat_treatment_required=true where project_title=$1', [project])
       await db.query("insert into welder_stamp_suspensions(naks_stamp,suspended_from) values('DAY1',$1)", [yesterday])
     })
     const [{ requireDb }, { markDispatcherTaskIndexDirty }, dispatcher] = await Promise.all([

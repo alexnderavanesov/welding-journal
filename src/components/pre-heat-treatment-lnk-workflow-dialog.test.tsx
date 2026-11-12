@@ -12,7 +12,7 @@ vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDe
 vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ lnkRequest: 10, lnkConclusionVik: 20, lnkConclusionRk: 30, 'lnkRequest:beforeHeatTreatment': 110, 'lnkConclusionVik:beforeHeatTreatment': 120, 'lnkConclusionRk:beforeHeatTreatment': 130 })) }))
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
-  return { preHeatTreatmentMode: 'allPsto' as const,
+  return { preHeatTreatmentRequired: true,
     id: 1,
     projectTitle: 'Проект А',
     subtitleCode: 'Шифр-1',
@@ -311,7 +311,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
   })
 
   it('does not allow a pre-heat-treatment request on a line without PSTO', async () => {
-    await renderDialog('request', makeRow({ preHeatTreatmentMode: 'allPsto' as const, pstoRequired: '', pstoDate: null }))
+    await renderDialog('request', makeRow({ preHeatTreatmentRequired: true, pstoRequired: '', pstoDate: null }))
 
     expect(screen.queryByRole('checkbox', { name: /Выбрать стык/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Создать заявку до ТО' })).toBeDisabled()

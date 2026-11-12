@@ -36,11 +36,9 @@ export default async function globalSetup() {
       [JSON.stringify({ status: 'complete', schemaTime: time })])
   })
 
-  // The shared historical fixture exercises mandatory preliminary control.
-  // Selective-mode scenarios override this explicitly; empty-install defaults
-  // are verified before fixtures by the release-transition tests.
+  // Historical fixture requirements are explicit flags, never a retired mode.
   await withE2eDatabase(client => client.query("update app_settings set value=$1 where key='control-processes'",
-    [JSON.stringify({ pvkGoodOnly: false, preHeatTreatmentMode: 'allPsto' })]))
+    [JSON.stringify({ pvkGoodOnly: false, preHeatTreatmentMode: 'selected' })]))
 
   await applyDeepBaselineJointIndex()
 
@@ -108,6 +106,8 @@ export default async function globalSetup() {
     `)
 
   })
+
+  await withE2eDatabase(client => client.query('update weld_joints set pre_heat_treatment_required=true'))
 
   if (process.env.AUDIT_CHAIN_SCALE === '1') {
     const { seedChainScaleBackground } = await import('./chain-scale-fixture')

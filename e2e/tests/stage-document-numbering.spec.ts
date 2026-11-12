@@ -122,7 +122,7 @@ test('after reset, explicit refresh skips occupied names without consuming numbe
   await withE2eDatabase(async db => {
     await db.query("insert into app_settings(key,value) values('system-document-next-number:lnkRequest:beforeHeatTreatment','1')")
     await db.query("update weld_joints set vik_request='Заявка-ДО-ТО-13.10.2026-001',vik_request_date=$1,rk_request='Заявка-ДО-ТО-13.10.2026-003',rk_request_date=$1 where project_title=$2", [date, project])
-    await db.query("insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,psto_required,has_vik,officiality,material_group,connection_type,welding_method,d1,d2,t1,t2,wdi) values($1,'P','NEW','STAGE-REFRESH','2026-10-01','да','да','действующий','M01','СШ','РД',108,108,4,4,0.42)", [project])
+    await db.query("insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,psto_required,pre_heat_treatment_required,has_vik,officiality,material_group,connection_type,welding_method,d1,d2,t1,t2,wdi) values($1,'P','NEW','STAGE-REFRESH','2026-10-01','да',true,'да','действующий','M01','СШ','РД',108,108,4,4,0.42)", [project])
   })
   const seed = await readSystemDocumentNextNumbers(requireDb(), ['lnkRequest:beforeHeatTreatment'])
   const quote = await requireDb().transaction(tx => reserveSystemDocumentNames(tx, [{ request: request(true) }, { request: request(true) }], { previewOnly: true }))

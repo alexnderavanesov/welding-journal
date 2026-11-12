@@ -33,7 +33,7 @@ export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string,
   const sourceSegments = parseJointName(String(sourceRow.joint ?? ''), settings).segments
   const targetSegments = parseJointName(targetJoint, settings).segments
   const newCoil = targetSegments.slice(sourceSegments.length).some(segment => segment.suffix === 'Y')
-  draft.preHeatTreatmentRequired = newCoil ? false : sourceRow.preHeatTreatmentRequired ?? (sourceRow.preHeatTreatmentMode === 'allPsto')
+  draft.preHeatTreatmentRequired = newCoil ? false : sourceRow.preHeatTreatmentRequired === true
   delete (draft as Record<string, unknown>).preHeatTreatmentConfirmation
   restoreRepeatedJointControlAvailability(draft, sourceRow)
   draft.joint = targetJoint

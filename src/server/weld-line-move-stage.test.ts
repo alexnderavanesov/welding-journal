@@ -12,7 +12,7 @@ import { toDbInsert } from './weld-persistence'
 import { prepareServerWeldRecords, type ServerWeldValidationContext } from './weld-save-validation'
 
 function fixture(result: string | null) {
-  return { preHeatTreatmentMode: 'allPsto' as const,
+  return { preHeatTreatmentRequired: true,
     id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
     pstoRequired: 'да', vikRequest: 'MAIN-REQ', vikRequestDate: '2026-08-01',
     vikResult: 'годен', vikConclusionDate: '2026-08-02', vikConclusion: 'MAIN-CONCLUSION',
@@ -67,7 +67,7 @@ describe('line moves preserve recorded stages', () => {
   })
 
   function primaryMovable() {
-    return { id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
+    return { preHeatTreatmentRequired: true, id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
       officiality: 'действующий', hasVik: 'да', weldDate: '2026-07-01',
       vikRequest: 'ВИК-З', vikRequestDate: '2026-07-02', vikResult: 'годен', vikConclusion: 'ВИК-К', vikConclusionDate: '2026-07-03',
       preHeatTreatmentControls: [], pstoRepeatCycles: [],
@@ -98,7 +98,7 @@ describe('line moves preserve recorded stages', () => {
     await expect(toAssigned(primaryMovable(), { weldDate: '2026-07-10' })).rejects.toThrow()
   })
   function movable() {
-    return { preHeatTreatmentMode: 'allPsto' as const,
+    return { preHeatTreatmentRequired: true,
       id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
       officiality: 'действующий', revisionActuality: 'актуальная', hasVik: 'да',
       weldDate: '2026-07-01', pstoRequired: 'да',

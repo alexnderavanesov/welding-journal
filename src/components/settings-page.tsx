@@ -1016,8 +1016,8 @@ function ControlProcessesSettingsPanel({
   const confirmAction = useConfirmAction()
   const editor = useSettingsDraft('processes.switches', saved, runProtectedSettingsChange, async (value, assertCurrent) => {
     for (const key of Object.keys(value) as (keyof ControlProcessSettings)[]) {
-      if (value[key] === saved[key]) continue
-      const confirmation = getControlProcessSettingConfirmation(key, value[key])
+      if (key !== 'pvkGoodOnly' || value[key] === saved[key]) continue
+      const confirmation = getControlProcessSettingConfirmation(value[key])
       if (!await confirmAction({ ...confirmation, tone: 'warning' })) return false
     }
     assertCurrent()
@@ -1046,7 +1046,7 @@ function ControlProcessesSettingsPanel({
           <h3 className="text-base font-semibold text-slate-900">Процессы контроля</h3>
         </div>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Процессы контроля и допустимая последовательность их оформления. Изменения защищены общим паролем настроек, если он включен.
+          Процессы контроля и допустимая последовательность их оформления. Изменения доступны пользователям с правом редактирования процессов контроля.
         </p>
       </div>
 
@@ -1064,16 +1064,7 @@ function ControlProcessesSettingsPanel({
             busy={editor.busy}
             onChange={(enabled) => void changeProcessSetting('pvkGoodOnly', enabled)}
           />
-          <div className="space-y-2 px-4 py-4">
-            <label htmlFor="pre-heat-treatment-mode" className="text-sm font-semibold text-slate-900">НК до ТО</label>
-            <Select id="pre-heat-treatment-mode" aria-label="Режим НК до ТО" value={settings.preHeatTreatmentMode}
-              onChange={event => editor.change({ ...settings, preHeatTreatmentMode: event.target.value as ControlProcessSettings['preHeatTreatmentMode'] })}>
-              <option value="selected">На выбранных стыках</option>
-              <option value="allPsto">На всех стыках с ПСТО</option>
-            </Select>
-            <p className="text-sm text-slate-600">В выборочном режиме отметка «Требуется НК до ТО» меняется в карточке исходного стыка для всей цепочки. Катушки начинают отдельные цепочки.</p>
-            <p className="text-xs text-slate-500">Основной НК можно внести до завершения предыдущих этапов с предупреждением СП-06. Проверки дат и негодного предварительного контроля сохраняются.</p>
-          </div>
+
         </div>
         {message ? (
           <div className={`border-t px-4 py-3 text-sm ${message.startsWith('Не удалось') || message.includes('нельзя')
@@ -1213,11 +1204,9 @@ function ControlProcessToggle({
 }
 
 function getControlProcessSettingConfirmation(
-  key: keyof ControlProcessSettings,
-  enabled: ControlProcessSettings[keyof ControlProcessSettings],
+  enabled: boolean,
 ) {
-  if (key === 'pvkGoodOnly') {
-    return enabled
+  return enabled
       ? {
           title: 'Включить «ПВК — только годен»',
           itemName: 'Наш ПВК на обоих этапах',
@@ -1232,17 +1221,6 @@ function getControlProcessSettingConfirmation(
           warning: 'Ограничения при явном послойном назначении продолжают действовать.',
           confirmLabel: 'Выключить',
         }
-  }
-
-  return {
-    title: 'Изменить режим НК до ТО',
-    itemName: enabled === 'allPsto' ? 'На всех стыках с ПСТО' : 'На выбранных стыках',
-    description: enabled === 'allPsto'
-      ? 'НК до ТО станет обязательным для всех стыков на линиях с ПСТО. Документы автоматически не создаются.'
-      : 'Отметки и история сохранятся. Ненужный этап можно явно отключить в исходной карточке с просмотром удаляемых данных.',
-    warning: 'Существующие документы и результаты не удаляются при смене режима.',
-    confirmLabel: 'Сохранить',
-  }
 }
 
 function WdiRulePresetButton({ label, onClick }: { label: string; onClick: () => void }) {

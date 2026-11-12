@@ -22,13 +22,13 @@ test('200k ЛНК: both page paths, filters, stages, roots, coils and output use
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
   await withLineProgramFixture(async db => {
     await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,isometry,weld_date,connection_type,d1,t1,wdi,
-      officiality,revision_actuality,has_vik,has_rk,psto_required,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,
+      officiality,revision_actuality,has_vik,has_rk,psto_required,pre_heat_treatment_required,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,
       rk_request,rk_request_date,rk_result,rk_conclusion,rk_conclusion_date)
       select $1,'LNK-READ','LNK-READ-'||lpad(((n-1)/5000+1)::text,2,'0'),
         case when n%100 in (51,52) then 'F'||lpad((n-n%100+50)::text,6,'0')||'Y'||(n%100-50)
           when n%20=0 then 'F'||lpad((n-1)::text,6,'0')||'R1' else 'F'||lpad(n::text,6,'0') end,
         lpad(n::text,6,'0'),'2026-06-01','С17',114,6,case when n%20=0 then 99 else 7 end,
-        'действующий','актуальная','да','да',case when n%20=0 then 'да' end,
+        'действующий','актуальная','да','да',case when n%20=0 then 'да' end,n%20=0,
         'VIK-'||n,'2026-07-01','годен','VIK-C-'||n,'2026-07-02',
         'RK-'||n,'2026-07-02',case when n%100=50 then 'вырез' when n%20=19 then 'ремонт' else 'годен' end,
         'RK-C-'||n,'2026-07-03'::date+n%25 from generate_series(1,200000) n`,[project])

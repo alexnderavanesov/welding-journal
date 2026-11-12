@@ -6,7 +6,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 
 afterEach(cleanup)
 it('omits PSTO and TVMT only from the assignment summary and leaves all NK stages unscrolled', () => {
-  const row: WeldRow = { preHeatTreatmentMode: 'allPsto' as const,
+  const row: WeldRow = { preHeatTreatmentRequired: true,
     id: 1, joint: 'F1', hasVik: 'да', vikResult: 'годен', hasRk: 'да', rkResult: 'годен',
     pstoRequired: 'да', pstoResult: 'проведено', pstoRequest: 'ПСТО-ЗАЯВКА', heatTreatmentDiagram: 'ПСТО-1',
     tvmtResult: 'годен', tvmtConclusion: 'ТВМТ-1',

@@ -1,3 +1,4 @@
+import { createServerOnlyFn } from '@tanstack/react-start'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { PreHeatTreatmentDateError } from '@/lib/pre-heat-treatment-control-updates'
 import { requireDb } from '@/db'
@@ -33,7 +34,7 @@ import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-
 const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>(['post-before-psto-cycle'])
 const PRE_HEAT_FILL_CHANGED = 'Данные или настройки НК до ТО изменились после открытия окна. Ничего не сохранено. Закройте окно заполнения, откройте его заново и проверьте состав документов.'
 type Tx = SystemDocumentSequenceTransaction
-export type PreHeatTreatmentFillRequest = { rowIds: number[]; chainRootId?: number; options: PreHeatTreatmentFillOptions }
+export type PreHeatTreatmentFillRequest = { rowIds: number[]; chainRootId?: number; markRowIds?: number[]; options: PreHeatTreatmentFillOptions }
 
 function normalizeInput(input: PreHeatTreatmentFillRequest): PreHeatTreatmentFillRequest {
   if (!Array.isArray(input?.rowIds) || input.rowIds.some(id => !Number.isSafeInteger(id) || id <= 0)) throw new Error('Выберите стыки для заполнения.')
@@ -41,7 +42,8 @@ function normalizeInput(input: PreHeatTreatmentFillRequest): PreHeatTreatmentFil
   assertWorkflowSelectionLimit(rowIds)
   if (input.chainRootId !== undefined && (!Number.isSafeInteger(input.chainRootId) || input.chainRootId <= 0)) throw new Error('Не указан исходный стык.')
   if (Object.values(input.options?.splitModes ?? {}).some(mode => !SYSTEM_DOCUMENT_SPLIT_MODES.includes(mode))) throw new Error('Неизвестный вариант разделения.')
-  return { rowIds, ...(input.chainRootId ? { chainRootId: input.chainRootId } : {}), options: input.options ?? {} }
+  if (input.chainRootId && input.markRowIds) throw new Error('Выберите один способ заполнения.')
+  return { rowIds, ...(input.chainRootId ? { chainRootId: input.chainRootId } : {}), ...(input.markRowIds ? { markRowIds: input.markRowIds } : {}), options: input.options ?? {} }
 }
 
 /** Same process → counter → membership → row order as ordinary document creation. */
@@ -52,8 +54,16 @@ export async function lockPreHeatTreatmentFillCounters(tx: Tx) {
   for (const id of ids) await lockSystemDocumentNumberCounter(tx, id as Parameters<typeof lockSystemDocumentNumberCounter>[1])
 }
 
-async function readFillRows(tx: Tx, input: PreHeatTreatmentFillRequest) {
+const readFillRows = createServerOnlyFn(async (tx: Tx, input: PreHeatTreatmentFillRequest) => {
   await lockPreHeatTreatmentFillCounters(tx)
+  if (input.markRowIds) {
+    requireContextPermission('welding.edit')
+    const { readPreHeatTreatmentBatch } = await import('./pre-heat-treatment-batch')
+    const plan = await readPreHeatTreatmentBatch(tx, { rowIds: input.markRowIds, required: true })
+    const reasons = plan.chains.flatMap(chain => chain.reason ? [chain.reason] : [])
+    if (reasons.length) throw new Error(reasons.join('\n'))
+    return plan.rows.map(row => ({ ...row, preHeatTreatmentRequired: true }))
+  }
   if (input.chainRootId) {
     requireContextPermission('welding.view')
     const context = await readPreHeatTreatmentChain(tx, input.chainRootId)
@@ -67,7 +77,7 @@ async function readFillRows(tx: Tx, input: PreHeatTreatmentFillRequest) {
   if (stored.length !== input.rowIds.length || !haveSameWeldLineMemberships(memberships, stored)) throw new Error(PRE_HEAT_FILL_CHANGED)
   const rows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(stored, tx), tx)
   return rows.filter(isPreHeatTreatmentLnkAvailable)
-}
+})
 
 const reference = (group: PreHeatTreatmentFillGroup) => ({ type: group.action === 'request' ? 'lnkRequest' as const : 'lnkConclusion' as const,
   title: group.name, date: group.date, sourceKind: 'beforeHeatTreatment' as const,
@@ -130,7 +140,8 @@ export async function planPreHeatTreatmentFill(tx: Tx, rows: WeldRow[], options:
       }
     }
   }
-  // Simulate request and VIK creation first, then other results. All validation
+  // Simulate requests → VIK → PVK → RK/UZK, following the same prerequisites
+  // as individual entry, including PVK prepared in this very package. All validation
   // sees the final merged record while the database remains untouched.
   const proposed = new Map(rows.map(row => [row.id, { ...row, preHeatTreatmentControls: [...(row.preHeatTreatmentControls ?? [])] }]))
   const writes = new Map<string, ReturnType<typeof buildGroupWrites>>()
@@ -231,7 +242,7 @@ export async function previewPreHeatTreatmentFill({ data: input }: { data: PreHe
 export async function savePreHeatTreatmentFill({ data: input }: { data: PreHeatTreatmentFillRequest }) {
   const data = normalizeInput(input)
   await assertSecurityScope('edit')
-  if (data.chainRootId) throw new Error('Заполнение всей цепочки сохраняется вместе с исходной карточкой.')
+  if (data.chainRootId || data.markRowIds) throw new Error('Заполнение всей цепочки сохраняется вместе с подтверждённым изменением отметки.')
   requireContextPermission('lnk.edit')
   await prepareDocumentCreationIndex(true)
   return requireDb().transaction(async tx => {

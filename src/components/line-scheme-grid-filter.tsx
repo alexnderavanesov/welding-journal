@@ -36,7 +36,7 @@ function SchemeGridFilter({ column, api, model, onModelChange }: CustomFilterDis
     canSelectFound={!pending && options.length > 0} onSelectFound={() => { if (!pending) apply(options.map(option => option.value)) }}
     onReset={() => apply([])} isFetching={pending} isError={query.isError} isLoading={query.isLoading}
     onRetry={() => void query.refetch()} empty={!options.length}
-    footer={<p className="journal-filter-legacy">Отбор действует по всему реестру.{query.data?.hasMore ? ' Показаны первые 100 значений — уточните поиск.' : ''}</p>}>
+    footer={query.data?.hasMore ? <p className="journal-filter-legacy">Показаны первые 100 значений — уточните поиск.</p> : undefined}>
     <fieldset disabled={pending} aria-busy={pending} className={pending ? 'opacity-50' : undefined}>
       {options.map(option => <GridFilterValue key={option.value} option={{ ...option, values: [option.value] }} selectedValues={selectedSet}
         onToggleValues={() => { if (!pending) apply(selectedSet.has(option.value) ? selected.filter(item => item !== option.value) : [...selected, option.value]) }} />)}

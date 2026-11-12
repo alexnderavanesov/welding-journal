@@ -20,8 +20,8 @@ test.afterEach(() => cleanupLineProgramProjects([project]))
 
 async function fixture() {
   return withLineProgramFixture(async db => {
-    const ids = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,connection_type,has_vik,has_rk,has_uzk,psto_required)
-      select $1,'ACT','ACT-L',name,'2026-10-01',case when n=3 then 'неофициальный' else 'действующий' end,'С17','да','да','да','да'
+    const ids = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,connection_type,has_vik,has_rk,has_uzk,psto_required,pre_heat_treatment_required)
+      select $1,'ACT','ACT-L',name,'2026-10-01',case when n=3 then 'неофициальный' else 'действующий' end,'С17','да','да','да','да',true
       from unnest(array['F771','F771R1','F771R1','F771Y1','F772']) with ordinality t(name,n) returning id`, [project])).rows.map(row => row.id as number)
     const [root, repair, repeat, coil, outside] = ids
     await db.query("update weld_joints set rk_request='ACT-NK',rk_request_date=$1,rk_result='ремонт',rk_conclusion='ACT-RESULT',rk_conclusion_date=$1 where id=$2", [date, root])

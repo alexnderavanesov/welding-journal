@@ -11,7 +11,7 @@ import { assertNoNewPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatAccessValidationMessage } from './access-validation-message'
 import { accessContext } from './access-store'
 
-const base = { id: 1, joint: 'F1', weldDate: '2026-10-11', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentMode: 'allPsto' as const } as WeldRow
+const base = { id: 1, joint: 'F1', weldDate: '2026-10-11', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentRequired: true } as WeldRow
 const control = { id: 1, weldJointId: 1, method: 'ВИК' as const, requestName: 'V-1', requestDate: '2026-10-01', result: 'ожидает НК' }
 const formatMessage = formatAccessValidationMessage
 function asViewer<T>(area: 'lnk' | 'psto', owner: boolean, run: () => T) {

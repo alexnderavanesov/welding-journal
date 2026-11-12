@@ -7,9 +7,18 @@ import { captureProgramChainStates } from '@/lib/line-program-chain-state'
 import { buildLineProgramTopology, programJointIdentity } from '@/lib/line-program-topology'
 import { isActiveOfficialWeld } from '@/lib/control-assignment-eligibility'
 import { compareJointChainRows } from '@/lib/repeated-joint-row-utils'
+import { isTConnectionType } from './connection-type'
+
+export type LineSchemeCoverage = { hasPdf: boolean; total: number; placed: number }
+export type LineComposition = Record<'f' | 's' | 'op', { total: number; completed: number }>
 
 export type LineSummaryRow = {
   key: string
+  lineKey: string
+  composition: LineComposition
+  physicalTotal: number
+  physicalCompleted: number
+  scheme?: LineSchemeCoverage
   projectTitle: string
   subtitleCode: string
   line: string
@@ -40,26 +49,31 @@ export type LineSummary = {
 export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIndexSettings?: SystemIndexSettings,
   includeRow: (row: WeldRow) => boolean = () => true,
 ): LineSummary {
-  return summarizePhysicalLineRows(getActualLineRows(rows, systemIndexSettings), unit, systemIndexSettings, includeRow)
+  return summarizePhysicalLineRows(getActualLineRows(rows, systemIndexSettings), unit, systemIndexSettings, includeRow, undefined, true)
 }
 
 /** Aggregate representatives already resolved with their complete history. */
 export function summarizePhysicalLineRows(rowsForSummary: WeldRow[], unit: StatisticsUnit, systemIndexSettings?: SystemIndexSettings,
   includeRow: (row: WeldRow) => boolean = () => true,
   isCompleted: (row: WeldRow) => boolean = row => hasText(row.weldDate),
+  keepZeroWeight = false,
 ): LineSummary {
   const lineRows = new Map<string, LineSummaryRow>()
 
   for (const row of rowsForSummary) {
     if (!includeRow(row)) continue // Display filters must not remove physical history before calculation.
     const weight = getRowWeight(row, unit)
-    if (weight <= 0) continue
+    if (weight <= 0 && !keepZeroWeight) continue
 
     const key = getLineGroupKey(row)
     const summaryRow =
       lineRows.get(key) ??
       ({
         key,
+        lineKey: programJointIdentity(row, ''),
+        composition: { f: { total: 0, completed: 0 }, s: { total: 0, completed: 0 }, op: { total: 0, completed: 0 } },
+        physicalTotal: 0,
+        physicalCompleted: 0,
         projectTitle: displayValue(row.projectTitle),
         subtitleCode: displayValue(row.subtitleCode),
         line: displayValue(row.line),
@@ -82,6 +96,13 @@ export function summarizePhysicalLineRows(rowsForSummary: WeldRow[], unit: Stati
 
     const jointType = getJointType(row, systemIndexSettings)
     const completed = isCompleted(row)
+    const compositionType = isTConnectionType(row.connectionType) ? 'op' : jointType
+    summaryRow.physicalTotal++
+    if (completed) summaryRow.physicalCompleted++
+    if (compositionType) {
+      summaryRow.composition[compositionType].total++
+      if (completed) summaryRow.composition[compositionType].completed++
+    }
     summaryRow.rowIds.push(row.id)
     summaryRow.total += weight
     if (jointType === 'f') summaryRow.totalF += weight
@@ -202,9 +223,38 @@ function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 
 
 function getRowWeight(row: WeldRow, unit: StatisticsUnit) {
   if (unit === 'joints') return 1
+  if (isTConnectionType(row.connectionType)) return 0
   const value = Number(String(row.wdi ?? '').replace(',', '.'))
   return Number.isFinite(value) && value > 0 ? value : 0
 }
+
+/** A line can have several metadata rows. Count its PDF and full-line scheme
+ * coverage once after grid filtering, regardless of the selected WDI unit. */
+export function summarizeLineCoverage(rows: readonly LineSummaryRow[]) {
+  const lines = new Map<string, LineSchemeCoverage & { completed: boolean }>()
+  for (const row of rows) {
+    const previous = lines.get(row.lineKey)
+    lines.set(row.lineKey, {
+      hasPdf: row.scheme?.hasPdf ?? false,
+      total: row.scheme?.total ?? (previous?.total ?? 0) + row.physicalTotal,
+      placed: row.scheme?.placed ?? 0,
+      completed: (previous?.completed ?? true) && row.physicalCompleted === row.physicalTotal,
+    })
+  }
+  const completedLineKeys = new Set([...lines].filter(([, line]) => line.completed).map(([key]) => key))
+  return { lines: lines.size, pdfLines: [...lines.values()].filter(line => line.hasPdf).length,
+    completedLineKeys, completedLines: completedLineKeys.size,
+    total: [...lines.values()].reduce((sum, line) => sum + line.total, 0),
+    placed: [...lines.values()].reduce((sum, line) => sum + line.placed, 0) }
+}
+
+export const lineSchemePercent = (row: LineSummaryRow) => {
+  const total = row.scheme?.total ?? row.physicalTotal
+  return total ? (row.scheme?.placed ?? 0) / total * 100 : null
+}
+
+export const formatSchemeCoveragePercent = (value: number | null) => value == null ? '—'
+  : `${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
 
 function normalizeText(value: unknown) {
   return String(value ?? '').trim().toLowerCase()
