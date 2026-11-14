@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createReportExcelResponse } from '@/server/report-excel-file'
+import { LargeExportBusyError } from '@/server/large-export-guard'
 
 export const Route = createFileRoute('/api/report-excel')({ server: { handlers: {
   POST: async ({ request }) => {
@@ -13,6 +14,6 @@ export const Route = createFileRoute('/api/report-excel')({ server: { handlers: 
       assertReadableQuery(identity, data)
       return await runWithAccess(identity, 'downloadReportExcel', getOperationPermissions('@reportExport', data), () => createReportExcelResponse(data, request.signal))
     }
-    catch (error) { return new Response(error instanceof Error ? error.message : 'Не удалось подготовить Excel.', { status: 400, headers: { 'Cache-Control': 'no-store' } }) }
+    catch (error) { return new Response(error instanceof Error ? error.message : 'Не удалось подготовить Excel.', { status: error instanceof LargeExportBusyError ? 429 : 400, headers: { 'Cache-Control': 'no-store' } }) }
   },
 } } })

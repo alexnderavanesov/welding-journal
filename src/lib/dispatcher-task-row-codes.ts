@@ -45,10 +45,19 @@ function buildDispatcherTaskIndexRowsWithMode(
 ): DispatcherTaskIndexRow[] {
   const entries = new Map<string, DispatcherTaskIndexRow>()
   const targetRows = buildDispatcherTaskTargetRows(rows)
+  const expandedLineCodes = new Set<string>()
 
   for (const task of tasks) {
     if (task.kind === 'welder-stamp-expiry') continue
     const code = getDispatcherTaskCode(task)
+    // Several stamp warnings can assign the same code to every joint of a
+    // line. Expand that membership once; individual task pages stay complete.
+    if (dedupeByCode && (task.kind === 'percentage-line-control' ||
+        task.kind === 'line-consistency' && task.systemWarningCode !== 'СП-08')) {
+      const lineCode = `${getLineIdentityKey(task)}\u0000${code}`
+      if (expandedLineCodes.has(lineCode)) continue
+      expandedLineCodes.add(lineCode)
+    }
     for (const rowId of getDispatcherTaskTargetRowIds(task, targetRows)) {
       const taskKey = dedupeByCode ? `code:${code}` : task.key
       const entry = { rowId, taskKey, code }

@@ -7,6 +7,7 @@ import { LINE_PROGRAM_TRANSITION_KEY, transitionLinePrograms } from './line-prog
 import { initializePstoLinePrograms } from './psto-program-transition'
 import { initializePreHeatTreatmentMode } from './pre-heat-treatment-mode-transition'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
+import { initializeSystemDocumentIndexesInTransaction } from './system-document-index'
 
 /** Caller owns ONE transaction for all transitions and the readiness marker. */
 export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) {
@@ -23,7 +24,9 @@ export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) 
   }
   if (marker?.value === DATA_RELEASE_VALUE) {
     if (!transitionMarker) throw new Error('Нет подтверждения перехода программы линий. Выпуск остановлен.')
-    return { skipped: true, preHeatTreatment: await initializePreHeatTreatmentMode(tx) }
+    const preHeatTreatment = await initializePreHeatTreatmentMode(tx)
+    await initializeSystemDocumentIndexesInTransaction(tx)
+    return { skipped: true, preHeatTreatment, systemDocumentIndexesPrepared: true }
   }
   // No application writes are allowed during release. Locks also prevent a
   // late legacy warning/stamp update racing the owner conversion.
@@ -37,7 +40,11 @@ export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) 
   const pstoPrograms = await initializePstoLinePrograms(tx)
   const preHeatTreatment = await initializePreHeatTreatmentMode(tx)
   const stampTemplates = await simplifyStoredStampTemplates(tx)
+  // Operator preparation already runs during the release write pause. A cold
+  // legacy index belongs here, before users resume, not in their first save.
+  // The existing version markers make subsequent preparation idempotent.
+  await initializeSystemDocumentIndexesInTransaction(tx)
   await tx.insert(appSettings).values({ key: DATA_RELEASE_KEY, value: DATA_RELEASE_VALUE })
     .onConflictDoUpdate({ target: appSettings.key, set: { value: DATA_RELEASE_VALUE, updatedAt: new Date() } })
-  return { skipped: false, transition, warnings, pstoPrograms, preHeatTreatment, stampTemplates }
+  return { skipped: false, transition, warnings, pstoPrograms, preHeatTreatment, stampTemplates, systemDocumentIndexesPrepared: true }
 }

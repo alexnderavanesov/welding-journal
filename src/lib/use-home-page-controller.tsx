@@ -2329,6 +2329,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
   }
 
+  function runProtectedLnkResultChanges(changes: Record<string, unknown>, stage: string, action: () => void | Promise<void>) {
+    const values = Object.values(changes)
+    const save = () => values.includes(null) ? runProtectedDelete(`удаление результатов ${stage}`, action) : action()
+    return values.some(value => value !== null)
+      ? runProtectedEdit(`сохранение изменений результатов ${stage}`, save)
+      : save()
+  }
+
   async function handleProtectedEditRecord(row: WeldRow, fieldKey?: Parameters<typeof handleEditRecord>[1]) {
     const returnPageScrollPosition = getPageScrollPosition()
     await runProtectedEdit('редактирование стыка', async () => {
@@ -5086,10 +5094,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         runProtectedEdit('изменение результата ЛНК', () => replaceLnkResult(row, methodKey, result)),
       onClearResult: clearLnkResult,
       onResetPendingChanges: resetManagedLnkResultChanges,
-      onSaveChanges: () => runProtectedEdit('сохранение изменений результатов ЛНК', () =>
-        Object.values(managedLnkPendingResultChanges).includes(null)
-          ? runProtectedDelete('удаление результатов ЛНК', saveManagedLnkResultChanges)
-          : saveManagedLnkResultChanges()),
+      onSaveChanges: () => runProtectedLnkResultChanges(managedLnkPendingResultChanges, 'ЛНК', saveManagedLnkResultChanges),
       rootCauseTarget: activeRootCauseTarget?.kind === 'lnk-control' ? activeRootCauseTarget : undefined,
       onRunRootCauseAction: openWorkflowRootCauseAction,
       onDocumentDateSaved: returnFromWorkflowRootCause,
@@ -5298,10 +5303,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           pendingResultChanges: preHeatTreatmentResultEdits.pendingResultChanges,
           pendingResultCount: preHeatTreatmentResultEdits.pendingResultCount,
           onStageResultChange: preHeatTreatmentResultEdits.stageResultChange,
-          onSaveChanges: () => { void runProtectedEdit('сохранение изменений результатов НК до ТО', () =>
-            Object.values(preHeatTreatmentResultEdits.pendingResultChanges).includes(null)
-              ? runProtectedDelete('удаление результатов НК до ТО', preHeatTreatmentResultEdits.saveChanges)
-              : preHeatTreatmentResultEdits.saveChanges()) },
+          onSaveChanges: () => { void runProtectedLnkResultChanges(preHeatTreatmentResultEdits.pendingResultChanges,
+            'НК до ТО', preHeatTreatmentResultEdits.saveChanges) },
           onResetChanges: preHeatTreatmentResultEdits.resetChanges,
           onClose: currentWorkflowRootCauseDestination === 'pre-lnk-manager'
             ? returnFromWorkflowRootCause

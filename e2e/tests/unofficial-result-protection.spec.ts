@@ -22,8 +22,14 @@ async function openManager(page: Page) {
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК', exact: true }) })
+  // The registry initially loads 500 joints; use its ordinary server search
+  // instead of assuming this fixture belongs to the first page on a 200k DB.
+  await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(lineName)
   await dialog.getByLabel('Вид контроля в реестре').selectOption('uzkRequest')
-  await dialog.getByRole('button', { name: new RegExp(`${lineName} · ${joint}`) }).click()
+  const target = dialog.getByRole('button', { name: new RegExp(`^${lineName} · ${joint}(?:\\s|$)`) })
+  await expect(target).toHaveCount(1)
+  await expect(target).toBeVisible()
+  await target.click()
   return dialog
 }
 
@@ -129,7 +135,7 @@ test('негодный неофициальный: запрет годного �
 test('удаление последнего брака: возврат официальности, отмена удаления и серверный запрет старому клиенту', async ({ page }) => {
   const id = await seed(), writes: Request[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/_serverFn/') && /^updateWeldJoints?_/.test(rpcName(request.url()))) writes.push(request) })
+  page.on('request', request => { if (request.url().includes('/_serverFn/') && /^(?:updateWeldJoints?|removeLnkResults)_/.test(rpcName(request.url()))) writes.push(request) })
   await page.goto('/lnk')
   const restore = async () => {
     await page.locator('header').getByRole('button', { name: 'Официальность', exact: true }).click()

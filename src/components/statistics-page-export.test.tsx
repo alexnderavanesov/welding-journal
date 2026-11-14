@@ -59,10 +59,10 @@ function resultFor(request: StatisticsServerRequest, welded: number) {
   }
 }
 
-function renderStatistics() {
+function renderStatistics(props: { onOpenWeldRowIds?: (rowIds: number[], message?: string) => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } })
   clients.push(client)
-  render(<QueryClientProvider client={client}><StatisticsPage /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><StatisticsPage {...props} /></QueryClientProvider>)
   return client
 }
 
@@ -71,6 +71,61 @@ const readPreview = (): PrintableReport => JSON.parse(screen.getByTestId('previe
 const metric = (report: PrintableReport) => report.metrics?.find(item => item.label === 'Сварено за период')?.value
 const meta = (report: PrintableReport, label: string) => report.meta?.find(item => item.label === label)?.value
 const closePreview = () => fireEvent.click(screen.getByRole('button', { name: 'Закрыть предпросмотр' }))
+
+it('retains the same-parameter result during refresh, gates actions and hides it on a failed refresh', async () => {
+  const update = deferredResult(), retry = deferredResult(), openRows = vi.fn()
+  mocks.rpc.mockImplementationOnce(async ({ data }) => {
+    const result = resultFor(data, 5)
+    return { ...result, summary: { ...result.summary, good: 5 }, generalStateRowIds: { ...result.generalStateRowIds, good: [17] } }
+  }).mockReturnValueOnce(update.promise).mockReturnValueOnce(retry.promise)
+  const client = renderStatistics({ onOpenWeldRowIds: openRows })
+  const value = () => screen.getByText('Сварено за период', { exact: true }).parentElement!
+  await waitFor(() => expect(reportButton()).toBeEnabled())
+  expect(value()).toHaveTextContent('5')
+  expect(screen.getByText('Годен', { exact: true }).closest('button')).not.toBeNull()
+  act(() => { void client.invalidateQueries({ queryKey: ['statistics-server'] }) })
+  await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2))
+  expect(value()).toBeVisible()
+  expect(value()).toHaveTextContent('5')
+  expect(screen.getByRole('status')).toHaveTextContent('Показан предыдущий результат для этих же параметров')
+  expect(reportButton()).toBeDisabled()
+  expect(screen.getByText('Годен', { exact: true }).closest('button')).toBeNull()
+  expect(openRows).not.toHaveBeenCalled()
+  await act(async () => update.reject(new Error('Доступ к статистике больше не разрешён')))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Доступ к статистике больше не разрешён')
+  expect(screen.queryByText(/Показан предыдущий результат/)).not.toBeInTheDocument()
+  expect(value()).not.toBeVisible()
+  expect(reportButton()).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить расчёт' }))
+  await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(3))
+  expect(value()).not.toBeVisible()
+  await act(async () => retry.resolve(resultFor(mocks.rpc.mock.calls[2][0].data, 2)))
+  await waitFor(() => expect(reportButton()).toBeEnabled())
+  expect(value()).toHaveTextContent('2')
+  expect(screen.queryByText(/Показан предыдущий результат/)).not.toBeInTheDocument()
+  expect(metric(await openPreview())).toBe('2')
+})
+
+it('labels retained same-parameter data while offline but hides it after a parameter change', async () => {
+  const update = deferredResult()
+  mocks.rpc.mockImplementationOnce(async ({ data }) => resultFor(data, 5)).mockReturnValue(update.promise)
+  const client = renderStatistics()
+  await waitFor(() => expect(reportButton()).toBeEnabled())
+  act(() => { onlineManager.setOnline(false); void client.invalidateQueries({ queryKey: ['statistics-server'] }) })
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Ожидаем подключения'))
+  expect(screen.getByText('Сварено за период', { exact: true })).toBeVisible()
+  expect(screen.getByRole('status')).toHaveTextContent('Показан предыдущий результат')
+  expect(reportButton()).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Настройки отчета' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Стыки' }))
+  expect(screen.getByText('Сварено за период', { exact: true })).not.toBeVisible()
+  expect(screen.queryByText(/Показан предыдущий результат/)).not.toBeInTheDocument()
+  expect(mocks.rpc).toHaveBeenCalledTimes(1)
+  act(() => { onlineManager.setOnline(true) })
+  await waitFor(() => expect(mocks.rpc.mock.calls.some(([args]) => args.data.unit === 'joints')).toBe(true))
+  await act(async () => update.resolve(resultFor({ tab: 'general', unit: 'joints' }, 2)))
+  await waitFor(() => expect(reportButton()).toBeEnabled())
+})
 
 async function openPreview() {
   fireEvent.click(reportButton())

@@ -4,7 +4,7 @@ import { seedSmoothnessFixture, cleanupSmoothnessFixture, SMOOTHNESS_PROJECT } f
 
 const enabled = !!process.env.SMOOTHNESS_LABEL
 test.skip(!enabled, 'Explicit local performance comparison')
-test.use({ trace: 'off', video: 'off', actionTimeout: 10000 })
+test.use({ trace: process.env.SMOOTHNESS_PLAYWRIGHT_TRACE === '1' ? 'on' : 'off', video: 'off', actionTimeout: 10000 })
 test.beforeAll(async () => { if (enabled) { test.setTimeout(180000); await seedSmoothnessFixture() } })
 test.afterAll(async () => { if (enabled) { test.setTimeout(180000); await cleanupSmoothnessFixture() } })
 async function reportReady(page: Page) {
@@ -42,6 +42,7 @@ test('all sections: first opening, refresh and return, with populated registries
 test('reports: native wheel, horizontal movement and resize with expanded groups', async ({ page }, info) => {
   test.setTimeout(600000)
   const probe = await createSmoothnessProbe(page, info)
+  const groupingOnly = process.env.SMOOTHNESS_GROUPING_ONLY === '1'
   try {
     for (const route of ['journal', 'lnk', 'psto']) {
       await page.goto(`/${route}`); await reportReady(page)
@@ -49,22 +50,31 @@ test('reports: native wheel, horizontal movement and resize with expanded groups
       await expect(page.getByText('Найдено: 5000', { exact: true })).toBeVisible({ timeout: 60000 })
       const grid = page.locator('.journal-grid-frame')
       await page.waitForLoadState('networkidle')
-      for (let round = 0; round < 3; round++) {
+      if (!groupingOnly) for (let round = 0; round < 3; round++) {
         await probe.scroll(`${route}:vertical:${round}`, grid)
         await probe.scroll(`${route}:horizontal:${round}`, grid, true)
         await probe.resize(`${route}:resize:${round}`, grid, 'line')
       }
-      for (const column of ['line', 'projectTitle', 'subtitleCode']) {
-        await grid.locator(`.ag-header-cell[col-id="${column}"]`).click({ button: 'right' })
-        await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
-      }
+      // Configuration must settle before measuring expansion: otherwise the
+      // locator's retry interval for the previous grouping dominates its time.
+      await probe.measure(`${route}:configure-groups`, async () => {
+        for (const column of ['line', 'projectTitle', 'subtitleCode']) {
+          await grid.locator(`.ag-header-cell[col-id="${column}"]`).click({ button: 'right' })
+          await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
+        }
+        // Observe readiness each frame, without the assertion's 500 ms retry
+        // step becoming part of the reported configuration latency.
+        await page.waitForFunction(() => document.querySelector('.journal-grid-frame')?.getAttribute('aria-busy') === 'false'
+          && Boolean(document.querySelector('.journal-grid-frame .ag-row[row-id]')), undefined, { timeout: 60000 })
+        await reportReady(page)
+      })
       await probe.measure(`${route}:expand-groups`, async () => {
         await grid.locator('.ag-row-group .ag-cell[col-id="line"]').first().click({ button: 'right' })
         await page.getByTestId('context-action-menu').getByRole('button', { name: 'Развернуть все', exact: true }).click()
         await expect(grid.locator('.ag-row:not(.ag-row-group) .ag-cell[col-id="joint"]').first()).toHaveText(/^(?:F|ОП)\d+/)
         await expect(grid).toHaveAttribute('aria-busy', 'false')
       })
-      for (let round = 0; round < 3; round++) {
+      if (!groupingOnly) for (let round = 0; round < 3; round++) {
         await probe.scroll(`${route}:group-vertical:${round}`, grid)
         await probe.scroll(`${route}:group-horizontal:${round}`, grid, true)
         await probe.resize(`${route}:group-resize:${round}`, grid, 'line')

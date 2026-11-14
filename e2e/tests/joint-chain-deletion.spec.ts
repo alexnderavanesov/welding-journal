@@ -1,10 +1,14 @@
 import { asE2eOwner } from '../with-owner-access'
 import { deleteJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
+import pg from 'pg'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { writeFile } from 'node:fs/promises'
 import { withE2eDatabase } from '../database'
 import { createWeldJoints as raw_createWeldJoints , deleteWeldJoint as raw_deleteWeldJoint, deleteWeldJoints as raw_deleteWeldJoints } from '@/server/weld-mutations'
 import { replaceWeldJoints as raw_replaceWeldJoints } from '@/server/weld-import'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { accessContext } from '@/server/access-store'
 
 const project = 'E2E chain deletion protection'
 type Target = { id: number; version: string }
@@ -36,7 +40,7 @@ async function seed(names = ['S1', 'S1R1', 'S1R2', 'F9']) {
 }
 const snapshot = () => withE2eDatabase(async db => (await db.query('select * from weld_joints where project_title=$1 order by id', [project])).rows)
 
-for (const deletionFirst of [true, false]) test(`создание продолжения и удаление источника конкурентно: удаление получает блокировку ${deletionFirst ? 'первым' : 'вторым'}`, async () => {
+for (const deletionFirst of [true, false]) test(`создание продолжения и удаление источника конкурентно: удаление получает блокировку ${deletionFirst ? 'первым' : 'вторым'}`, async ({}, info) => {
   const createSource = () => withE2eDatabase(async db => (await db.query<Target>(`insert into weld_joints
     (project_title,subtitle_code,line,joint,weld_date,connection_type,has_vik,vik_result,has_rk,rk_result,stamp_1_k)
     values ($1,'DELETE','RACE','S1','2026-09-01','С19','да','годен','да','ремонт','A') returning id,xmin::text as version`, [project])).rows[0])
@@ -63,24 +67,109 @@ for (const deletionFirst of [true, false]) test(`создание продолж
     } finally { await db.query('rollback') }
   })
   const pending: Array<Promise<PromiseSettledResult<unknown>>> = []
-  const start = (run: () => Promise<unknown>) => pending.push(run().then(
+  type Writer = 'create' | 'delete'
+  const writerContext = new AsyncLocalStorage<Writer>()
+  const start = (writer: Writer, run: () => Promise<unknown>) => pending.push(writerContext.run(writer, run).then(
     value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }),
   ))
+  const normalizeSql = (text: string) => text.replace(/'(?:''|[^'])*'/g, "'?'").replace(/\s+/g, ' ').trim()
+  const ownedClients = new Map<number, { operation: string; operationId: string; sql: string }>()
+  const ownedWriters = new Map<Writer, { pid: number; operationId: string }>()
+  const identificationErrors: string[] = []
+  type BlockedSession = { pid: number; application_name: string; state: string; wait_event_type: string | null;
+    wait_event: string | null; backend_type: string; blockers: number[]; is_waiter: boolean; query: string }
+  const graphs: { phase: string; elapsedMs: number; sessions: BlockedSession[] }[] = []
+  const raceStart = performance.now()
+  let phase = 'first-writer', holderPid: number | undefined, orderingVerified = false
+  const originalQuery = pg.Client.prototype.query
+  pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
+    const context = accessContext.getStore()
+    // pg receives this backend PID during connection startup. Observing it adds
+    // no SQL and distinguishes these writers from detached/background sessions.
+    const pid = (this as pg.Client & { processID?: number }).processID
+    const writer = writerContext.getStore()
+    if (pid && context && writer && context.operation === (writer === 'create' ? 'createWeldJoints' : 'deleteWeldJoint')) {
+      const query = args[0]
+      const text = typeof query === 'string' ? query
+        : query && typeof query === 'object' && 'text' in query && typeof query.text === 'string' ? query.text : '<non-text query>'
+      ownedClients.set(pid, { operation: context.operation, operationId: context.operationId, sql: normalizeSql(text) })
+      if (/^begin\b/i.test(text.trim())) {
+        if (ownedWriters.has(writer)) identificationErrors.push(`${writer}: more than one main transaction observed`)
+        else ownedWriters.set(writer, { pid, operationId: context.operationId })
+      }
+    }
+    return (originalQuery as (...args: unknown[]) => unknown).apply(this, args)
+  } as typeof originalQuery
   try {
     const pid = await Promise.race([ready, holder.then(() => { throw new Error('Lock holder ended before readiness') })])
+    holderPid = pid
     // Starting promises in order is not proof of lock order. Queue one writer
     // behind our row lock, then observe the second behind it before releasing.
-    const waiting = () => withE2eDatabase(async db => Number((await db.query(`with recursive waiting(pid) as (
+    const waiting = () => withE2eDatabase(async db => {
+      const sessions = (await db.query<BlockedSession>(`with recursive waiting(pid) as (
       select pid from pg_stat_activity where datname=current_database() and $1::int=any(pg_blocking_pids(pid))
       union select a.pid from pg_stat_activity a join waiting w on w.pid=any(pg_blocking_pids(a.pid))
-        where a.datname=current_database()) select count(*) n from waiting`, [pid])).rows[0].n))
-    start(deletionFirst ? remove : create)
-    await expect.poll(waiting).toBe(1)
-    start(deletionFirst ? create : remove)
-    await expect.poll(waiting).toBe(2)
+        where a.datname=current_database())
+      select a.pid,a.application_name,a.state,a.wait_event_type,a.wait_event,a.backend_type,
+        pg_blocking_pids(a.pid) blockers, a.pid in (select pid from waiting) is_waiter,a.query
+      from pg_stat_activity a where a.datname=current_database() and (a.pid=$1 or a.pid in (select pid from waiting))
+      order by a.pid`, [pid])).rows.map(row => ({ ...row, query: normalizeSql(row.query) }))
+      const previous = graphs.at(-1)
+      if (previous?.phase !== phase || JSON.stringify(previous.sessions) !== JSON.stringify(sessions)) {
+        graphs.push({ phase, elapsedMs: Math.round(performance.now() - raceStart), sessions })
+        if (graphs.length > 20) graphs.splice(1, 1)
+      }
+      return sessions
+    })
+    const firstWriter: Writer = deletionFirst ? 'delete' : 'create'
+    const secondWriter: Writer = deletionFirst ? 'create' : 'delete'
+    const firstWaitsForHolder = (sessions: BlockedSession[]) => {
+      const first = ownedWriters.get(firstWriter)
+      return Boolean(first && sessions.find(session => session.pid === first.pid)?.blockers.includes(pid))
+    }
+    const waitsTransitivelyFor = (sessions: BlockedSession[], waiter: number, blocker: number) => {
+      const pending = [waiter], seen = new Set<number>()
+      while (pending.length) {
+        const current = pending.pop()!
+        if (seen.has(current)) continue
+        seen.add(current)
+        for (const parent of sessions.find(session => session.pid === current)?.blockers ?? []) {
+          if (parent === blocker) return true
+          pending.push(parent)
+        }
+      }
+      return false
+    }
+    start(firstWriter, deletionFirst ? remove : create)
+    await expect.poll(async () => ({ identified: ownedWriters.size === 1,
+      firstWaitsForHolder: firstWaitsForHolder(await waiting()), identificationErrors: [...identificationErrors] }))
+      .toEqual({ identified: true, firstWaitsForHolder: true, identificationErrors: [] })
+    phase = 'second-writer'
+    start(secondWriter, deletionFirst ? create : remove)
+    // A dispatcher publisher can also wait behind this row lock. Its backend
+    // must neither fail the test nor stand in for the actual second writer.
+    await expect.poll(async () => {
+      const sessions = await waiting(), first = ownedWriters.get(firstWriter), second = ownedWriters.get(secondWriter)
+      return { identified: ownedWriters.size === 2, firstWaitsForHolder: firstWaitsForHolder(sessions),
+        distinct: Boolean(first && second && first.pid !== second.pid && first.operationId !== second.operationId),
+        secondWaitsForFirst: Boolean(first && second && waitsTransitivelyFor(sessions, second.pid, first.pid)),
+        identificationErrors: [...identificationErrors] }
+    }).toEqual({ identified: true, firstWaitsForHolder: true, distinct: true, secondWaitsForFirst: true, identificationErrors: [] })
+    orderingVerified = true
   } finally {
-    release()
-    await Promise.allSettled([holder, ...pending])
+    try {
+      // Keep the still-blocked graph on success as well as failure, including
+      // unrelated sessions. No bind values or account identities are recorded.
+      const path = info.outputPath('chain-deletion-blocked-graph.json')
+      await writeFile(path, JSON.stringify({ deletionFirst, phase, holderPid, orderingVerified, identificationErrors,
+        ownedWriters: [...ownedWriters].map(([writer, value]) => ({ writer, ...value })),
+        ownedClients: [...ownedClients].map(([pid, value]) => ({ pid, ...value })), graphs }, null, 2))
+      await info.attach('chain-deletion-blocked-graph', { path, contentType: 'application/json' })
+    } finally {
+      release()
+      try { await Promise.allSettled([holder, ...pending]) }
+      finally { pg.Client.prototype.query = originalQuery }
+    }
   }
   await holder
   const results = await Promise.all(pending)

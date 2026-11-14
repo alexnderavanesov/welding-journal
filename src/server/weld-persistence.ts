@@ -17,15 +17,19 @@ restoreActivePstoCancelledResult,
 withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
 import { hasHeatTreatmentReportState,hasLnkReportEntry,withPendingLnkResults } from '@/lib/report-control-state'
-import { hasWeldDate,normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
+import { hasWeldDate,normalizeControlAvailabilityValue, isPendingLnkResultValue, normalizeControlResultText } from '@/lib/report-value-utils'
+import { isCompletedPstoResult, normalizeTvmtResult } from '@/lib/tvmt-cycle'
+import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { normalizeControlAvailabilityStorageText } from '@/lib/control-availability-values'
 import {
 isVirtualWeldField,
 WELD_FIELDS,
+FIELD_BY_KEY,
 type WeldFieldKey,
 type WeldInput
 } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
+import { parseCell } from '@/lib/weld-import-parsers'
 import {
 splitWeldImportInsertBatches
 } from '@/lib/weld-import-limits'
@@ -103,8 +107,24 @@ const PRIMARY_PSTO_HISTORY_FIELD_KEYS = [
   'tvmtRequest', 'tvmtRequestDate', 'tvmtResult', 'tvmtConclusionDate', 'tvmtConclusion',
 ] as const satisfies readonly WeldFieldKey[]
 
+const RESULT_HISTORY_FIELDS = [...LNK_METHODS.map(method => method.resultKey), 'pstoResult', 'tvmtResult'] as const
+
+function shouldPreserveUnchangedResult(input: WeldInput, previous: WeldInput, field: typeof RESULT_HISTORY_FIELDS[number]) {
+  const value = input[field]
+  if (value !== previous[field] || typeof value !== 'string') return false
+  const text = value.trim().toLowerCase()
+  if (!text || text === '-' || isPendingLnkResultValue(value) || text === 'отменен') return false
+  // Explicit cancellation markers retain their existing restoration behavior.
+  if (text === 'годен (отменен)' || text === 'проведено (отменен)') return false
+  if (text !== normalizeControlResultText(value) && (field === 'pstoResult' ? isCompletedPstoResult(value)
+    : field === 'tvmtResult' ? normalizeTvmtResult(value)
+      : isFinalLnkResultValue(value) || normalizeControlResultText(value) === 'да')) return false
+  return true
+}
+
 type ControlHistoryPersistenceOptions = {
   preserveRecordedControlHistory?: boolean
+  previous?: WeldInput
 }
 
 export function toDbInsert(
@@ -112,7 +132,30 @@ export function toDbInsert(
   isCreate = false,
   options: ControlHistoryPersistenceOptions = {},
 ): NewWeldJoint {
-  const normalized = prepareWeldInputForPersistence(input)
+  // New recognized PSTO facts must remain completed after generic cell parsing.
+  // Unchanged stored history is handled separately below, without migration.
+  let source = input.pstoResult !== 'проведено' && isCompletedPstoResult(input.pstoResult)
+    ? { ...input, pstoResult: 'проведено' } : input
+  const tvmt = normalizeTvmtResult(input.tvmtResult)
+  const tvmtResult = tvmt === 'good' ? 'годен' : 'не годен'
+  if (tvmt && input.tvmtResult !== tvmtResult) source = { ...source, tvmtResult }
+  const normalized = prepareWeldInputForPersistence(source)
+  // Unrelated edits must not normalize or clear an already stored result. New
+  // values still follow the validated workflow and its normal persistence path.
+  if (options.previous) {
+    let restoredResult = false
+    for (const key of RESULT_HISTORY_FIELDS) {
+      if (normalized[key] !== input[key] && shouldPreserveUnchangedResult(input, options.previous, key)) {
+        normalized[key] = input[key]
+        const method = LNK_METHODS.find(method => method.resultKey === key)
+        if (method) normalized[method.defectDescriptionKey] = parseCell(
+          FIELD_BY_KEY.get(method.defectDescriptionKey)!, input[method.defectDescriptionKey],
+        )
+        restoredResult = true
+      }
+    }
+    if (restoredResult) normalized.finalStatus = calculateFinalStatus({ ...input, ...normalized })
+  }
   if (options.preserveRecordedControlHistory) {
     // Internal opt-in after contextual validation. A line move with unchanged
     // stages must preserve facts just as a validated stage correction does.
@@ -268,7 +311,7 @@ export function buildWeldBatchUpdatePayload(
   const timestampUpdates = getProfileTimestampUpdates(record, previous, now)
   const values: Record<string, unknown> = {
     id,
-    ...toDbInsert(record, false, options),
+    ...toDbInsert(record, false, { ...options, previous }),
     weldingUpdatedAt: timestampUpdates.weldingUpdatedAt ?? previous.weldingUpdatedAt,
     pstoCreatedAt: timestampUpdates.pstoCreatedAt ?? previous.pstoCreatedAt,
     pstoUpdatedAt: timestampUpdates.pstoUpdatedAt ?? previous.pstoUpdatedAt,

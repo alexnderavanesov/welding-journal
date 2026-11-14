@@ -111,10 +111,13 @@ export async function changeProgramInTransaction(tx: SystemDocumentSequenceTrans
       const token = hashJsonRecordTuple([getLineProgramControlToken(currentLine.updatedAt, allRows, data.changes), removalPreview.token])
       const { removals, hiddenRemovalCount } = projectControlRequestRemovalPreview(removalPreview, accessContext.getStore()?.identity)
       const result = { token, requestRemovals: removals, hiddenRemovalCount, excess: new Set(preview.newExcess.map(programExcessIdentity)).size, changed: preview.records.length, rows: [] as WeldRow[], lineSummary: null as Awaited<ReturnType<typeof loadLineProgramOverviews>>[number] | null }
-      // Run save checks for preview too; no documents, assignment flags or indexes are written.
-      prepareServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
-      validateServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
-      if (previewOnly) return result
+      // Preview has no writes. Commit runs these same checks in saveAssignedRows
+      // with this locked context, before any flags, documents or indexes change.
+      if (previewOnly) {
+        prepareServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
+        validateServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
+        return result
+      }
       if (data.previewToken !== token) throw new Error('Расчёт или выбор изменился после проверки. Повторно проверьте изменения; ничего не сохранено.')
       if (!supports && preview.newExcess.length && !data.confirmedExcess) throw new Error(`Подтвердите назначение сверх нормы или несколько способов контроля ${PROGRAM_DEMAND_LABELS.common}.`)
       result.rows = await saveAssignedRows(tx, preview.records, previousRows, preview.records.filter(row => row.layeredControlAssigned && !previousRows.get(row.id)?.layeredControlAssigned).map(row => row.id), context)

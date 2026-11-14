@@ -25,6 +25,17 @@ export function mergePreHeatTreatmentControlsIntoRows<
 ): Array<Row & Partial<Record<WeldFieldKey, unknown>> & {
   preHeatTreatmentControls: PreHeatTreatmentControlRecord[]
 }> {
+  const controlsByWeldId = groupPreHeatTreatmentControls(controls)
+  return rows.map((row) => {
+    const rowControls = controlsByWeldId.get(row.id) ?? []
+    return {
+      ...attachPreHeatTreatmentReportValues(row, rowControls),
+      preHeatTreatmentControls: rowControls,
+    }
+  })
+}
+
+export function groupPreHeatTreatmentControls(controls: readonly PreHeatTreatmentControlRecord[]) {
   const controlsByWeldId = new Map<number, PreHeatTreatmentControlRecord[]>()
   for (const control of controls) {
     const current = controlsByWeldId.get(control.weldJointId) ?? []
@@ -40,13 +51,7 @@ export function mergePreHeatTreatmentControlsIntoRows<
     )
   }
 
-  return rows.map((row) => {
-    const rowControls = controlsByWeldId.get(row.id) ?? []
-    return {
-      ...attachPreHeatTreatmentReportValues(row, rowControls),
-      preHeatTreatmentControls: rowControls,
-    }
-  })
+  return controlsByWeldId
 }
 
 export function mergePstoRepeatCyclesIntoRows<

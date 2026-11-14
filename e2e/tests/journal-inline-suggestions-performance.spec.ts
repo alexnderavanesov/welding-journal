@@ -17,7 +17,7 @@ test('250000 joints: populated suggestions do not block free typing or survive a
   await seedDispatcherLargeLineFixture(250000)
   // Populate every fixture row, rather than measuring a scan of an empty column.
   await withLineProgramFixture(db => db.query("update weld_joints set shielding_gas='Gas '||lpad((id%20)::text,2,'0') where project_title=$1", [LARGE_LINE_PROJECT]))
-  const directory = resolve('.output/server')
+  const directory = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'server')
   const manifest = readFileSync(resolve(directory, readdirSync(directory).find(name => name.includes('tanstack-start-server-fn-resolver'))!), 'utf8')
   const observed = `${baseURL}/_serverFn/${manifest.match(/"([a-f0-9]{64})":/)![1]}`
   const response = await request.post(siblingRpcUrl(observed, 'refreshDispatcherTaskSnapshot_createServerFn_handler'), {

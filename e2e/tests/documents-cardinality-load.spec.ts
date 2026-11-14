@@ -190,15 +190,30 @@ test(`${process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1' ? 'PLAN DIAGNOSTIC ONLY: '
       const grid = page.locator(`[data-document-history-grid^="${kind}"]`)
       await expect(grid.getByText(`Найдено: ${total}`, { exact: true })).toBeVisible({ timeout: 120000 })
       for (const fraction of [0, .2, .4, .6, .8, 1, 0]) {
-        await grid.locator('.ag-grid-viewport').evaluate((element, value) => { element.scrollTop = (element.scrollHeight - element.clientHeight) * value }, fraction)
-        await expect.poll(() => grid.locator('.ag-row[row-id^="document:"]').count(), { timeout: 120000 }).toBeGreaterThan(0)
-        await expect(grid.locator('.ag-row-loading')).toHaveCount(0, { timeout: 120000 })
-        await page.waitForLoadState('networkidle')
-        const indices = await grid.locator('.ag-row[row-id^="document:"]').evaluateAll(elements => elements.map(element => Number(element.getAttribute('row-index'))))
-        // Prove that the browser actually visits distant blocks, rather than
-        // measuring the first viewport repeatedly after a no-op scroll.
-        if (fraction) expect(Math.max(...indices)).toBeGreaterThanOrEqual(Math.floor((total - 1) * fraction) - 100)
-        else expect(Math.min(...indices)).toBe(0)
+        // The document owns vertical scrolling. An inner scrollTop write races
+        // its adapter; old rows and an already-fired networkidle can both pass
+        // before the requested block even starts loading.
+        await page.evaluate(value => {
+          const owner = document.scrollingElement!
+          window.scrollTo({ top: (owner.scrollHeight - owner.clientHeight) * value, behavior: 'instant' })
+        }, fraction)
+        let indices: number[] = []
+        await expect(async () => {
+          const snapshot = await grid.evaluate(element => ({
+            loading: element.querySelectorAll('.ag-row-loading').length,
+            indices: Array.from(element.querySelectorAll('.ag-row[row-id^="document:"]'), row => Number(row.getAttribute('row-index'))),
+          }))
+          expect(snapshot.loading).toBe(0)
+          expect(snapshot.indices.length).toBeGreaterThan(0)
+          const target = Math.floor((total - 1) * fraction)
+          if (fraction === 0) expect(Math.min(...snapshot.indices)).toBe(0)
+          else if (fraction === 1) expect(Math.max(...snapshot.indices)).toBe(total - 1)
+          else {
+            expect(Math.max(...snapshot.indices)).toBeGreaterThanOrEqual(target - 100)
+            expect(Math.min(...snapshot.indices)).toBeLessThanOrEqual(target + 100)
+          }
+          indices = snapshot.indices
+        }).toPass({ timeout: 120000 })
         await cdp.send('HeapProfiler.collectGarbage')
         const heap = await cdp.send('Runtime.getHeapUsage')
         const rows = await grid.locator('.ag-row[row-id^="document:"]').count()

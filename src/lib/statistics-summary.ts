@@ -207,6 +207,9 @@ export function buildStatisticsSummary(
   statusRows: WeldRow[] = rows,
   readFinalStatus: StatisticsFinalStatusReader = createStatisticsFinalStatusReader(statusRows),
 ): StatisticsSummary {
+  const controls = createStatisticsControlReaders()
+  const { hasLnkClosedData, hasStatisticsLnkRequest, isStatisticsLnkActive, isLnkRequestInRange,
+    hasPstoClosedData, hasStatisticsPstoRequest, isStatisticsPstoActive, isPstoRequestInRange } = controls
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to))
   const pendingWithoutWeldRows = rows.filter((row) => {
     if (hasText(row.weldDate)) return false
@@ -349,6 +352,7 @@ export function buildStatisticsSummary(
     },
   }
   const tvmtMethod = buildTvmtStatisticsMethod({
+    controls,
     rows,
     periodRows,
     weightedRows,
@@ -368,6 +372,7 @@ export function buildStatisticsSummary(
     to,
     unit,
     controlDynamicsScaleSetting,
+    controls,
   )
 
   return {
@@ -412,6 +417,7 @@ export function buildStatisticsSummary(
 }
 
 function buildTvmtStatisticsMethod({
+  controls,
   rows,
   periodRows,
   weightedRows,
@@ -425,7 +431,9 @@ function buildTvmtStatisticsMethod({
   from: string
   to: string
   unit: StatisticsUnit
+  controls: ReturnType<typeof createStatisticsControlReaders>
 }): StatisticsMethodSummary {
+  const { isStatisticsTvmtRequired, isStatisticsTvmtActive, hasStatisticsTvmtRequest, hasTvmtClosedData, isTvmtRequestInRange } = controls
   const requiredRequestRows = periodRows.filter(isStatisticsTvmtActive)
   const createdRequestRows = requiredRequestRows.filter(hasStatisticsTvmtRequest)
   const activeRows = weightedRows.filter(isStatisticsTvmtActive)
@@ -612,104 +620,125 @@ function sumRowsByStatus(rows: WeldRow[], statuses: Array<string | null>, unit: 
   return rows.reduce((total, row, index) => total + (statuses[index] === status ? getRowWeight(row, unit) : 0), 0)
 }
 
-function hasLnkClosedData(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
-  if (isStatisticsLnkNoNeed(row, method)) return false
-  const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
-  return hasRealLnkResultValue(result) || result === 'годен (отменен)'
-}
-
-function hasStatisticsLnkRequest(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
-  if (!hasText(row[method.requestKey])) return false
-  if (isStatisticsLnkNoNeed(row, method)) return false
-  return !isCancelledControlValue(row[method.enabledKey]) || hasLnkClosedData(row, method)
-}
-
-function isStatisticsLnkActive(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
-  return isEnabledControlValue(row[method.enabledKey]) && !isStatisticsLnkNoNeed(row, method) &&
-    (!isRevisionNotActual(row.revisionActuality) || hasLnkClosedData(row, method))
-}
-
-function isStatisticsLnkNoNeed(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
-  return String(getLnkDisplayValue(row, method.resultKey) ?? '').trim().toLowerCase() === 'нет потребности'
-}
-
-function isLnkRequestInRange(row: WeldRow, method: (typeof LNK_METHODS)[number], from: string, to: string) {
-  if (!hasStatisticsLnkRequest(row, method)) return false
-  return isIsoDateInRange(getLnkRequestDate(row, method), from, to)
-}
-
 function getLnkRequestDate(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
   return parseDateForStatistics(row[method.requestDateKey]) ?? parseDateFromText(row[method.requestKey]) ?? parseDateForStatistics(row.lnkCreatedAt)
-}
-
-function hasPstoClosedData(row: WeldRow) {
-  if (isStatisticsPstoNoNeed(row)) return false
-  const result = normalizeControlResultText(row.pstoResult)
-  return result === 'проведено' || result === 'проведено (отменен)'
-}
-
-function hasStatisticsPstoRequest(row: WeldRow) {
-  if (!hasText(row.pstoRequest)) return false
-  if (isStatisticsPstoNoNeed(row)) return false
-  return (
-    !isCancelledControlValue(row.pstoRequired) ||
-    hasPstoClosedData(row) ||
-    hasCancelledPstoContinuation(row)
-  )
-}
-
-function isStatisticsPstoActive(row: WeldRow) {
-  return (
-    isEnabledControlValue(row.pstoRequired) ||
-    requiresPostHeatTreatmentCompletion(row) ||
-    hasCancelledPstoContinuation(row)
-  ) && !isStatisticsPstoNoNeed(row) && (!isRevisionNotActual(row.revisionActuality) || hasPstoClosedData(row))
-}
-
-function hasCancelledPstoContinuation(row: WeldRow) {
-  if (!isCancelledControlValue(row.pstoRequired) || !hasText(row.pstoRequest)) return false
-  return String(row.pstoResult ?? '').trim().toLocaleLowerCase('ru-RU') !== 'отменен'
-}
-
-function isStatisticsPstoNoNeed(row: WeldRow) {
-  return String(getPstoDisplayValue(row, 'pstoResult') ?? '').trim().toLowerCase() === 'нет потребности'
-}
-
-function isPstoRequestInRange(row: WeldRow, from: string, to: string) {
-  if (!hasStatisticsPstoRequest(row)) return false
-  return isIsoDateInRange(getPstoRequestDate(row), from, to)
 }
 
 function getPstoRequestDate(row: WeldRow) {
   return parseDateForStatistics(row.pstoRequestDate) ?? parseDateFromText(row.pstoRequest) ?? parseDateForStatistics(row.pstoCreatedAt)
 }
 
-function isStatisticsTvmtRequired(row: WeldRow) {
-  return hasPstoClosedData(row)
-}
+// Only this synchronous calculation owns these lookups. A new summary always
+// reads fresh facts, including when the caller reuses and edits the same rows.
+function createStatisticsControlReaders() {
+  type Facts = Partial<Record<(typeof LNK_METHODS)[number]['resultKey'] | 'pstoNoNeed' | 'pstoClosed', boolean>>
+  const byRow = new WeakMap<WeldRow, Facts>()
+  const facts = (row: WeldRow) => {
+    let value = byRow.get(row)
+    if (!value) byRow.set(row, value = {})
+    return value
+  }
 
-function isStatisticsTvmtActive(row: WeldRow) {
-  return isStatisticsTvmtRequired(row) && (!isRevisionNotActual(row.revisionActuality) || hasTvmtClosedData(row))
-}
+  function hasLnkClosedData(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+    if (isStatisticsLnkNoNeed(row, method)) return false
+    const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
+    return hasRealLnkResultValue(result) || result === 'годен (отменен)'
+  }
 
-function hasStatisticsTvmtRequest(row: WeldRow) {
-  return isStatisticsTvmtRequired(row) && hasText(row.tvmtRequest)
-}
+  function hasStatisticsLnkRequest(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+    if (!hasText(row[method.requestKey])) return false
+    if (isStatisticsLnkNoNeed(row, method)) return false
+    return !isCancelledControlValue(row[method.enabledKey]) || hasLnkClosedData(row, method)
+  }
 
-function hasTvmtClosedData(row: WeldRow) {
-  return isStatisticsTvmtRequired(row) && normalizeTvmtStatisticsResult(row.tvmtResult) !== null
-}
+  function isStatisticsLnkActive(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+    return isEnabledControlValue(row[method.enabledKey]) && !isStatisticsLnkNoNeed(row, method) &&
+      (!isRevisionNotActual(row.revisionActuality) || hasLnkClosedData(row, method))
+  }
 
-function isTvmtRequestInRange(row: WeldRow, from: string, to: string) {
-  if (!hasStatisticsTvmtRequest(row)) return false
-  const date = parseDateForStatistics(row.tvmtRequestDate) ??
-    parseDateFromText(row.tvmtRequest) ??
-    parseDateForStatistics(row.pstoCreatedAt)
-  return isIsoDateInRange(date, from, to)
+  function isStatisticsLnkNoNeed(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+    const cache = facts(row)
+    return cache[method.resultKey] ??= String(getLnkDisplayValue(row, method.resultKey) ?? '').trim().toLowerCase() === 'нет потребности'
+  }
+
+  function isLnkRequestInRange(row: WeldRow, method: (typeof LNK_METHODS)[number], from: string, to: string) {
+    if (!hasStatisticsLnkRequest(row, method)) return false
+    return isIsoDateInRange(getLnkRequestDate(row, method), from, to)
+  }
+
+  function hasPstoClosedData(row: WeldRow) {
+    const cache = facts(row)
+    if (cache.pstoClosed !== undefined) return cache.pstoClosed
+    const result = normalizeControlResultText(row.pstoResult)
+    return cache.pstoClosed = !isStatisticsPstoNoNeed(row) && (result === 'проведено' || result === 'проведено (отменен)')
+  }
+
+  function hasStatisticsPstoRequest(row: WeldRow) {
+    if (!hasText(row.pstoRequest)) return false
+    if (isStatisticsPstoNoNeed(row)) return false
+    return (
+      !isCancelledControlValue(row.pstoRequired) ||
+      hasPstoClosedData(row) ||
+      hasCancelledPstoContinuation(row)
+    )
+  }
+
+  function isStatisticsPstoActive(row: WeldRow) {
+    return (
+      isEnabledControlValue(row.pstoRequired) ||
+      requiresPostHeatTreatmentCompletion(row) ||
+      hasCancelledPstoContinuation(row)
+    ) && !isStatisticsPstoNoNeed(row) && (!isRevisionNotActual(row.revisionActuality) || hasPstoClosedData(row))
+  }
+
+  function hasCancelledPstoContinuation(row: WeldRow) {
+    if (!isCancelledControlValue(row.pstoRequired) || !hasText(row.pstoRequest)) return false
+    return String(row.pstoResult ?? '').trim().toLocaleLowerCase('ru-RU') !== 'отменен'
+  }
+
+  function isStatisticsPstoNoNeed(row: WeldRow) {
+    const cache = facts(row)
+    return cache.pstoNoNeed ??= String(getPstoDisplayValue(row, 'pstoResult') ?? '').trim().toLowerCase() === 'нет потребности'
+  }
+
+  function isPstoRequestInRange(row: WeldRow, from: string, to: string) {
+    if (!hasStatisticsPstoRequest(row)) return false
+    return isIsoDateInRange(getPstoRequestDate(row), from, to)
+  }
+
+  function isStatisticsTvmtRequired(row: WeldRow) {
+    return hasPstoClosedData(row)
+  }
+
+  function isStatisticsTvmtActive(row: WeldRow) {
+    return isStatisticsTvmtRequired(row) && (!isRevisionNotActual(row.revisionActuality) || hasTvmtClosedData(row))
+  }
+
+  function hasStatisticsTvmtRequest(row: WeldRow) {
+    return isStatisticsTvmtRequired(row) && hasText(row.tvmtRequest)
+  }
+
+  function hasTvmtClosedData(row: WeldRow) {
+    return isStatisticsTvmtRequired(row) && normalizeTvmtStatisticsResult(row.tvmtResult) !== null
+  }
+
+  function isTvmtRequestInRange(row: WeldRow, from: string, to: string) {
+    if (!hasStatisticsTvmtRequest(row)) return false
+    const date = parseDateForStatistics(row.tvmtRequestDate) ??
+      parseDateFromText(row.tvmtRequest) ??
+      parseDateForStatistics(row.pstoCreatedAt)
+    return isIsoDateInRange(date, from, to)
+  }
+
+  return { hasLnkClosedData, hasStatisticsLnkRequest, isStatisticsLnkActive, isLnkRequestInRange,
+    hasPstoClosedData, hasStatisticsPstoRequest, isStatisticsPstoActive, isPstoRequestInRange,
+    isStatisticsTvmtRequired, isStatisticsTvmtActive, hasStatisticsTvmtRequest, hasTvmtClosedData, isTvmtRequestInRange }
 }
 
 function normalizeTvmtStatisticsResult(value: unknown) {
-  const normalized = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  // Avoid locale machinery for the canonical values produced by workflows.
+  const normalized = value === 'годен' || value === 'да' || value === 'не годен' || value == null || value === ''
+    ? value : String(value).trim().toLocaleLowerCase('ru-RU')
   if (normalized === 'годен' || normalized === 'да') return 'good' as const
   if (normalized === 'не годен') return 'failed' as const
   return null
@@ -731,7 +760,9 @@ function buildControlDynamics(
   to: string,
   unit: StatisticsUnit,
   scaleSetting: StatisticsControlDynamicsScaleSetting,
+  controls: ReturnType<typeof createStatisticsControlReaders>,
 ) {
+  const { hasStatisticsLnkRequest, hasLnkClosedData, hasStatisticsPstoRequest, hasPstoClosedData } = controls
   const dailyBuckets = new Map<string, StatisticsControlDynamicsDraft>()
   const add = (
     date: string | null,

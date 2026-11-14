@@ -1,7 +1,7 @@
 import { openDocumentOperation, confirmDocumentOperation } from '../document-operation-ui'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { rpcName } from '../rpc'
+import { deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
 import { sampleLocalAuditResources } from '../audit-resources'
@@ -14,6 +14,9 @@ const count = Number(process.env.AUDIT_REBUILD_ROWS || 0)
 // Resource comparison may exercise a fixed number of real, confirmed packets.
 // Omit this setting for the full 800000-position preservation audit.
 const packetSample = Number(process.env.AUDIT_REBUILD_PACKETS || 0)
+// Independent tail regression after the complete packet run: use the same
+// full fresh fixture, but do not repeat or claim any split/apply operations.
+const historicalPlanOnly = process.env.AUDIT_REBUILD_PLAN_ONLY === '1'
 const project = 'E2E four-kind rebuild scale'
 const definitions = [
   { type: 'pstoRequest' as const, storage: 'pstoRequest', field: 'psto_request', date: '2026-09-04' },
@@ -109,8 +112,47 @@ async function mutationFingerprint() {
     const documents = (await db.query(`select md5(string_agg(md5(to_jsonb(d)::text),'' order by id)) as hash from generated_documents d`)).rows[0]
     const links = (await db.query(`select md5(string_agg(to_jsonb(a)::text,'' order by document_id,weld_joint_id)) as hash from generated_document_weld_joints a`)).rows[0]
     const counters = (await db.query(`select key,value from app_settings where key like 'system-document-next-number:%' order by key`)).rows
-    return { names, cycles, documents, links, counters }
+    const audit = (await db.query(`select
+      (select count(*)::int from audit_operations) operations,
+      (select count(*)::int from audit_changes) changes`)).rows[0]
+    return { names, cycles, documents, links, counters, audit }
   })
+}
+
+async function planOverHttp(page: Page, observedRpc: string, documentIds: number[]) {
+  expect(observedRpc).toContain('/_serverFn/')
+  const endpoint = siblingRpcUrl(observedRpc, 'planDocumentOperationBatches_createServerFn_handler')
+  const response = await page.request.post(endpoint, {
+    data: await serializeRpcData({ documentIds, merge: false }), timeout: 240_000,
+    headers: { origin: new URL(endpoint).origin, 'sec-fetch-site': 'same-origin',
+      'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
+  })
+  expect(response.ok()).toBe(true)
+  const payload = await deserializeRpcResponse(await response.text()) as {
+    result?: { selectedCount: number; batches: number[][]; blocked: Array<{ documentId: number; title: string; reason: string }> }
+    error?: Error
+  }
+  expect(payload.error).toBeUndefined()
+  expect(payload.result).toBeDefined()
+  return payload.result!
+}
+
+async function checkHistoricalPlan(page: Page, observedRpc: string) {
+  const historical = await withE2eDatabase(async db => (await db.query(`select id,type,title,row_count
+    from generated_documents where title=any($1::text[]) and row_count=100000 order by id`,
+  [['Первичная заявка ПСТО', 'Первичная диаграмма', 'Первичная заявка ТВМТ', 'Первичное заключение ТВМТ']])).rows)
+  expect(historical).toHaveLength(4)
+  expect(historical.map(row => row.type).sort()).toEqual(definitions.map(definition => `system:${definition.storage}`).sort())
+  const before = await mutationFingerprint()
+  const plan = await planOverHttp(page, observedRpc, historical.map(row => row.id))
+  expect(plan.selectedCount).toBe(4)
+  expect(plan.batches).toEqual([])
+  expect([...plan.blocked].sort((a, b) => a.documentId - b.documentId)).toEqual(historical.map(row => ({
+    documentId: row.id, title: row.title,
+    reason: 'Документ превышает безопасный объём пакета (60000 позиций, 8 МиБ состава или 64 МиБ фактов). Он оставлен без изменений; частичная пересборка не выполняется.',
+  })))
+  expect(await mutationFingerprint()).toEqual(before)
+  return { historical, plan, businessMutationFingerprintUnchanged: true }
 }
 
 let initialFacts: Awaited<ReturnType<typeof facts>> | undefined
@@ -133,15 +175,20 @@ test.afterEach(async ({}, info) => {
   console.log(JSON.stringify({ failedLoadFactsChecked: true, completedPackets, documentCounts: counts }))
 })
 
-test('load audit: all four document kinds over real HTTP preserve first and repeat cycles', async ({ page, browser }, info) => {
+test(historicalPlanOnly ? 'scoped tail only: four indivisible historical documents over authenticated HTTP on the full fixture'
+  : 'load audit: all four document kinds over real HTTP preserve first and repeat cycles', async ({ page, browser }, info) => {
   test.skip(!count, 'Opt-in load run; requires a fresh disposable database')
   test.setTimeout(1_200_000)
   expect([200, 200_000]).toContain(count)
+  if (historicalPlanOnly) { expect(count).toBe(200_000); expect(packetSample).toBe(0) }
   await seed()
   initialFacts = await facts()
   const errors: string[] = [], calls: string[] = []
+  let observedRpc = ''
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) {
+    calls.push(rpcName(request.url())); observedRpc ||= request.url()
+  } })
   const resourceLimited = process.env.AUDIT_REBUILD_RESOURCE === '1'
   const stopSampling = await (resourceLimited ? sampleMixedResources(browser) : sampleLocalAuditResources(browser))
   try {
@@ -151,6 +198,30 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
     expect(initialFacts.rows.n).toBe(count)
     expect(initialFacts.cycles.n).toBe(count / 2)
     expect(initialFacts.positions.map(({ type, n }) => ({ type, n }))).toEqual(types.map(type => ({ type, n: count })))
+    if (historicalPlanOnly) {
+      await page.goto('/account?tab=profile')
+      await expect.poll(() => observedRpc).not.toBe('')
+      const current = await withE2eDatabase(async db => (await db.query(`select id from generated_documents
+        where type='system:pstoRequest' and source_metadata::jsonb->>'sourceKind'='pstoCycle' order by id limit 1`)).rows[0])
+      expect(current).toBeDefined()
+      // The ordinary initial plan creates lazy primary-history indexes. Do it
+      // before the fingerprint, just as the original full run did before split.
+      const prepared = await planOverHttp(page, observedRpc, [current.id])
+      expect(prepared.selectedCount).toBe(1)
+      expect(prepared.batches).toEqual([[current.id]])
+      expect(prepared.blocked).toEqual([])
+      expect(await facts()).toEqual(initialFacts)
+      const historicalCheck = await checkHistoricalPlan(page, observedRpc)
+      expect(await facts()).toEqual(initialFacts)
+      expect(await sourcedDocumentCounts()).toEqual(types.map(type => ({ type, n: count / 200 })))
+      expect(calls.filter(name => /^(previewDocumentOperation|applyDocumentOperation)_/.test(name))).toEqual([])
+      expect(errors).toEqual([])
+      const result = { scope: 'historical-plan-only', joints: count, repeatCycles: count / 2,
+        sourcedPositions: count * 4, completedPackets: 0, ...historicalCheck }
+      console.log(JSON.stringify(result))
+      await info.attach('historical-plan-only.json', { body: JSON.stringify(result), contentType: 'application/json' })
+      return
+    }
     // One explicit document on the full journal must remain bounded, too.
     const smallStarted = Date.now()
     const smallSql = await auditSqlCount()
@@ -204,11 +275,8 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
     // Separately test indivisible historical documents; they were never silently
     // included in the explicit current-cycle selection above.
     if (count === 200_000) {
-      const historical = await withE2eDatabase(async db => (await db.query("select id from generated_documents where title=any($1::text[]) and row_count=100000", [['Первичная заявка ПСТО', 'Первичная диаграмма', 'Первичная заявка ТВМТ', 'Первичное заключение ТВМТ']])).rows.map(row => row.id))
-      expect(historical).toHaveLength(4)
-      const { planOperationBatches } = await import('../../src/server/document-operation-service')
-      const plan = await planOperationBatches({ documentIds: historical, merge: false })
-      expect(plan.batches).toHaveLength(0); expect(plan.blocked).toHaveLength(4)
+      const historicalCheck = await checkHistoricalPlan(page, observedRpc)
+      await info.attach('historical-plan.json', { body: JSON.stringify(historicalCheck), contentType: 'application/json' })
     }
     expect(calls.filter(name => name.startsWith('previewDocumentOperation_'))).toHaveLength(previews)
     expect(calls.filter(name => name.startsWith('applyDocumentOperation_'))).toHaveLength(applies)
@@ -216,7 +284,7 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
     await page.screenshot({ path: info.outputPath('four-kind-selected-completed.png') })
   } finally {
     const resources = await stopSampling()
-    console.log(JSON.stringify({ workflow: 'four-kind rebuild sampled resources', resourceLimited, ...resources }))
+    console.log(JSON.stringify({ workflow: historicalPlanOnly ? 'historical plan only sampled resources' : 'four-kind rebuild sampled resources', resourceLimited, ...resources }))
     expect(resources.errors).toEqual([])
     if ('lastCgroup' in resources) {
       expect(resources.postmortem).toBe(false)

@@ -11,6 +11,24 @@ import {
 } from '@/lib/statistics-summary'
 
 describe('statistics status snapshot', () => {
+  it('reuses control facts only inside one summary and isolates methods, same-id objects and later edits', () => {
+    const first: WeldRow = { id: 1, weldDate: '2026-07-01', hasVik: 'да', vikResult: 'годен',
+      hasRk: 'да', rkRequest: 'RK', rkRequestDate: '2026-07-02', rkResult: 'годен', rkConclusionDate: '2026-07-03',
+      hasPvk: 'да', pstoRequired: 'да', pstoRequest: 'PSTO', pstoRequestDate: '2026-07-04',
+      pstoResult: 'проведено', pstoDate: '2026-07-05', tvmtRequest: 'TVMT', tvmtRequestDate: '2026-07-06',
+      tvmtResult: 'годен', tvmtConclusionDate: '2026-07-07' }
+    const second = { ...first, rkResult: '', pstoResult: '', tvmtResult: '' }
+    const initial = buildStatisticsSummary([first, second], '', '', 'joints')
+    expect(initial.methods.find(method => method.code === 'РК')).toMatchObject({ totalClosed: 1, waitingControl: 1 })
+    expect(initial.methods.find(method => method.code === 'ПВК')).toMatchObject({ totalClosed: 0, waitingRequest: 2 })
+    expect(initial.pstoMethod).toMatchObject({ totalClosed: 1, waitingControl: 1 })
+    expect(initial.tvmtMethod).toMatchObject({ totalClosed: 1, good: 1 })
+    first.rkResult = ''; first.pstoResult = ''; first.tvmtResult = ''
+    const updated = buildStatisticsSummary([first, second], '', '', 'joints')
+    expect(updated.methods.find(method => method.code === 'РК')).toMatchObject({ totalClosed: 0, waitingControl: 2 })
+    expect(updated.pstoMethod).toMatchObject({ totalClosed: 0, waitingControl: 2 })
+    expect(updated.tvmtMethod).toMatchObject({ totalClosed: 0, requests: 0 })
+  })
   it('keeps the supplied history scope outside the period and leaves input rows untouched', () => {
     const history: WeldRow = { id: 1, projectTitle: 'Проект', subtitleCode: '400', line: 'L1', joint: 'S2',
       weldDate: '2026-06-01', officiality: 'неофициальный', hasRk: 'да', rkResult: 'вырез', wdi: '2.5' }

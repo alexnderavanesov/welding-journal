@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import type { GridApi, IRowNode } from 'ag-grid-community'
 import { documentGridPathKey, writeDocumentGridSession, type DocumentGridBreadcrumb, type DocumentGridSession } from './document-history-grid-session'
 
@@ -207,7 +207,9 @@ export function useDocumentGridSession<T>(
       element.removeEventListener('wheel', wheel, true); element.removeEventListener('touchstart', cancelRestore, true); element.removeEventListener('keydown', key, true)
     }
   }, [frame])
-  useEffect(() => () => { capture(); cancelAnimationFrame(scheduled.current) }, [capture])
+  // Capture while the viewport and its latest rendered rows still exist.
+  // Passive cleanup runs after React removes them on registry tab changes.
+  useLayoutEffect(() => () => { capture(); cancelAnimationFrame(scheduled.current) }, [capture])
   const isRestoring = useCallback(() => Boolean(pending.current), [])
   return { capture, restore, bodyScrollEnd, rememberRows, groupOpened, isGroupOpen, isRestoring, initialRowCount: initialRowCount.current }
 }

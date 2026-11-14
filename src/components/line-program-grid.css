@@ -113,6 +113,7 @@
   .program-ag-grid .program-stuck-control .ag-header-cell-label { animation: program-header-arrival 120ms ease-out; }
 }
 .program-sticky-spacer { flex: none; pointer-events: none; }
+.program-stuck-control :is(.ag-grid-pinned-left-cells, .ag-grid-pinned-right-cells) { position: relative; left: auto; right: auto; }
 .program-stuck-control .ag-grid-pinned-left-cells { translate: var(--program-sticky-scroll-left, 0px) 0; }
 .program-stuck-control .ag-grid-pinned-right-cells { translate: var(--program-sticky-scroll-right, 0px) 0; }
 /* Mouse clicks retain the familiar row appearance; keyboard navigation keeps

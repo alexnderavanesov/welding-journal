@@ -1,4 +1,5 @@
 import { REPORT_ACCESS_AREAS, SETTING_ACCESS_AREAS, type Permission } from '@/lib/access-permissions'
+import { normalizePreHeatTreatmentResultEditBatch } from '@/lib/pre-heat-treatment-result-edit-plan'
 
 // Explicit allowlist: a new server function is closed until its policy is reviewed.
 export const OPERATION_POLICIES = {
@@ -40,9 +41,10 @@ export const OPERATION_POLICIES = {
   "weld-mutations-api.ts#updateWeldJoints": "@mutation",
   "weld-mutations-api.ts#extendLnkRequest": "lnk.edit",
   "weld-mutations-api.ts#clearLnkRequestPosition": "lnk.delete",
+  'lnk-result-removal.ts#removeLnkResults': 'lnk.delete',
   "weld-mutations-api.ts#updateLnkDefectDescription": "lnk.edit",
-  "weld-mutations-api.ts#manageLnkRequestDocument": "lnk.edit",
-  "weld-mutations-api.ts#managePstoRequestDocument": "psto.edit",
+  "weld-mutations-api.ts#manageLnkRequestDocument": "@lnkRequestAction",
+  "weld-mutations-api.ts#managePstoRequestDocument": "@pstoRequestAction",
   "weld-mutations-api.ts#changeSystemDocumentDate": "@documentEdit",
   "weld-mutations-api.ts#deleteWeldJoint": "welding.delete",
   "weld-mutations-api.ts#deleteObsoleteRepeatedJoint": "welding.delete",
@@ -71,8 +73,8 @@ export const OPERATION_POLICIES = {
   "dispatcher-warnings.ts#revokeDispatcherAcceptedWarning": "exceptions.edit",
   "pre-heat-treatment-lnk-workflow.ts#savePreHeatTreatmentLnkWorkflow": "lnk.edit",
   "pre-heat-treatment-lnk-workflow.ts#updatePreHeatTreatmentRkExposure": "lnk.edit",
-  "pre-heat-treatment-lnk-workflow.ts#savePreHeatTreatmentLnkResultEdits": "lnk.edit",
-  "pre-heat-treatment-lnk-workflow.ts#correctPreHeatTreatmentLnkResult": "lnk.edit",
+  "pre-heat-treatment-lnk-workflow.ts#savePreHeatTreatmentLnkResultEdits": "@lnkResultEdits",
+  "pre-heat-treatment-lnk-workflow.ts#correctPreHeatTreatmentLnkResult": "@lnkStageAction",
   "document-operations.ts#planDocumentOperationBatches": "documents.view",
   "document-operations.ts#previewDocumentOperation": "documents.view",
   "document-operations.ts#applyDocumentOperation": "@documentEdit",
@@ -104,7 +106,7 @@ export const OPERATION_POLICIES = {
   "specialists.ts#saveSpecialist": "references.edit",
   "specialists.ts#assignDocumentSpecialists": "@documentEdit",
   "psto-repeat-workflow.ts#savePstoRepeatWorkflow": "psto.edit",
-  "psto-repeat-workflow.ts#correctPstoCycleStage": "psto.edit",
+  "psto-repeat-workflow.ts#correctPstoCycleStage": "@pstoStageAction",
   "psto-repeat-workflow.ts#correctPstoTvmtAndRemoveLaterCycles": "psto.delete",
   "line-program-card-impact.ts#getWeldLineProgramImpact": "lines.view",
   "technology-cards-api.ts#getTechnologyCardPage": "references.view",
@@ -232,6 +234,17 @@ export function getOperationPermissions(policy: string, value: unknown): Permiss
     return [`${reportArea(data)}.view`]
   }
   if (policy === '@referenceChange') return ['references.view', ['archive', 'delete'].includes(data.action) ? 'references.delete' : 'references.edit']
+  if (policy === '@lnkResultEdits') {
+    const { changes } = normalizePreHeatTreatmentResultEditBatch(data as import('@/lib/pre-heat-treatment-result-edit-plan').PreHeatTreatmentResultEditBatch)
+    return ['lnk.view', ...(changes.some(change => change.result !== null) ? ['lnk.edit' as const] : []),
+      ...(changes.some(change => change.result === null) ? ['lnk.delete' as const] : [])]
+  }
+  if (['@lnkRequestAction', '@pstoRequestAction', '@lnkStageAction', '@pstoStageAction'].includes(policy)) {
+    const editAction = policy.includes('Request') ? 'rename' : 'update'
+    if (data.action !== editAction && data.action !== 'delete') throw new Error('Неизвестное действие с заявкой или этапом контроля.')
+    const area = policy.startsWith('@lnk') ? 'lnk' : 'psto'
+    return [`${area}.view`, `${area}.${data.action === 'delete' ? 'delete' : 'edit'}`]
+  }
   if (['@identity', '@account', '@lineIdentity', '@weldDataUsage', '@documentSequenceRead'].includes(policy)) return []
   if (policy === '@retired') throw new Error('Общие пароли заменены личными аккаунтами.')
   if (policy === '@mutation') {
@@ -248,6 +261,8 @@ export function getOperationPermissions(policy: string, value: unknown): Permiss
   if (policy === '@settingEdit') {
     const area = SETTING_ACCESS_AREAS[data.key]
     if (!area) throw new Error('Неизвестная настройка.')
+    // The shared legacy key is checked against stored values in its transaction.
+    if (data.key === 'other') return []
     return [`${area}.edit`]
   }
   // Document areas are resolved against stored documents on the server.

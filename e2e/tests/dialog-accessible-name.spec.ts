@@ -1,0 +1,36 @@
+import { expect, test } from '@playwright/test'
+import { rpcName } from '../rpc'
+
+test('real editor, nested confirmation and joint form expose their visible names', async ({ page }) => {
+  const writes: string[] = []
+  page.on('request', request => {
+    const name = rpcName(request.url())
+    if (/^(save|update|create|delete|import)/.test(name)) writes.push(name)
+  })
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Расчет дюймов', exact: true }).click()
+  await page.getByRole('button', { name: /^(Редактировать|Заполнить) справочник$/ }).click()
+  const editor = page.getByRole('dialog', { name: 'Таблица расчета WDI', exact: true })
+  await expect(editor).toBeVisible()
+  await expect(editor.getByRole('heading', { name: 'Таблица расчета WDI', exact: true })).toBeVisible()
+  await editor.getByLabel('Диаметр 1', { exact: true }).fill('123')
+  await page.keyboard.press('Escape')
+  const confirmation = page.getByRole('dialog', { name: 'Закрыть редактор WDI?', exact: true })
+  await expect(confirmation).toBeVisible()
+  await expect(editor).toHaveAccessibleName('Таблица расчета WDI')
+  await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await expect(confirmation).toBeHidden()
+  await expect(editor.getByLabel('Диаметр 1', { exact: true })).toHaveValue('123')
+  await page.keyboard.press('Escape')
+  await confirmation.getByRole('button', { name: 'Закрыть без сохранения', exact: true }).click()
+  await expect(editor).toBeHidden()
+  await page.goto('/journal')
+  await expect(page.locator('[data-weld-report-grid="weldingJournal"] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+  await page.getByRole('button', { name: 'Новый стык', exact: true }).click()
+  const joint = page.getByRole('dialog', { name: 'Новый стык', exact: true })
+  await expect(joint).toBeVisible()
+  await expect(joint.getByRole('heading', { name: 'Новый стык', exact: true })).toBeVisible()
+  await joint.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(joint).toBeHidden()
+  expect(writes).toEqual([])
+})

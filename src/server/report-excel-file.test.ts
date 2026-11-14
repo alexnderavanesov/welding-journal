@@ -5,7 +5,13 @@ import { inflateRawSync } from 'node:zlib'
 import * as XLSX from 'xlsx'
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
 const mocks = vi.hoisted(() => ({ visit: vi.fn(), sheetRows: 1_048_575 }))
-vi.mock('./weld-read', () => ({ visitReportOutput: mocks.visit }))
+vi.mock('./weld-read', () => ({ visitReportOutput: async (input: unknown, consume: unknown, signal: AbortSignal,
+  lifecycle: import('./large-export-guard').ReportOutputLifecycle) => {
+  await lifecycle.start({ execute: vi.fn() } as any, 0)
+  const result = await mocks.visit(input, consume, signal)
+  await lifecycle.finish()
+  return result
+} }))
 vi.mock('@/lib/weld-export-xlsx-xml', async importOriginal => ({
   ...await importOriginal<typeof import('@/lib/weld-export-xlsx-xml')>(),
   get EXCEL_SHEET_DATA_ROWS() { return mocks.sheetRows },

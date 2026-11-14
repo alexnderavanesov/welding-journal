@@ -8,7 +8,8 @@ import { weldJoints } from '@/db/schema'
 import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
 import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
 import { readJournalGrid as raw_readJournalGrid } from '@/server/journal-grid'
-import { deleteWeldJoint as raw_deleteWeldJoint } from '@/server/weld-mutations'
+import { deleteWeldJoint as raw_deleteWeldJoint, deleteWeldJoints as raw_deleteWeldJoints } from '@/server/weld-mutations'
+import { replaceWeldJoints as raw_replaceWeldJoints } from '@/server/weld-import'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -98,7 +99,7 @@ async function expectNoChainCodes() {
   for (const row of report.rows) expect(row.dispatcherTasks ?? '').not.toMatch(/СП-07|СП-09/)
 }
 
-for (const result of ['ремонт', 'вырез'] as const) test(`удалить официального тёзку → восстановить оставшегося → ${result}: правильная цепочка и продолжение`, async ({ page }) => {
+for (const mode of ['single', 'bulk', 'import'] as const) for (const result of ['ремонт', 'вырез'] as const) test(`${mode}: удалить официального тёзку → восстановить оставшегося → ${result}: правильная цепочка и продолжение`, async ({ page }) => {
   const { rootId, sourceId, remainingId, removedId } = await seed(), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const original = await facts()
@@ -118,8 +119,15 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
   await remove()
   await confirm.getByRole('button', { name: 'Отмена', exact: true }).click()
   expect(await facts()).toEqual(original)
-  await remove()
-  await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
+  if (mode === 'single') {
+    await remove()
+    await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
+  } else {
+    const target = await withE2eDatabase(async db => (await db.query<{ id: number; version: string }>(
+      'select id,xmin::text as version from weld_joints where id=$1', [removedId])).rows[0])
+    if (mode === 'bulk') await deleteWeldJoints({ data: { targets: [target] } })
+    else await replaceWeldJoints({ data: { records: [], deleteIds: [removedId], expectedVersions: [target] } })
+  }
   await expect.poll(async () => (await facts()).map(row => row.id)).toEqual([rootId, sourceId, remainingId])
   expect(await facts()).toEqual(original.filter(row => row.id !== removedId))
   expect(await chainTasks()).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'create', targetJoint: joint })]))
@@ -145,8 +153,13 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
   await dialog.getByRole('checkbox', { name: `Выбрать стык ${line} ${joint}`, exact: true }).check()
   await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-04')
   await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: result, exact: true }).click()
+  const resultSaveStarted = performance.now()
   await dialog.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
   await expect(dialog).toBeHidden()
+  const resultSave = { mode, result, chainBackground: process.env.AUDIT_CHAIN_SCALE === '1',
+    resourceContainer: process.env.AUDIT_MIXED_LOAD === '1', milliseconds: Math.round(performance.now() - resultSaveStarted) }
+  console.log('OFFICIAL_NAME_RESULT_SAVE', JSON.stringify(resultSave))
+  await test.info().attach('operator-result-save', { body: JSON.stringify(resultSave), contentType: 'application/json' })
   // Existing naming rule increments the accumulated counter of the chosen
   // suffix: W1 becomes W2, while the already completed R1 is retained.
   const target = result === 'ремонт' ? 'S63W1R2' : 'S63W2R1'
@@ -186,4 +199,6 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
 })
 
 const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')
+const deleteWeldJoints = asE2eOwner(raw_deleteWeldJoints, 'welding.delete')
+const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.import')
 const readJournalGrid = asE2eOwner(raw_readJournalGrid, 'welding.view')

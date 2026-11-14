@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStatisticsRpcRequest, normalizeStatisticsServerRequest } from './statistics'
+import { buildStatisticsCalculationCacheKey, normalizeStatisticsRpcRequest, normalizeStatisticsServerRequest } from './statistics'
 import type { StatisticsServerRequest } from '@/lib/statistics-server-summary'
 import { STATISTICS_TRANSPORT, type StatisticsRpcRequest } from '@/lib/statistics-result-payload'
 
@@ -28,4 +28,17 @@ it('negotiates transport without changing the calculation/cache identity for old
 
 it.each([null, '', 'json', 'statistics-ids-v2', false, {}])('rejects unsupported transport capability %j', transport => {
   expect(() => normalizeStatisticsRpcRequest({ tab: 'lnk', transport } as unknown as StatisticsRpcRequest)).toThrow(/формат статистики/)
+})
+
+it('shares only identical LNK/PSTO calculations and retains every selection parameter', () => {
+  const request = normalizeStatisticsServerRequest({ tab: 'lnk', projectFilter: 'P', selectedSubtitles: ['S'], from: '2026-10-01', to: '2026-10-31' })
+  const key = buildStatisticsCalculationCacheKey(request)
+  expect(buildStatisticsCalculationCacheKey({ ...request, tab: 'psto' })).toBe(key)
+  for (const change of [
+    { tab: 'general' }, { tab: 'supports' }, { tab: 'welders' }, { tab: 'lineSummary' },
+    { projectFilter: 'Q' }, { selectedSubtitles: ['T'] }, { from: '2026-09-01' }, { to: '2026-11-01' },
+    { unit: 'wdi' }, { jointFilter: 's' }, { controlDynamicsScale: 'month' }, { weldingDynamicsScale: 'week' },
+  ] as Partial<StatisticsServerRequest>[]) expect(buildStatisticsCalculationCacheKey({ ...request, ...change })).not.toBe(key)
+  expect(buildStatisticsCalculationCacheKey({ ...request, tab: 'lineSummary' }, 'new-schemes'))
+    .not.toBe(buildStatisticsCalculationCacheKey({ ...request, tab: 'lineSummary' }, 'old-schemes'))
 })

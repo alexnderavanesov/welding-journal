@@ -18,6 +18,20 @@ const defaults: DocumentHistoryGridRequest = { startRow: 0, endRow: 100, rowGrou
 type Kind = 'generated' | 'system'
 const columnFilters = { project: buildWeldColumnValueFilter([project]) }
 const distantRestoreTitle = 'document grid browser: restores a child block beneath a distant root group without enumerating earlier groups'
+async function scopeFixture(grid: Locator, kind: Kind) {
+  // Other workflows legitimately retain documents in this shared disposable
+  // database. Select this fixture through the real registry search instead of
+  // assuming the entire system contains exactly our 250 documents.
+  const search = kind === 'generated' ? 'GRID-DOC-' : 'GRID-REQ-'
+  const applied = grid.page().waitForResponse(response => {
+    const request = response.request()
+    return request.url().includes('/_serverFn/') && rpcName(request.url()).includes('DocumentHistoryGrid')
+      && (deserializeRpcPayload(request.postData()!) as { data: DocumentHistoryGridRequest }).data.search === search
+  })
+  await grid.getByRole('textbox', { name: 'Поиск документов', exact: true }).fill(search)
+  await applied
+  await expect(grid.locator('.document-grid-frame')).not.toHaveAttribute('data-journal-updating', '')
+}
 async function prepareClipboard(page: Page, context: BrowserContext, browserName: string) {
   if (browserName !== 'webkit') return context.grantPermissions(['clipboard-read', 'clipboard-write'])
   // WebKit automation cannot grant OS clipboard permissions. Keep real range
@@ -37,6 +51,7 @@ for (const kind of ['generated', 'system'] as const) {
     await page.goto('/documents')
     if (kind === 'system') await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
     const grid = page.locator(kind === 'generated' ? '[data-document-history-grid="generated:weldingJournal"]' : '[data-document-history-grid^="system:lnkRequest:"]')
+    await scopeFixture(grid, kind)
     await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
     const cell = (index: number) => grid.locator(`.ag-row[row-index="${index}"] .ag-cell[col-id^="ag-Grid-SelectionColumn"]`)
     const checkbox = (index: number) => cell(index).getByRole('checkbox')
@@ -124,6 +139,7 @@ for (const kind of ['generated', 'system'] as const) test(`document keyboard sel
   await page.goto('/documents')
   if (kind === 'system') await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
   const grid = page.locator('[data-document-history-grid]')
+  await scopeFixture(grid, kind)
   await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
   const header = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
   let release!: () => void, pending = false, releaseGroup!: () => void, groupRead = false, holdGroup = false
@@ -323,6 +339,7 @@ test('document registries keep plain joint counts and their document actions wit
   ]) {
     await page.getByRole('button', { name: view, exact: true }).click()
     const grid = page.locator(selector)
+    await scopeFixture(grid, view === 'ЖСР' ? 'generated' : 'system')
     await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
     await revealGridColumn(page, 'rowCount')
     const row = grid.locator('.ag-row[row-id^="document:"]').first()
@@ -620,14 +637,25 @@ for (const lateChild of [false, true]) test(lateChild ? `${distantRestoreTitle} 
   const savedPosition = await firstVisibleDocument()
   expect(savedPosition).not.toBeNull()
   expect(savedPosition!.index).toBeGreaterThanOrEqual(350)
-  const savedScroll = await viewport.evaluate(element => element.scrollTop)
+  const { savedScroll, beforeLeaving } = await viewport.evaluate(element => ({ savedScroll: element.scrollTop,
+    beforeLeaving: Object.fromEntries(Object.keys(sessionStorage)
+      .filter(key => key.endsWith(':welding-journal:documents:grid-session:v1:generated:weldingJournal'))
+      .map(key => [key, JSON.parse(sessionStorage.getItem(key)!)])) }))
+  const sessionSnapshot = () => page.evaluate(() => Object.fromEntries(Object.keys(sessionStorage)
+    .filter(key => key.endsWith(':welding-journal:documents:grid-session:v1:generated:weldingJournal'))
+    .map(key => [key, JSON.parse(sessionStorage.getItem(key)!)])))
   if (lateChild) expect(delayed, 'The late-child case must hold the LINE-250 child100 request before leaving').toBe(true)
   await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
   await expect(page.locator('[data-document-history-grid^="system:lnkRequest:"]')).toBeVisible()
   const beforeReturn = requests.length
   await page.getByRole('button', { name: 'ЖСР', exact: true }).click()
   await page.waitForLoadState('networkidle')
-  await expect.poll(firstVisibleDocument).toEqual(savedPosition)
+  try { await expect.poll(firstVisibleDocument).toEqual(savedPosition) } catch (error) {
+    await info.attach('failed-distant-restoration', { body: JSON.stringify({ savedPosition, savedScroll, beforeLeaving,
+      returned: await sessionSnapshot(), requests: requests.slice(beforeReturn),
+      scroll: await viewport.evaluate(element => ({ top: element.scrollTop, height: element.scrollHeight })) }, null, 2), contentType: 'application/json' })
+    throw error
+  }
   await expect.poll(async () => Math.abs(await viewport.evaluate(element => element.scrollTop) - savedScroll)).toBeLessThanOrEqual(1)
   await expect(lastRow.getByRole('checkbox')).toBeChecked()
   await expect(grid.getByText('Выбрано: 2', { exact: true })).toBeVisible()
@@ -669,6 +697,7 @@ for (const kind of ['generated', 'system'] as const) test(`document grid browser
   const grid = page.locator(kind === 'generated'
     ? '[data-document-history-grid="generated:weldingJournal"]'
     : '[data-document-history-grid^="system:lnkRequest:"]')
+  await scopeFixture(grid, kind)
   await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
   await grid.locator('.ag-row[row-id^="document:"]').first().getByRole('checkbox').check()
   await expect(grid.getByText('Выбрано: 1', { exact: true })).toBeVisible()

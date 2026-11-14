@@ -38,7 +38,7 @@ function row(id: number, partial: Partial<WeldRow> = {}): WeldRow {
   }
 }
 
-function lineTask(rowValue: WeldRow): DispatcherTask {
+function lineTask(rowValue: WeldRow): Extract<DispatcherTask, { kind: 'line-consistency' }> {
   return {
     kind: 'line-consistency',
     key: 'line-percent',
@@ -117,6 +117,19 @@ function renameTask(rows: WeldRow[]): RepeatedJointRenameTask {
 }
 
 describe('dispatcher task row codes', () => {
+  it('keeps every line/code membership when different stamp warnings share a line, including SP-08 per-joint exceptions', () => {
+    const rows = [row(1), row(2), row(3, { projectTitle: 'Другой проект' }), row(4, { line: 'Другая линия' })]
+    const first = lineTask(rows[0])
+    const tasks: DispatcherTask[] = [first, { ...first, key: 'second-stamp' }, lineTask(rows[2]), lineTask(rows[3]),
+      { ...lineTask(rows[0]), systemWarningCode: 'СП-08', key: 'repair-1' },
+      { ...lineTask(rows[1]), systemWarningCode: 'СП-08', key: 'repair-2' }]
+    const detailed = buildDispatcherTaskIndexRows(tasks, rows)
+    const compact = buildDispatcherTaskCodeIndexRows(tasks, rows)
+    expect(compact.map(({ rowId, code }) => `${rowId}:${code}`)).toEqual(
+      [...new Set(detailed.map(({ rowId, code }) => `${rowId}:${code}`))].sort())
+    expect(compact.filter(entry => entry.code === 'СП-08').map(entry => entry.rowId)).toEqual([1, 2])
+    expect(detailed.filter(entry => entry.rowId === 1 && entry.code === 'СП-01')).toHaveLength(2)
+  })
   it('translates task filters into server row filters for the whole report', () => {
     const withTasks = buildDispatcherTaskServerFilters(
       { [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER },

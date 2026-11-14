@@ -94,7 +94,7 @@ describe('sourced system document database load', () => {
 
       await rebuildSystemDocumentIndexInTransaction({ execute } as never, type)
 
-      expect(execute).toHaveBeenCalledTimes(15)
+      expect(execute).toHaveBeenCalledTimes(16)
       const compiledQueries = execute.mock.calls.map(([query]) =>
         new PgDialect().sqlToQuery(query).sql,
       )

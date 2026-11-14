@@ -29,8 +29,16 @@ function metadata(table: PgTable): TableMetadata {
   if (cached) return cached
   const columns = getTableColumns(table) as Record<string, any>
   const config = getTableConfig(table)
+  // Drizzle builds table-level keys from distinct ExtraConfigColumn objects.
+  // Resolve their SQL names back to the stored columns, retaining PK order.
+  const bySqlName = new Map(Object.values(columns).map(column => [column.name, column]))
   const primary = config.primaryKeys.flatMap(key => key.columns)
-  const keys = Object.values(columns).filter(column => column.primary || primary.includes(column))
+  const keys = primary.length ? primary.map(column => {
+    const stored = bySqlName.get(column.name)
+    if (!stored) throw new Error('Не найден столбец первичного ключа для истории.')
+    return stored
+  }) : Object.values(columns).filter(column => column.primary)
+  if (!keys.length) throw new Error('Запись истории требует первичного ключа таблицы.')
   const names = new Map(Object.entries(columns).map(([name, column]) => [column, name]))
   const value = { columns, keys, names, keyNames: keys.map(column => names.get(column)!) }
   tableMetadata.set(table, value)

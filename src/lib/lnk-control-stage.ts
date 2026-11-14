@@ -399,6 +399,10 @@ export function buildPreHeatTreatmentControlSnapshot(
 }
 
 function normalizeMethodCode(value: unknown) {
+  // Stored canonical methods are read millions of times by stage summaries.
+  // Keep the locale-aware fallback for legacy/user text, without repeating it
+  // for strings whose normalized value is already known.
+  if (value === 'ВИК' || value === 'РК' || value === 'УЗК' || value === 'ПВК' || value === 'ТВМТ') return value
   return String(value ?? '').trim().toLocaleUpperCase('ru-RU')
 }
 
@@ -408,6 +412,7 @@ function normalizeValue(value: unknown) {
 
 function normalizeResult(value: unknown) {
   if (value == null || value === '') return ''
+  if (value === 'годен' || value === 'ремонт' || value === 'вырез' || value === 'не годен' || value === 'отменен') return value
   return normalizeValue(value).toLocaleLowerCase('ru-RU')
 }
 

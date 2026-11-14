@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { AppSidebar } from './app-sidebar'
@@ -14,8 +15,9 @@ import * as accounts from '@/server/account-api'
 
 export function AccountWorkspace({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
+  const navigate = useNavigate()
   return <SiteSecurityGate><AppSidebar activeReport="settings" collapsed={collapsed} animateWidth={false} onCollapsedChange={setCollapsed}
-    onReportChange={report => { window.location.href = getAppReportPath(report) }} />
+    onReportChange={report => { void navigate({ to: getAppReportPath(report) }) }} />
     <main className={`${collapsed ? 'ml-16' : 'ml-48 lg:ml-64'} min-h-screen min-w-0 bg-slate-50 p-4 lg:p-8`}>{children}</main></SiteSecurityGate>
 }
 const ActivityPanel = lazy(() => import('./activity-page').then(module => ({ default: module.ActivityPanel })))
@@ -27,6 +29,26 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
   const { identity, refresh, can } = useAccess()
   const queryClient = useQueryClient()
   const [requestedTab, setTab] = useState<AccountTab | null>(() => initialTab ?? (new URLSearchParams(window.location.search).get('tab') as AccountTab | null))
+  const tabList = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const list = tabList.current
+    if (!list) return
+    const revealSelected = () => {
+      const selected = list.querySelector<HTMLElement>('[aria-selected="true"]')
+      if (!selected) return
+      const bounds = list.getBoundingClientRect(), item = selected.getBoundingClientRect()
+      if (item.left < bounds.left) list.scrollLeft -= bounds.left - item.left
+      else if (item.right > bounds.right) list.scrollLeft += item.right - bounds.right
+    }
+    revealSelected()
+    const resize = new ResizeObserver(revealSelected)
+    resize.observe(list)
+    // A rapid wide/narrow viewport round trip can clamp scrollLeft while the
+    // observer sees the original final width. The viewport event still needs
+    // to reveal the selected tab, without changing the page's vertical scroll.
+    window.addEventListener('resize', revealSelected)
+    return () => { resize.disconnect(); window.removeEventListener('resize', revealSelected) }
+  }, [requestedTab, identity?.role])
   useEffect(() => {
     const restoreTab = () => setTab(window.location.pathname === '/activity' ? 'activity' : new URLSearchParams(window.location.search).get('tab') as AccountTab | null)
     window.addEventListener('popstate', restoreTab)
@@ -69,7 +91,7 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     <ReportPageHeader title={tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'} stickyLeft={0} fluid summary={`${identity.name} · ${accountRoleLabel(identity.role)}`}>
       {tab === 'profile' ? <div className="flex justify-end"><Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button></div> : null}
     </ReportPageHeader>
-    <div role="tablist" aria-label="Аккаунт и доступ" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200" onKeyDown={event => {
+    <div ref={tabList} role="tablist" aria-label="Аккаунт и доступ" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()
       const index = tabs.findIndex(item => item.id === tab)

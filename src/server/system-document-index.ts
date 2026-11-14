@@ -1882,6 +1882,11 @@ export async function rebuildSystemDocumentIndexInTransaction(
       and "document"."type" in (${sql.join(storageTypes.map((value) => sql`${value}`), sql`, `)})
       and coalesce("document"."source_metadata", '') !~ ${'"sourceKind"\\s*:'}
   `)
+  // A cold rebuild can grow the parent registry by hundreds of thousands of
+  // rows in this transaction. Refresh its cardinality and invalidate FK plans
+  // cached against the old small table before checking every new membership.
+  // ID statistics suffice; ordinary updates of an initialized index skip this.
+  await tx.execute(sql`analyze ${generatedDocuments} ("id")`)
   await tx.execute(sql`
     insert into ${generatedDocumentWeldJoints} ("document_id", "weld_joint_id")
     select distinct

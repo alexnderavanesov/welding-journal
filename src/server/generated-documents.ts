@@ -202,6 +202,11 @@ function buildGeneratedDocumentHistoryGridSql(data: ReturnType<typeof normalizeG
     baseQuery: buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings),
     columnFilters: data.columnFilters, filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
     output, request: data, idKind: 'generated', sortExpressions,
+    // Cover every original derived value, including related welds. filter_*
+    // arrays are deterministic copies/formatting of these values; serializing
+    // them again (and every JSON object key) doubles work for the full registry.
+    // This is still a full-set revision, never a page-only or timestamp token.
+    revisionValue: sql`jsonb_build_array(${sql.join(GENERATED_DOCUMENT_HISTORY_REVISION_FIELDS.map(key => sql.identifier(key)), sql`, `)})::text`,
     defaultOrder: sql`"updatedAt" desc, "id" desc`,
     // Ordinary registries show a period separator even without dates; layered
     // registries show one date and leave the cell empty when none is available.
@@ -209,6 +214,12 @@ function buildGeneratedDocumentHistoryGridSql(data: ReturnType<typeof normalizeG
       then coalesce("periodFrom", "periodTo")::text else '-' end` },
   })
 }
+
+export const GENERATED_DOCUMENT_HISTORY_REVISION_FIELDS = [
+  'id', 'type', 'title', 'fileName', 'mimeType', 'periodFrom', 'periodTo', 'rowCount', 'wdiTotal',
+  'documentNumber', 'createdAt', 'specialists', 'specialistsRevision', 'documentVersion', 'updatedAt',
+  'projects', 'subtitleCodes', 'lines',
+] as const
 
 export async function prepareGeneratedDocumentHistoryOutput(db: Pick<ReturnType<typeof requireDb>, 'select'>, data: ReturnType<typeof normalizeGeneratedDocumentHistoryGridRequest>) {
   return { query: buildGeneratedDocumentHistoryGridSql(data, await loadGeneratedDocumentOtherSettings(db), true),

@@ -1,7 +1,8 @@
 import { X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { DialogHeadingIdContext } from './dialog-heading-context'
 
 type DialogHeaderProps = {
   title: ReactNode
@@ -13,10 +14,11 @@ type DialogHeaderProps = {
 }
 
 export function DialogHeader({ title, subtitle, onClose, actions, closeLabel = 'Закрыть', closeDisabled = false }: DialogHeaderProps) {
+  const headingId = useContext(DialogHeadingIdContext)
   return (
     <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
       <div className="min-w-0 flex-1">
-        <h2 className="text-lg font-semibold">{title}</h2>
+        <h2 id={headingId} className="text-lg font-semibold">{title}</h2>
         {subtitle ? <p className="break-words text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
       <div className="flex items-center gap-2">

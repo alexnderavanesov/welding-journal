@@ -24,6 +24,7 @@ import {
   REPLACE_DELETE_ROW_HEADER,
   REPLACE_ROW_VERSION_HEADER,
   getReportImportCheckedFieldKeys,
+  getReportImportIgnoredFieldKeys,
   getReportImportPreviewFields,
   getReportImportTemplateFields,
   isExistingRowsImportLockedField,
@@ -111,6 +112,7 @@ export async function buildReportImportPreview({
   assertWeldImportRowLimit(parsed.records.length)
   const preparationSettings = loadImportedWeldPreparationSettings()
   const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport, preparationSettings))
+  const ignoredFieldKeys = getReportImportIgnoredFieldKeys(activeReport, preparationSettings)
   const fields = getReportImportPreviewFields(activeReport)
 
   const { validRecords, errors } = validateReportImportRecords(
@@ -123,7 +125,10 @@ export async function buildReportImportPreview({
     },
     {
       rowNumbers: parsed.recordRowNumbers,
-      cellErrors: parsed.cellErrors,
+      cellErrors: parsed.cellErrors.flatMap(error => {
+        const fieldKeys = error.fieldKeys.filter(key => !ignoredFieldKeys.has(key))
+        return fieldKeys.length ? [{ ...error, fieldKeys }] : []
+      }),
     },
     preparationSettings,
   )

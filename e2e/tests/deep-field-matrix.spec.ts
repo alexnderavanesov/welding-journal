@@ -37,9 +37,15 @@ test.beforeAll(async () => {
     const names = physical.map(field => `"${columns[field.key as keyof typeof columns].name}"`)
     const values = physical.map(field => {
       const column = columns[field.key as keyof typeof columns]
+      // Some UI choices are backed by PostgreSQL booleans, while historical
+      // yes/cancelled flags remain text. Seed the actual storage type first.
+      if (column.dataType === 'boolean') return column.notNull
+        ? '(n%2=0)' : '(array[true,false,null,false]::boolean[])[n%4+1]'
       if (column.dataType === 'date') return "timestamp with time zone '2026-10-01 12:00:00+00' + (n%4)*interval '1 day' + (n%2)*interval '1 millisecond'"
       if (field.kind === 'date') return "case when n%4=0 then null else date '2026-10-01'+(n%4)::int end"
-      if (field.kind === 'number') return `(case when n%4=0 then null else n%3+1 end)${column.dataType === 'string' ? '::text' : ''}`
+      // Exact decimal values use PgNumeric's string JS representation, but
+      // their SQL fixture must still be numeric, unlike legacy text storage.
+      if (field.kind === 'number') return `(case when n%4=0 then null else n%3+1 end)${column.dataType === 'string' && column.columnType !== 'PgNumeric' ? '::text' : ''}`
       if (field.kind === 'boolean') return "(array['да','отменен',null,'да'])[n%4+1]"
       return "(array['АЛЬФА-2','Альфа-10',null,''])[n%4+1]"
     })

@@ -8,6 +8,10 @@ export function documentArea(type: string): 'lnk' | 'psto' | 'welding' {
 export async function extendOperationPermissions(identity: AccessIdentity, name: string, policy: string, input: unknown, permissions: Permission[]) {
   const data = (input ?? {}) as Record<string, any>
   const add = (permission: Permission) => { assertPermission(identity, permission); if (!permissions.includes(permission)) permissions.push(permission) }
+  if (policy === '@settingEdit' && data.key === 'other') {
+    const { assertOtherSettingsEntry } = await import('./other-settings-access')
+    add(assertOtherSettingsEntry(identity))
+  }
   // These helpers return only common line properties or aggregate reference
   // usage. Their screens do not require access to the complete other section.
   if (policy === '@lineIdentity' || policy === '@weldDataUsage' || policy === '@documentSequenceRead') {

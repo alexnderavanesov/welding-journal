@@ -15,6 +15,8 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
+import { removeLnkResults } from '@/server/lnk-result-removal'
+import type { LnkResultRemovalTarget } from './lnk-result-removal-plan'
 
 export function useLnkResultManagerMutations({
   setMessage,
@@ -34,7 +36,11 @@ export function useLnkResultManagerMutations({
     }) => {
       const updatedRecords = buildLnkResultReplacementRows({ updates })
 
-      const savedRows = await withSpecialistCorrectionConfirmation(confirmation => updateWeldRowsOrThrow(
+      const savedRows = await withSpecialistCorrectionConfirmation(confirmation => updates.length > 0 && updates.every(update => update.result === null)
+        ? removeLnkResults({ data: { targets: updates.map(({ record, methodKey }) => ({ rowId: record.id,
+          methodKey: methodKey as LnkResultRemovalTarget['methodKey'], expectedVersion: String(record.rowVersion ?? '') })),
+          specialistCorrectionConfirmation: confirmation } })
+        : updateWeldRowsOrThrow(
         updatedRecords,
         'Не удалось сохранить изменения результатов ЛНК',
         { mutationScope: 'lnk', specialistCorrectionConfirmation: confirmation },

@@ -174,7 +174,7 @@ export function JointChainDialog({
   }, [record.id, initialTab, focusedTaskKey])
 
   return (
-    <LargeDialogShell onEscape={onClose}
+    <LargeDialogShell onEscape={onClose} ariaLabel={`Картина стыка ${String(selectedRow.joint ?? '-').trim() || '-'}`}
       maxWidthClassName="max-w-[1180px]"
       maxHeightClassName="h-full max-h-none"
       overlayClassName="z-[70] bg-slate-950/25 !items-stretch !justify-end !px-0 !py-0"

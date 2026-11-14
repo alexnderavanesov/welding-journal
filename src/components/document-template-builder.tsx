@@ -916,7 +916,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   }
 
   return (
-    <LargeDialogShell onEscape={() => void requestClose()} escapeDisabled={isSaving} maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
+    <LargeDialogShell onEscape={() => void requestClose()} escapeDisabled={isSaving} ariaLabel="Конструктор шаблона" maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-950">Конструктор шаблона</h3>

@@ -1,17 +1,20 @@
 import { expect, test } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
-import { writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import pg from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { invalidateDerivedCalculationCache } from '../../src/server/dispatcher-task-index-dirty'
 import { assertSafeE2eDatabaseUrl, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { auditSqlSnapshot } from '../audit-sql'
+import { deserializeRpcResponse, serializeRpcData, siblingRpcUrl } from '../rpc'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-column-choice-filter'
-import type { WeldFilters, WeldReportKind } from '../../src/server/weld-contracts'
+import type { WeldFilters, WeldReportKind, WeldReportSummaryResult } from '../../src/server/weld-contracts'
 
 const project = 'E2E report filters performance'
-test('derived filter benchmark: scopes, cold/warm cache, five readers and DB transport', async ({}, info) => {
+test('derived filter benchmark: scopes, cold/warm cache, five readers and DB transport', async ({ request, baseURL }, info) => {
   test.skip(process.env.AUDIT_REPORT_FILTERS !== '1', 'Explicit isolated 200k performance profile')
   test.setTimeout(1_200_000)
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
@@ -87,18 +90,31 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
   const { ensureDispatcherTaskIndexFresh, isDispatcherTaskIndexFresh } = await import('../../src/server/dispatcher-task-index')
   expect(isDispatcherTaskIndexFresh(await ensureDispatcherTaskIndexFresh())).toBe(true)
   const measures: Array<Record<string, unknown>> = []
+  const includeQueryDetail = process.env.AUDIT_REPORT_FILTER_QUERY_DETAIL === '1'
+  type QueryDetail = { sql: string; rows: number; bytes: number; milliseconds: number }
+  let queryDetails: QueryDetail[] = []
   let dbRows = 0, dbBytes = 0, maxRows = 0, queries = 0, peakRss = 0
   const original = pg.Client.prototype.query
   pg.Client.prototype.query = function(this: pg.Client, ...args: unknown[]) {
     queries++
+    const queryStarted = includeQueryDetail ? performance.now() : 0
+    const queryText = includeQueryDetail
+      ? (typeof args[0] === 'string' ? args[0] : (args[0] as { text?: string })?.text ?? '').replace(/\s+/g, ' ').trim()
+      : ''
     type Callback = (error: Error | null, result?: pg.QueryResult) => unknown
     const capture = (result: pg.QueryResult) => {
+      // Measure arrival before the existing byte-count instrumentation. Record
+      // SQL structure only: never bound values or full database rows.
+      const queryMilliseconds = includeQueryDetail ? performance.now() - queryStarted : 0
       dbRows += result.rowCount ?? 0
       maxRows = Math.max(maxRows, result.rowCount ?? 0)
       // Count the JSON array without constructing one potentially >512 MB
       // string; instrumentation must not cause the legacy path's failure.
-      dbBytes += 2 + Math.max(0, result.rows.length - 1)
-      for (const row of result.rows) dbBytes += Buffer.byteLength(JSON.stringify(row))
+      let queryBytes = 2 + Math.max(0, result.rows.length - 1)
+      for (const row of result.rows) queryBytes += Buffer.byteLength(JSON.stringify(row))
+      dbBytes += queryBytes
+      if (includeQueryDetail) queryDetails.push({ sql: queryText, rows: result.rows.length,
+        bytes: queryBytes, milliseconds: Math.round(queryMilliseconds * 100) / 100 })
       peakRss = Math.max(peakRss, process.memoryUsage().rss)
     }
     const observe = (callback: Callback): Callback => (error, result) => { if (result) capture(result); return callback(error, result) }
@@ -119,6 +135,7 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
   async function measure(name: string, run: () => Promise<unknown>, cold: boolean) {
     if (cold) await withE2eDatabase(db => db.query('delete from derived_calculation_cache'))
     dbRows = dbBytes = maxRows = queries = 0
+    queryDetails = []
     const startRss = process.memoryUsage().rss
     peakRss = startRss
     const cpu = process.cpuUsage(), start = performance.now()
@@ -128,7 +145,8 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
     const used = process.cpuUsage(cpu)
     measures.push({ name, cold, ms: Math.round(performance.now() - start), queries, dbRows, maxRows, dbBytes,
       cpuMs: Math.round((used.user + used.system) / 1000), peakRss, rssGrowth: peakRss - startRss,
-      responseBytes: Buffer.byteLength(JSON.stringify(result)) })
+      responseBytes: Buffer.byteLength(JSON.stringify(result)),
+      ...(includeQueryDetail ? { queryDetails: [...queryDetails] } : {}) })
     if (name.startsWith('configured-scheme:') || name.startsWith('wdi-')) {
       assert.equal((result as Awaited<ReturnType<typeof page>>).rows.length, 100, name)
     }
@@ -137,6 +155,56 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
     if (process.env.REPORT_FILTER_METRICS_PATH) await writeFile(process.env.REPORT_FILTER_METRICS_PATH, JSON.stringify(measures, null, 2))
     console.info('REPORT FILTER SAMPLE:', name, measures.at(-1)?.ms, 'ms')
     return result
+  }
+  async function measureSkewSummaryRpc() {
+    // This public service requires a real authenticated Start request. Its SQL
+    // runs in the server process, outside the direct-loader pg probe above.
+    // Resolve the compiled endpoint without opening an unrelated UI workflow.
+    expect(process.env.E2E_USE_PRODUCTION_BUILD).toBe('1')
+    expect(baseURL).toBeTruthy()
+    const directory = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'server')
+    const resolvers = (await readdir(directory)).filter(name => name.includes('tanstack-start-server-fn-resolver') && name.endsWith('.mjs'))
+    expect(resolvers).toHaveLength(1)
+    const manifest = await readFile(resolve(directory, resolvers[0]), 'utf8')
+    const firstId = manifest.match(/"([a-f0-9]{64})":/)?.[1]
+    expect(firstId).toBeTruthy()
+    const url = new URL(siblingRpcUrl(`${baseURL}/_serverFn/${firstId}`, 'getWeldReportSummary_createServerFn_handler'))
+    url.searchParams.set('payload', await serializeRpcData({
+      report: 'lnk', projectTitle: project, columnFilters: { rkResult: value('ремонт') },
+    }))
+    await withE2eDatabase(db => db.query('delete from derived_calculation_cache'))
+    const before = await auditSqlSnapshot()
+    expect(before?.rpcStatements, 'The RPC sample requires AUDIT_SQL_COUNTS=1 with per-RPC telemetry').toBeDefined()
+    const rpcId = url.pathname.split('/').at(-1)!
+    const started = performance.now()
+    const response = await request.get(url.href, {
+      timeout: 300_000,
+      headers: { origin: baseURL!, 'sec-fetch-site': 'same-origin', 'x-tsr-serverFn': 'true' },
+    })
+    const body = await response.text()
+    const milliseconds = Math.round(performance.now() - started)
+    const payload = await deserializeRpcResponse(body) as { result?: WeldReportSummaryResult; error?: Error }
+    expect(response.ok()).toBe(true)
+    expect(payload.error).toBeUndefined()
+    // Every twentieth fixture joint has rejected RK. All four methods already
+    // have final results, so those rows have no new-request candidate method.
+    expect(payload.result).toEqual({ total: 10_000, availableRequestCount: 0 })
+    const after = await auditSqlSnapshot()
+    expect(after?.rpcStatements).toBeDefined()
+    const serverRpcStatements = (after!.rpcStatements![rpcId] ?? 0) - (before!.rpcStatements![rpcId] ?? 0)
+    expect(serverRpcStatements).toBeGreaterThan(0)
+    measures.push({ name: 'skew:lnk-summary', cold: true, report: 'lnk',
+      measurementScope: 'authenticated-server-rpc', ms: milliseconds,
+      responseBytes: Buffer.byteLength(body), responseEncoding: 'serialized-rpc-body',
+      serverRpcStatements, result: payload.result,
+      // null means unmeasured here, not zero server work. Do not reuse the
+      // unrelated test-process counters or CPU/RSS for this HTTP sample.
+      queries: null, dbRows: null, maxRows: null, dbBytes: null,
+      cpuMs: null, peakRss: null, rssGrowth: null,
+      unmeasured: ['serverDbRows', 'serverDbBytes', 'serverCpuMs', 'serverRss'],
+    })
+    if (process.env.REPORT_FILTER_METRICS_PATH) await writeFile(process.env.REPORT_FILTER_METRICS_PATH, JSON.stringify(measures, null, 2))
+    console.info('REPORT FILTER RPC SAMPLE: skew:lnk-summary', milliseconds, 'ms', serverRpcStatements, 'server SQL')
   }
   async function setOtherSettings(settings: unknown) {
     // Match app-settings.ts: `other` invalidates derived values, not the
@@ -278,9 +346,7 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
         })), true)
       }
       await measure('skew:long-rk-description', () => page('lnk', {}, { rkExposureScheme: 'схема' }), true)
-      await measure('skew:lnk-summary', () => api.getWeldReportSummary({ data: {
-        report: 'lnk', projectTitle: project, columnFilters: { rkResult: value('ремонт') },
-      } }), true)
+      await measureSkewSummaryRpc()
       await measure('skew:output500', () => api.listReportPage('lnk', api.normalizeWeldPageRequest({
         projectTitle: project, category: 'first10000', columnFilters: { rkResult: value('ремонт') },
         pageSize: 'all', includeTotals: false, sort: { fieldKey: 'isometry', direction: 'asc' },

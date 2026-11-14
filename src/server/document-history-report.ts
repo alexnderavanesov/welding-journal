@@ -29,7 +29,8 @@ export function normalizeDocumentHistoryReportRequest(input: DocumentHistoryRepo
 }
 
 /** One cursor/snapshot for the full list. No browser workbook or repeated OFFSET scans. */
-export async function visitDocumentHistoryReport(input: DocumentHistoryReportRequest, consume: (rows: Array<Array<string | number>>) => Promise<boolean | void>, signal?: AbortSignal) {
+export async function visitDocumentHistoryReport(input: DocumentHistoryReportRequest, consume: (rows: Array<Array<string | number>>) => Promise<boolean | void>, signal?: AbortSignal,
+  lifecycle?: import('./large-export-guard').ReportOutputLifecycle) {
   await requirePermission('documents.view'); await requirePermission('documents.export')
   const normalized = normalizeDocumentHistoryReportRequest(input)
   signal?.throwIfAborted()
@@ -42,18 +43,22 @@ export async function visitDocumentHistoryReport(input: DocumentHistoryReportReq
     const time = await tx.execute<{ time: string }>(sql`select transaction_timestamp()::text as time`)
     await tx.execute(sql`declare document_history_output no scroll cursor for ${source.query}`)
     let total = 0
+    let initialized = false
     try {
       for (;;) {
         signal?.throwIfAborted()
         const batch = await tx.execute<Record<string, unknown>>(sql`fetch forward 1000 from document_history_output`)
         if (!batch.rows.length) break
         total = Number(batch.rows[0].__outputTotal)
+        if (!initialized) { await lifecycle?.start(tx, total); initialized = true }
         const rows = batch.rows.map(raw => source.cells(input.columns.map(column => column.key), raw).map((value, index) =>
           input.columns[index].key === 'wdi' ? Number(String(value).replace(/\s/g, '').replace(',', '.')) : value))
         signal?.throwIfAborted()
         if (await consume(rows) === false) break
       }
     } finally { await tx.execute(sql`close document_history_output`) }
+    if (!initialized) await lifecycle?.start(tx, 0)
+    await lifecycle?.finish()
     return { total, generatedAt: new Date(time.rows[0].time).toISOString() }
   }, { isolationLevel: 'repeatable read' })
 }
@@ -87,8 +92,9 @@ export function documentHistoryWorksheetRow(values: Array<string | number>, inde
 export async function createDocumentHistoryExcelResponse(input: DocumentHistoryReportRequest, signal: AbortSignal) {
   normalizeDocumentHistoryReportRequest(input)
   return createTabularExcelResponse({ sheetName: 'Реестр документов', filename: 'documents.xlsx', row: documentHistoryWorksheetRow,
+    columns: input.columns.length,
     header: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>'
       + input.columns.map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${column.key === 'title' ? 48 : 24}" customWidth="1"/>`).join('')
       + '</cols><sheetData>' + documentHistoryWorksheetRow(input.columns.map(column => column.label), 0),
-  }, consume => visitDocumentHistoryReport(input, consume, signal), signal)
+  }, (consume, lifecycle) => visitDocumentHistoryReport(input, consume, signal, lifecycle), signal)
 }

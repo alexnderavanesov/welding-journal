@@ -349,8 +349,11 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
     await expect.poll(() => telemetry.every(client => client.pending.size === 0)).toBe(true)
     for (const [index, client] of telemetry.entries()) {
       const extra = client.calls.slice(beforeQuiet[index])
-      expect(extra.length).toBeLessThanOrEqual(1)
-      expect(extra.every(call => call.name.startsWith('getDispatcherTaskVersion'))).toBe(true)
+      // A visible authenticated tab also checks access and records activity.
+      // Neither probe may fan out into grid/data reads on an unchanged version.
+      expect(extra.filter(call => /^getDispatcherTaskVersion(?:_|$)/.test(call.name)).length).toBeLessThanOrEqual(1)
+      expect(extra.filter(call => /^refreshAccountActivity(?:_|$)/.test(call.name)).length).toBeLessThanOrEqual(1)
+      expect(extra.every(call => /^(?:getDispatcherTaskVersion|refreshAccountActivity)(?:_|$)/.test(call.name))).toBe(true)
     }
     console.log(JSON.stringify({ phase: 'mixed quiet/focus', quietMilliseconds: 6500, focusSql: (await auditSqlCount())! - quietSql!, focusCalls: telemetry.map((client, i) => client.calls.slice(beforeQuiet[i])) }))
     await pages[1].screenshot({ path: info.outputPath('mixed-final-program.png') })

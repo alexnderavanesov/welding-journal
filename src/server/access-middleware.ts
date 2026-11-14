@@ -12,6 +12,9 @@ export const accessMiddleware = createMiddleware({ type: 'function' }).server(as
     setResponseHeader('X-Access-Expired', 'true'); throw error
   })
   const permissions = getOperationPermissions(policy, data)
+  // Reject the base operation before a resource-specific resolver reads IDs.
+  const { assertPermission } = await import('@/lib/access-permissions')
+  for (const permission of permissions) assertPermission(identity, permission)
   const { extendOperationPermissions } = await import('./access-document-policy')
   await extendOperationPermissions(identity, serverFnMeta.name, policy, data, permissions)
   const { assertReadableQuery, getOperationSearchArea } = await import('./access-payload')

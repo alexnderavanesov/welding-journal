@@ -152,7 +152,8 @@ test('5000: exact summary versus presence with primary, empty and repeat-history
         })
         const summaryUrl = siblingRpcUrl(observedUrl, 'getPstoWorkflowSummary_createServerFn_handler')
         const http: { kind: string; round: number; sample: Awaited<ReturnType<typeof sampleHttp>> }[] = []
-        // The future app endpoint is optional: today's baseline still runs.
+        // Keep the historical baseline mode; the final profile also verifies
+        // that the real menu uses the agreed lightweight availability endpoint.
         let availabilityUrl: string | undefined
         if (process.env.PSTO_AVAILABILITY_HTTP === '1') availabilityUrl = siblingRpcUrl(observedUrl, 'getPstoWorkflowAvailability_createServerFn_handler')
         for (let round = 0; round < 3; round++) {
@@ -174,6 +175,10 @@ test('5000: exact summary versus presence with primary, empty and repeat-history
         expect(sql.availability).toEqual(availabilityFromSummary(sql.counts as PstoWorkflowSummary))
         results.push({ profile, jointCount: 5000, initialRpc: rpcName(observedUrl), initial, http, sql })
         await save()
+        if (process.env.PSTO_AVAILABILITY_HTTP === '1') {
+          expect(rpcName(observedUrl), `${profile}: the real menu must use the availability API`)
+            .toMatch(/^getPstoWorkflowAvailability(?:_|$)/)
+        }
       } finally {
         await probe.finish()
         // Each probe writes the same default name; preserve every profile.

@@ -37,7 +37,7 @@ export function ReportFieldEditDialog({
   }
 
   return (
-    <LargeDialogShell onEscape={onClose} escapeDisabled={isSaving}
+    <LargeDialogShell onEscape={onClose} escapeDisabled={isSaving} ariaLabel={editing.label}
       maxWidthClassName="max-w-xl"
       maxHeightClassName=""
       overlayClassName="z-50 bg-slate-950/20"

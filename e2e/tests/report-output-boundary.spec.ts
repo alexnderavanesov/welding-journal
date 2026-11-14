@@ -6,7 +6,8 @@ import { withE2eDatabase } from '../database'
 import { captureFullReportPrint } from '../report-print-capture'
 import { rpcName } from '../rpc'
 import { sampleLocalAuditResources } from '../audit-resources'
-import { auditSqlCount } from '../audit-sql'
+import { auditSqlCount, auditSqlSnapshot } from '../audit-sql'
+import { ALL_JOURNAL_OUTPUT_HEADERS as expectedHeaders, showAllJournalOutputColumns } from '../report-output-contract'
 
 const exec = promisify(execFile)
 
@@ -31,12 +32,17 @@ test(`${outputRows} строк: настоящий широкий предпро
   page.on('pageerror', error => errors.push(error.message))
   page.on('crash', () => errors.push('Browser page crashed'))
   const calls: string[] = []
+  const rpcNames = new Map<string, string>()
   const pending = new Set<Request>()
   let lastRpc = 0
   const settleRpc = () => expect.poll(() => pending.size === 0 && Date.now() - lastRpc >= 500, { timeout: 60_000 }).toBe(true)
   const transfers: Array<Promise<{ name: string; bytes: number }>> = []
   page.on('request', request => {
-    if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request); lastRpc = Date.now() }
+    if (request.url().includes('/_serverFn/')) {
+      const name = rpcName(request.url())
+      calls.push(name); rpcNames.set(new URL(request.url()).pathname.split('/').at(-1)!, name)
+      pending.add(request); lastRpc = Date.now()
+    }
   })
   const finished = (request: Request) => { if (pending.delete(request)) lastRpc = Date.now() }
   page.on('requestfinished', finished)
@@ -49,6 +55,7 @@ test(`${outputRows} строк: настоящий широкий предпро
     await page.goto('/journal')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('MAX-EXPORT-')
     await expect(page.getByText(`MAX-EXPORT-F${String(1).padStart(jointDigits, '0')}`, { exact: true })).toBeVisible({ timeout: 180_000 })
+    await showAllJournalOutputColumns(page)
     await settleRpc()
     await stopSampling.checkpoint('initial journal and dispatcher')
     const beforePreview = calls.length
@@ -59,16 +66,17 @@ test(`${outputRows} строк: настоящий широкий предпро
     const dialog = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
     const table = dialog.frameLocator('iframe').locator('table')
     await expect(table.locator('tbody tr')).toHaveCount(100, { timeout: 120_000 })
-    await expect(table.locator('thead th')).toHaveCount(111)
+    await expect(table.locator('thead th')).toHaveText(expectedHeaders)
     // iframe document.write does not promise Playwright's global networkidle.
     // Wait for the actual RPCs and visible table, not that synthetic load event.
     await settleRpc()
     const afterPreview = calls.length
+    const localOutputStarted = Date.now()
     const previewMilliseconds = Date.now() - started
     const sqlAfterPreview = await auditSqlCount()
     if (sqlAfterPreview !== undefined && sqlBeforePreview !== undefined) expect(sqlAfterPreview - sqlBeforePreview).toBeLessThanOrEqual(80)
     expect(afterPreview - beforePreview).toBeLessThanOrEqual(5)
-    console.log(JSON.stringify({ workflow: `${outputRows} x 111 browser preview`, milliseconds: previewMilliseconds }))
+    console.log(JSON.stringify({ workflow: `${outputRows} x ${expectedHeaders.length} browser preview`, milliseconds: previewMilliseconds }))
     await stopSampling.checkpoint('preview')
     await page.screenshot({ path: info.outputPath('paginated-report-preview.png') })
     if (outputRows > 2000) await expect(dialog.getByText(/Предпросмотр ограничен первыми 2000 строками/)).toBeVisible()
@@ -99,25 +107,51 @@ test(`${outputRows} строк: настоящий широкий предпро
     expect(workbook.dataRows).toBe(outputRows)
     expect(workbook).toMatchObject({ distinctJoints: outputRows, firstJoint: 1, lastJoint: outputRows })
     expect(workbook.found).toBe(true)
-    expect(workbook.columns).toBe(111)
-    const sqlAfterDownload = await auditSqlCount()
+    expect(workbook.columns).toBe(expectedHeaders.length)
+    expect(workbook.sheetHeaders).toEqual([expectedHeaders])
+    const afterDownloadSql = await auditSqlSnapshot()
+    const sqlAfterDownload = afterDownloadSql?.statements
     if (sqlBeforeDownload !== undefined && sqlAfterDownload !== undefined) expect(sqlAfterDownload - sqlBeforeDownload).toBeLessThanOrEqual(30 * Math.ceil(outputRows / 1000) + 20)
-    console.log(JSON.stringify({ workflow: `${outputRows} x 111 browser download`, milliseconds: downloadMilliseconds, withVerificationMilliseconds: Date.now() - downloading, bytes: size, sqlBeforeDownload, sqlAfterDownload, workbook }))
+    console.log(JSON.stringify({ workflow: `${outputRows} x ${expectedHeaders.length} browser download`, milliseconds: downloadMilliseconds, withVerificationMilliseconds: Date.now() - downloading, bytes: size, sqlBeforeDownload, sqlAfterDownload, workbook }))
     await dialog.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
     await expect(dialog).toBeHidden()
     await settleRpc()
+    const beforeReopenSql = await auditSqlSnapshot()
+    const sqlBeforeReopen = beforeReopenSql?.statements
     const localOutputCalls = calls.slice(afterPreview)
-    expect(localOutputCalls.every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
-    expect(localOutputCalls.length).toBeLessThanOrEqual(1)
+    const localOutputMilliseconds = Date.now() - localOutputStarted
+    const versionCalls = localOutputCalls.filter(name => /^getDispatcherTaskVersion(?:_|$)/.test(name))
+    const activityCalls = localOutputCalls.filter(name => /^refreshAccountActivity(?:_|$)/.test(name))
+    expect(localOutputCalls.every(name => /^(?:getDispatcherTaskVersion|refreshAccountActivity)(?:_|$)/.test(name))).toBe(true)
+    expect(versionCalls.length).toBeLessThanOrEqual(1)
+    // Visible-tab activity has a 60s timer; a long file must not turn that
+    // bounded security check into an exemption for grid reads or repeated work.
+    expect(activityCalls.length).toBeLessThanOrEqual(Math.ceil(localOutputMilliseconds / 60_000) + 1)
     const beforeReopen = calls.length
-    const sqlBeforeReopen = await auditSqlCount()
-    // A focus probe is security + version (2 SELECTs), plus at most two
-    // release-readiness metadata reads when its shared five-second TTL expires.
-    if (sqlBeforeReopen !== undefined && sqlAfterDownload !== undefined) expect(sqlBeforeReopen - sqlAfterDownload).toBeLessThanOrEqual(4)
+    if (afterDownloadSql && beforeReopenSql) {
+      expect(afterDownloadSql.rpcStatements).toBeDefined()
+      expect(beforeReopenSql.rpcStatements).toBeDefined()
+      let attributed = 0
+      for (const id of new Set([...Object.keys(afterDownloadSql.rpcStatements!), ...Object.keys(beforeReopenSql.rpcStatements!)])) {
+        const delta = (beforeReopenSql.rpcStatements![id] ?? 0) - (afterDownloadSql.rpcStatements![id] ?? 0)
+        expect(delta).toBeGreaterThanOrEqual(0)
+        if (!delta) continue
+        const name = rpcNames.get(id) ?? id
+        // Version: session/user lookup (<=2), fresh user, index version, gate (<=2).
+        // Activity: session/user (<=2), BEGIN + 2 locks + <=2 writes + COMMIT, gate (<=2).
+        if (/^getDispatcherTaskVersion(?:_|$)/.test(name)) expect(delta).toBeLessThanOrEqual(6 * versionCalls.length)
+        else if (/^refreshAccountActivity(?:_|$)/.test(name)) expect(delta).toBeLessThanOrEqual(10 * activityCalls.length)
+        else expect(delta, `Unexpected SQL after download: ${name}`).toBe(0)
+        attributed += delta
+      }
+      // No unexplained/background SQL; without either named probe this is zero,
+      // retaining a stricter bound than the former unconditional allowance of 4.
+      expect(beforeReopenSql.statements - afterDownloadSql.statements).toBe(attributed)
+    }
     await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
     await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
     await expect(table.locator('tbody tr')).toHaveCount(100)
-    await expect(table.locator('thead th')).toHaveCount(111)
+    await expect(table.locator('thead th')).toHaveText(expectedHeaders)
     await settleRpc()
     expect(calls.length - beforeReopen).toBeLessThanOrEqual(5)
     const sqlAfterReopen = await auditSqlCount()
@@ -165,36 +199,39 @@ test('1000 строк: разрешённая широкая печать цел
     // This same row is present before filtering. Its visibility alone can be
     // the inert placeholder; wait for the actual current rows, not the totals.
     await expect(page.locator('[data-welding-journal-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+    await showAllJournalOutputColumns(page)
     const started = Date.now()
     await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
     await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
     await expect(dialog.frameLocator('iframe').locator('tbody tr')).toHaveCount(100)
+    await expect(dialog.frameLocator('iframe').locator('thead th')).toHaveText(expectedHeaders)
     const previewMilliseconds = Date.now() - started
-    await sampling.checkpoint('preview 1000 x 111')
+    await sampling.checkpoint(`preview 1000 x ${expectedHeaders.length}`)
     await captureFullReportPrint(page, printPdf)
     const printing = Date.now()
     await dialog.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
     await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').rows)).toBe(1000)
     const printed = await page.evaluate(() => JSON.parse(document.body.dataset.fullPrint!))
-    expect(printed.columns).toBe(111)
-    expect(printed.minColumns).toBe(111)
-    expect(printed.maxColumns).toBe(111)
+    expect(printed.columns).toBe(expectedHeaders.length)
+    expect(printed.minColumns).toBe(expectedHeaders.length)
+    expect(printed.maxColumns).toBe(expectedHeaders.length)
     expect(printed.lastRow).toContain('ALLOWED-PRINT-F1000')
     expect(printed.parts.length).toBeGreaterThan(1)
     expect(printed.physicalRows).toBe(1000 * printed.parts.length)
     const expectedJoints = Array.from({ length: 1000 }, (_, i) => `ALLOWED-PRINT-F${String(i + 1).padStart(4, '0')}`)
     for (const part of printed.parts) {
       expect(part.headers.slice(0, 2)).toEqual(['Линия', 'Стык'])
+      expect(part.headers).toEqual(part.sources.map((source: number) => expectedHeaders[source]))
       expect(part.joints).toEqual(expectedJoints)
       expect(part.rows).toBe(1000)
       expect(part.minColumns).toBe(part.headers.length)
       expect(part.maxColumns).toBe(part.headers.length)
       expect(part.headers.length).toBeLessThanOrEqual(10)
     }
-    console.log(JSON.stringify({ workflow: '1000 x 111 allowed print DOM', previewMilliseconds, printMilliseconds: Date.now() - printing, cellNodes: printed.cellNodes }))
+    console.log(JSON.stringify({ workflow: `1000 x ${expectedHeaders.length} allowed print DOM`, previewMilliseconds, printMilliseconds: Date.now() - printing, cellNodes: printed.cellNodes }))
     await expect(page.locator('iframe[title="Полный отчёт для печати"]')).toHaveCount(0)
-    await sampling.checkpoint('printed 1000 x 111')
+    await sampling.checkpoint(`printed 1000 x ${expectedHeaders.length}`)
     if (printPdf) {
       const html = await page.evaluate(() => {
         const state = window as unknown as { auditFullPrintHtml?: string }

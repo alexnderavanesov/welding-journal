@@ -43,7 +43,7 @@ assert.equal(typeof pg.Client.prototype.query, 'function')
 const file = process.env.AUDIT_SQL_COUNTS_FILE
 assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
-const counts = { statements: 0, operations: {}, rpcStatements: {} }
+const counts = { statements: 0, operations: {}, rpcStatements: {}, rpcReleaseReadinessStatements: {} }
 if (s3Integration) {
   counts.s3Requests = {}
   channel('http.client.request.start').subscribe(({ request }) => {
@@ -371,11 +371,21 @@ async function explainGroupRepro(client, args, sqlText) {
     throw error
   }
 }
+// The process-wide release gate expires after five seconds, so its two exact
+// metadata probes can belong to any RPC. Keep them visible and separately
+// attributable; never grant an arbitrary extra-query allowance to access tests.
+const releaseReadinessStatements = new Set([
+  "select to_regclass('public.app_settings') is not null as available",
+  'select (select value from public.app_settings where key = $1) as release, (select value from public.app_settings where key = $2) as transition, (select value from public.app_settings where key = $3) as preliminary',
+])
 pg.Client.prototype.query = function (...args) {
   counts.statements++
   const rpc = rpcScope.getStore()
   if (rpc) counts.rpcStatements[rpc] = (counts.rpcStatements[rpc] ?? 0) + 1
   const sql = typeof args[0] === 'string' ? args[0] : args[0]?.text
+  if (rpc && typeof sql === 'string' && sql.length < 500 && releaseReadinessStatements.has(sql.replace(/\s+/g, ' ').trim())) {
+    counts.rpcReleaseReadinessStatements[rpc] = (counts.rpcReleaseReadinessStatements[rpc] ?? 0) + 1
+  }
   const operation = /^\s*(\w+)/.exec(sql ?? '')?.[1]?.toUpperCase() ?? 'OTHER'
   counts.operations[operation] = (counts.operations[operation] ?? 0) + 1
   const captureWideDate = wideDate && rpc && operation === 'SELECT'
@@ -435,5 +445,9 @@ process.on('exit', flush)
 if (process.env.DISPATCHER_LARGE_LINE_PROBE === '1') {
   const { installDispatcherStagingProbe } = await import('./dispatcher-staging-probe.mjs')
   installDispatcherStagingProbe(pg, file)
+}
+if (process.env.AUDIT_HEAVY_CALCULATIONS === '1') {
+  const { installHeavyCalculationProbe } = await import('./heavy-calculation-probe.mjs')
+  installHeavyCalculationProbe(pg, file)
 }
 await import(pathToFileURL(join(root, 'index.mjs')).href)

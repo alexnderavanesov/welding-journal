@@ -6,11 +6,13 @@ import { readdir, stat, writeFile } from 'node:fs/promises'
 import { withE2eDatabase } from '../database'
 import { editJournalJoint } from '../journal-grid'
 import { observeMixedClient, sampleMixedResources } from '../mixed-resource-telemetry'
+import { ALL_JOURNAL_OUTPUT_HEADERS as expectedHeaders, showAllJournalOutputColumns } from '../report-output-contract'
 
 const exec = promisify(execFile)
 const count = 200_000, project = 'E2E simultaneous complete exports'
+const limited = process.env.AUDIT_EXPORT_LIMIT === '1'
 
-test('three complete 200k × 111 exports alongside editing/search; cancellation releases storage and retry stays complete', async ({ browser }, info) => {
+test(`${limited ? 'one complete export and two busy responses' : 'three complete exports'}: 200k × ${expectedHeaders.length} alongside editing/search; cancellation releases storage and retry stays complete`, async ({ browser }, info) => {
   test.skip(process.env.AUDIT_EXPORT_CONCURRENCY !== '1', 'Own isolated database, 4 CPU/4 GiB server and disk temporary storage')
   test.setTimeout(900_000)
   expect(process.env.AUDIT_CONTAINER_MEMORY_MIB).toBe('4096')
@@ -39,6 +41,9 @@ test('three complete 200k × 111 exports alongside editing/search; cancellation 
   const stopSampling = await sampleMixedResources(browser)
   const temporaryRoot = join(dirname(process.env.AUDIT_SQL_COUNTS_FILE!), 'report-tmp')
   const temporaryFiles = () => readdir(temporaryRoot)
+  const exportSlotHeld = () => withE2eDatabase(async db => (await db.query(
+    "select exists(select 1 from pg_locks where locktype='advisory' and classid=84192721 and objid=1 and objsubid=2 and granted) held",
+  )).rows[0].held as boolean)
   const measures: Array<Record<string, unknown>> = []
   let downloadRequest: unknown
   pages[0].on('request', request => {
@@ -52,7 +57,7 @@ test('three complete 200k × 111 exports alongside editing/search; cancellation 
     expect(path).toBeTruthy()
     const { stdout } = await exec('python3', ['e2e/verify-report-workbook.py', path!, 'MAX-EXPORT-F200000'])
     const workbook = JSON.parse(stdout)
-    expect(workbook).toEqual({ dataRows: count, columns: 111, found: true, distinctJoints: count, firstJoint: 1, lastJoint: count })
+    expect(workbook).toEqual({ dataRows: count, columns: expectedHeaders.length, found: true, distinctJoints: count, firstJoint: 1, lastJoint: count, sheetHeaders: [expectedHeaders] })
     return { downloadMs, withVerificationMs: Math.round(performance.now() - started), bytes: (await stat(path!)).size, workbook }
   }
   try {
@@ -65,9 +70,10 @@ test('three complete 200k × 111 exports alongside editing/search; cancellation 
     for (const page of pages.slice(0, 3)) {
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('MAX-EXPORT-')
       await expect(page.getByText('MAX-EXPORT-F000001', { exact: true })).toBeVisible()
+      await showAllJournalOutputColumns(page)
       await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
       await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
-      await expect(preview(page).frameLocator('iframe').locator('thead th')).toHaveCount(111)
+      await expect(preview(page).frameLocator('iframe').locator('thead th')).toHaveText(expectedHeaders)
       await expect(preview(page).getByRole('status')).toContainText('200000')
     }
     await pages[3].getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('E2E-001')
@@ -80,6 +86,27 @@ test('three complete 200k × 111 exports alongside editing/search; cancellation 
     const started = performance.now()
     const downloading = pages.slice(0, 3).map(async (page, index) => {
       const started = performance.now()
+      if (limited && index > 0) {
+        // Wait for the first request to own the global database slot. Which
+        // socket arrived first is irrelevant to the user-facing busy contract.
+        await expect.poll(exportSlotHeld, { timeout: 30_000 }).toBe(true)
+        const denied = page.waitForResponse(response => response.url().endsWith('/api/report-excel'))
+        await preview(page).getByRole('button', { name: 'Скачать Excel', exact: true }).click()
+        const response = await denied
+        expect(response.status()).toBe(429)
+        expect(await response.text()).toContain('Сейчас в системе формируется большая выгрузка')
+        await expect(page.getByText(/Сейчас в системе формируется большая выгрузка/)).toBeVisible()
+        await expect(preview(page).getByRole('button', { name: 'Скачать Excel', exact: true })).toBeEnabled()
+        measures.push({ role: `export-${index + 1}-busy`, ms: Math.round(performance.now() - started) })
+        if (index === 2) {
+          const smallAt = performance.now()
+          const small = await page.request.post('/api/report-excel', { data: { report: 'weldingJournal',
+            fieldKeys: ['joint'], columnFilters: { projectTitle: '=E2E проект', joint: '=F1' } } })
+          expect(small.status()).toBe(200)
+          measures.push({ role: 'small-during-large', ms: Math.round(performance.now() - smallAt), bytes: (await small.body()).length })
+        }
+        return
+      }
       const [download] = await Promise.all([
         page.waitForEvent('download', { timeout: 360_000 }),
         preview(page).getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
@@ -124,11 +151,13 @@ test('three complete 200k × 111 exports alongside editing/search; cancellation 
         .then(() => { state.auditResult = 'unexpected completion' }, error => { state.auditResult = error.name })
     }, downloadRequest)
     await expect.poll(async () => (await temporaryFiles()).length, { timeout: 30_000 }).toBeGreaterThan(0)
+    if (limited) await expect.poll(exportSlotHeld, { timeout: 30_000 }).toBe(true)
     const cancelledAt = performance.now()
     console.log('CONCURRENT_EXPORT_CANCEL', new Date().toISOString())
     await pages[2].evaluate(() => (window as unknown as { auditAbort: AbortController }).auditAbort.abort())
     await expect.poll(() => pages[2].evaluate(() => (window as unknown as { auditResult: string }).auditResult)).toBe('AbortError')
     await expect.poll(temporaryFiles, { timeout: 30_000 }).toEqual([])
+    if (limited) await expect.poll(exportSlotHeld).toBe(false)
     measures.push({ role: 'cancel-cleanup', ms: Math.round(performance.now() - cancelledAt) })
     const retryStarted = performance.now()
     const [retry] = await Promise.all([

@@ -43,10 +43,11 @@
 .journal-input { height: 32px; border-radius: 5px; border: 1px solid #e2e8f0; background: white; padding: 0 8px; font-size: 12px; outline: none; }
 .journal-input:focus { border-color: #38bdf8; box-shadow: 0 0 0 2px #e0f2fe; }
 [data-journal-toolbar] { height: 54px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
-.journal-summary { flex: 1; min-width: 350px; }
+.journal-summary { flex: 1; min-width: 0; }
 .journal-summary > div { gap: 10px; overflow: visible; }
-.journal-summary > div > span { flex: 0 0 auto; max-width: none; white-space: nowrap; font-size: 12px; }
-.journal-summary label { margin-left: 0; width: clamp(130px, 18vw, 240px); flex-shrink: 1; min-width: 130px; }
+.journal-summary > div > span { flex: 0 1 auto; max-width: 100%; white-space: nowrap; font-size: 12px; }
+.journal-summary .journal-grouping:not([data-has-groups="true"]) { flex: 1 2 100px; min-width: 32px; }
+.journal-summary label { margin-left: 0; width: clamp(130px, 18vw, 240px); flex-shrink: 0; min-width: 130px; }
 .journal-summary input { font-size: 12px; background: #f8fafc; border-color: #e2e8f0; }
 .journal-filter { width: min(340px, calc(100vw - 40px)); background: white; color: #334155; }
 .journal-filter input[type=checkbox], [data-weld-report-grid] input[type=checkbox] { accent-color: #0284c7; width: 15px; height: 15px; }

@@ -5,6 +5,8 @@ import { getControlAssignmentPerformedHistory, getControlAssignmentRemovalReason
 import { clearRequestsForRemovedControlAssignments } from '@/lib/control-assignment-request-removal'
 import { hasPstoExecutionHistory } from '@/lib/psto-cycle'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
+import { hasStoredLnkResult } from './weld-workflow-removal'
+import { canonicalizeChangedWorkflowResults, getWorkflowResultValueIssues } from '@/lib/workflow-result-values'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
@@ -270,7 +272,9 @@ export function prepareServerWeldRecords({
   // Resolve new namesakes and R/W against the same stable physical identities
   // used by the card. Y roots remain independent. This also covers imports.
   const additions = records.filter(record => !record.id || !previousRows.has(Number(record.id)))
-  const additionRows = additions.map((record, index) => ({ ...record, id: -(index + 1) } as WeldRow))
+  const additionRows = additions.map((record, index) => ({
+    ...record, id: -(index + 1), programChainState: undefined,
+  } as WeldRow))
   const existing = context.programRules?.rows ?? []
   const inherited = new Map<number, boolean | null>()
   if (additionRows.length && existing.length) {
@@ -493,6 +497,7 @@ export function validateServerWeldRecords({
   inheritedControlAssignmentSource?: WeldInput
 }) {
   context = { ...context, saveCheckSettings: normalizeSaveCheckSettings(context.saveCheckSettings) }
+  records = records.map(record => canonicalizeChangedWorkflowResults(record, record.id ? previousRows.get(Number(record.id)) : undefined))
   const changedById = new Map(records.filter(row => row.id != null).map(row => [Number(row.id), row]))
   const ruleRows = (context.programRules?.rows ?? []).map(row => ({ ...row, ...changedById.get(row.id), programChainState: row.programChainState }))
   const knownIds = new Set(ruleRows.map(row => row.id))
@@ -510,10 +515,12 @@ export function validateServerWeldRecords({
       ? `Импорт остановлен: строка ${index + 2}, стык "${String(record.joint ?? '').trim() || 'пусто'}". `
       : 'Сохранение невозможно: '
 
+    const resultValueIssues = getWorkflowResultValueIssues(record, previous)
+    if (resultValueIssues.length) throw new Error(`${prefix}${resultValueIssues.map(issue => issue.message).join('\n')}`)
     const layeredReason = getLayeredControlSaveError(record, previous, context.controlProcessSettings.pvkGoodOnly)
     if (layeredReason) throw new Error(`${prefix}${layeredReason}`)
     if (previous) for (const method of LNK_METHODS) {
-      if (!isFinalLnkResultValue(previous[method.resultKey]) || isFinalLnkResultValue(record[method.resultKey])) continue
+      if (!hasStoredLnkResult(previous[method.resultKey]) || hasStoredLnkResult(record[method.resultKey])) continue
       const removalReason = getLnkResultRemovalBlockReason(previous, method.requestKey, context.saveCheckSettings)
       if (removalReason) throw new Error(`${prefix}${removalReason}`)
     }

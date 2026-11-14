@@ -1205,6 +1205,13 @@ function compactDispatcherRow(row: WeldRow): WeldRow {
 
 export function compactDispatcherTasksForTransport(tasks: RepeatedJointTask[]): RepeatedJointTask[] {
   return tasks.map((task) => {
+    if (task.kind === 'percentage-line-control') {
+      // These actions navigate by line/stamp/id and fetch the current joint
+      // before editing. Preserve both displayed quotas, not its full history.
+      return { ...task, row: { ...compactDispatcherRow(task.row),
+        weldControlPercent: task.row.weldControlPercent,
+        pvkControlPercent: task.row.pvkControlPercent } }
+    }
     if (task.kind === 'check') {
       return {
         ...task,

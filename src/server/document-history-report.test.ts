@@ -16,6 +16,7 @@ function source(total: number) {
   let offset = 0
   const execute = vi.fn(async query => {
     const text = dialect.sqlToQuery(query).sql
+    if (text.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] }
     if (text.startsWith('select transaction_timestamp')) return { rows: [{ time: '2026-11-12T09:00:00Z' }] }
     if (text.startsWith('fetch')) {
       const rows = Array.from({ length: Math.max(0, Math.min(1000, total - offset)) }, (_, n) => ({ title: `00-${offset + n}`, rowCount: offset + n, __outputTotal: total }))

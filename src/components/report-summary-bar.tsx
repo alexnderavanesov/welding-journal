@@ -72,7 +72,7 @@ export function ReportSummaryBar({
         : 'sticky isolate z-20 flex h-8 min-h-8 items-center overflow-hidden bg-[#f4f7f9] text-sm leading-5 text-muted-foreground'}
       style={embedded ? undefined : { left, width: `calc(100vw - ${left + 24}px)` }}
     >
-      <span className="block min-w-0 flex-1 truncate leading-5" title={rowsError ?? (summaryStatus === 'error' ? summaryError : undefined)}>{summaryText}</span>
+      <span className="block min-w-0 flex-1 truncate leading-5" title={rowsError ?? (summaryStatus === 'error' ? summaryError : undefined) ?? summaryText}>{summaryText}</span>
       {rowsError && onRetryRows ? (
         <button type="button" onClick={onRetryRows} className="ml-2 shrink-0 text-xs text-sky-700 underline">Повторить загрузку строк</button>
       ) : !rowsError && summaryStatus === 'error' && onRetrySummary ? (

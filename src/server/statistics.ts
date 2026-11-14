@@ -22,8 +22,8 @@ import {
   normalizeSystemIndexSettings,
 } from '@/lib/system-index-settings'
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings } from '@/lib/other-settings'
-import { prepareReportRows } from '@/lib/use-report-rows'
-import { prepareStatisticsHeatTreatmentRows } from '@/lib/statistics-psto-cycle'
+import { prepareReportRowsInPlace } from '@/lib/use-report-rows'
+import { prepareStatisticsHeatTreatmentRowsInPlace } from '@/lib/statistics-psto-cycle'
 import { normalizeControlProcessSettings } from '@/lib/control-process-settings'
 import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
@@ -137,12 +137,21 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
     await assertSecurityScope('entry')
     const schemesVersion = data.request.tab === 'lineSummary' ? await readLineSchemeStatisticsVersion() : undefined
     const result = await getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey(`statistics:v${STATISTICS_RESULT_VERSION}`, { ...data.request, schemesVersion }),
+      buildStatisticsCalculationCacheKey(data.request, schemesVersion),
       () => computeStatisticsServerResult(data.request),
     )
     // Already-open clients keep their existing response shape after an update.
     return data.transport === STATISTICS_TRANSPORT ? packStatisticsResult(result) : result
   })
+
+export function buildStatisticsCalculationCacheKey(request: StatisticsServerRequest, schemesVersion?: string) {
+  // These two tabs display different parts of the SAME complete control
+  // summary. Selection, unit, period and dynamics parameters stay in the key;
+  // the existing revision check/coalescing still owns freshness and concurrency.
+  return buildDerivedCalculationCacheKey(`statistics:v${STATISTICS_RESULT_VERSION}`, {
+    ...request, tab: request.tab === 'psto' ? 'lnk' : request.tab, schemesVersion,
+  })
+}
 
 export async function computeStatisticsServerResult(
   data: StatisticsServerRequest,
@@ -230,18 +239,18 @@ export async function computeStatisticsServerResult(
   )
   const rows = !needsControlHistory
     ? (sourceRows as WeldRow[]).map(row => isSystemWdiMode(otherSettings) ? withSystemWdi(row, otherSettings) : row)
-    : prepareReportRows(
-    prepareStatisticsHeatTreatmentRows(
+    : prepareReportRowsInPlace(
+    prepareStatisticsHeatTreatmentRowsInPlace(
       sourceRows as WeldRow[],
       repeatCycleRows,
       preControlRows,
       normalizeControlProcessSettings(getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.controlProcesses)),
     ),
     duplicateRows.map(toDuplicateControlRecord),
-    undefined,
-    undefined,
-    otherSettings,
   )
+  if (needsControlHistory && isSystemWdiMode(otherSettings)) {
+    for (const row of rows) Object.assign(row, withSystemWdi(row, otherSettings))
+  }
   const systemIndexSettings = normalizeSystemIndexSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.systemIndex) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
   )

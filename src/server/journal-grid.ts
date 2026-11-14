@@ -24,7 +24,7 @@ import { parseRepeatedJointName } from '@/lib/joint-chain'
 import { calculateWdi, isSystemWdiMode } from '@/lib/wdi'
 import { journalNumericValue } from '@/lib/welding-journal-grid-state'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
-import { prepareJournalPageRows } from '@/lib/use-report-rows'
+import { prepareJournalPageRows, prepareJournalSummaryRowsInPlace } from '@/lib/use-report-rows'
 import { assertSecurityScope } from './security-functions'
 import { ensureDispatcherTaskIndexFresh, isDispatcherTaskIndexFresh } from './dispatcher-task-index'
 import { buildCalculatedReportValueSql } from './report-calculated-values-sql'
@@ -374,7 +374,7 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
     left join ${weldJointProgramStates} as ${sql.identifier('journal_root_state')} on ${rootState.weldJointId} = ${root.id}
     where ${where}`)
   const links = new Map(readDispatcherTaskStateContext(context.dispatcher).chainContinuations.map(link => [link.sourceRowId, link]))
-  const rows = records.map(({ row, state, root: source, rootState: physicalState }) => ({ ...row,
+  const rows = records.map(({ row, state, root: source, rootState: physicalState }) => Object.assign(row, {
     ...(state ? { programChainState: state } : {}),
     ...(state?.physicalRootId == null ? {} : { groupPhysicalRoot: { id: state.physicalRootId, exists: Boolean(source), replaced: Boolean(physicalState?.replaced),
       wdi: source ? isSystemWdiMode(context.settings) ? calculateWdi(source, context.settings) : journalNumericValue(source.wdi) : null } }),
@@ -383,9 +383,9 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
   if (report === 'weldingJournal') return rows
   // These narrow rows are owned by this read and already carry the complete
   // chain-state left join, including its legitimate nulls for legacy rows.
-  const hydrated = await attachHeatTreatmentControlRelationsInPlace(await attachDuplicateControlsToPage(rows, context.db), context.db,
+  const hydrated = await attachHeatTreatmentControlRelationsInPlace(await attachDuplicateControlsToPage(rows, context.db, true), context.db,
     undefined, { programChainStatesLoaded: true })
-  return prepareJournalPageRows(hydrated, report)
+  return prepareJournalSummaryRowsInPlace(hydrated, report)
 }
 export async function selectJournalGridRows(input: JournalGridQuery & { route: string[]; revision: JournalRevision }) {
   const context = await journalReadContext({ ...input, start: 0, end: 100 })

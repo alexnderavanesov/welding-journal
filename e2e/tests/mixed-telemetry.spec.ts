@@ -27,6 +27,7 @@ test('отмена чтения не путается с явно имитиро
     expect(telemetry.errors).toEqual(['updateWeldJoint_realFirst: net::ERR_FAILED'])
     await fail('getWeldReportSummary_obsolete', 'GET')
     await fail('readJournalGrid_aborted')
+    await fail('readJournalGridBlocks_aborted')
     await fail('getJournalReportSummary_aborted')
     await fail('summarizeJournalGridArea_aborted')
     await fail('summarizeJournalGridRange_aborted')
@@ -35,6 +36,7 @@ test('отмена чтения не путается с явно имитиро
     expect(telemetry.expectedFailures).toEqual([
       'getWeldReportSummary_obsolete: net::ERR_ABORTED',
       'readJournalGrid_aborted: net::ERR_ABORTED',
+      'readJournalGridBlocks_aborted: net::ERR_ABORTED',
       'getJournalReportSummary_aborted: net::ERR_ABORTED',
       'summarizeJournalGridArea_aborted: net::ERR_ABORTED',
       'summarizeJournalGridRange_aborted: net::ERR_ABORTED',
@@ -44,12 +46,16 @@ test('отмена чтения не путается с явно имитиро
     await fail('updateWeldJoint_realLater')
     await fail('updateWeldJoint_aborted')
     await fail('readJournalGrid_realFailure')
+    await fail('readJournalGridBlocks_realFailure')
+    await fail('readJournalGridBlocksMutation_aborted')
     await fail('summarizeJournalGridArea_realFailure')
     expect(telemetry.errors).toEqual([
       'updateWeldJoint_realFirst: net::ERR_FAILED',
       'updateWeldJoint_realLater: net::ERR_FAILED',
       'updateWeldJoint_aborted: net::ERR_ABORTED',
       'readJournalGrid_realFailure: net::ERR_FAILED',
+      'readJournalGridBlocks_realFailure: net::ERR_FAILED',
+      'readJournalGridBlocksMutation_aborted: net::ERR_ABORTED',
       'summarizeJournalGridArea_realFailure: net::ERR_FAILED',
     ])
   } finally {
@@ -59,7 +65,7 @@ test('отмена чтения не путается с явно имитиро
   }
 })
 
-for (const read of ['refreshDispatcherTaskSnapshot', 'getDispatcherTaskContext', 'readReportOutputSnapshot'])
+for (const read of ['refreshDispatcherTaskSnapshot', 'getDispatcherTaskContext', 'readReportOutputSnapshot', 'readJournalGridBlocks'])
 test(`счётчик отличает уход со страницы от живого ${read} и не скрывает запись`, async ({ browser }) => {
   const held: ServerResponse[] = []
   let canceledSockets = 0

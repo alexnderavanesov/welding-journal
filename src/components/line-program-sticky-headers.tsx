@@ -121,11 +121,11 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
         const visibleLeft = Math.max(0, header ? viewport.left : grid.left)
         const visibleRight = Math.min(window.innerWidth, header ? viewport.left + chosen.viewport.clientWidth : grid.right)
         const values = { top: y, left, width, 'clip-left': Math.max(0, visibleLeft - left), 'clip-right': Math.max(0, left + width - visibleRight),
-          // Sticky column sections inside a fixed header use the window as
-          // their scrollport. Correct only the visible edge, including a header
-          // that extends past the window while horizontally scrolled.
-          'scroll-left': viewport.left + chosen.viewport.clientLeft - Math.max(0, left),
-          'scroll-right': viewport.left + chosen.viewport.clientWidth - Math.min(window.innerWidth, left + width) }
+          // Fixed-header sections use normal flex positions, then move to the
+          // body's pinned edges. Native sticky inside a fixed descendant picks
+          // different scrollports in Chromium and WebKit.
+          'scroll-left': viewport.left + chosen.viewport.clientLeft - left,
+          'scroll-right': viewport.left + chosen.viewport.clientLeft + chosen.viewport.clientWidth - (left + width) }
         for (const [name, value] of Object.entries(values)) {
           const property = `--program-sticky-${name}`, next = `${value}px`
           if (element.style.getPropertyValue(property) !== next) element.style.setProperty(property, next)

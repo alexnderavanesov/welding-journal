@@ -54,7 +54,7 @@ export function JournalGroupingControls({ groups, onChange, scope = 'loaded' }: 
     drag.target = inside ? distances.indexOf(Math.min(...distances)) : null
     setPreview({ group, level: index, left: drag.rect.left + dx, top: drag.rect.top + dy, width: drag.rect.width, height: drag.rect.height, target: drag.target })
   }
-  return <div className="journal-grouping" data-dragging={Boolean(preview)} aria-label={scope === 'journal' ? 'Группировка всех найденных стыков' : scope === 'documents' ? 'Группировка документов' : 'Группировка загруженных строк'} title={scope === 'journal' ? 'Группируются все найденные стыки. Добавить уровень — ПКМ по заголовку столбца.' : scope === 'documents' ? 'Группируется весь отфильтрованный реестр документов. Добавить уровень — ПКМ по заголовку столбца.' : 'Группируются только загруженные строки. Добавить уровень — ПКМ по заголовку столбца.'}>
+  return <div className="journal-grouping" data-dragging={Boolean(preview)} data-has-groups={groups.length > 0} aria-label={scope === 'journal' ? 'Группировка всех найденных стыков' : scope === 'documents' ? 'Группировка документов' : 'Группировка загруженных строк'} title={scope === 'journal' ? 'Группируются все найденные стыки. Добавить уровень — ПКМ по заголовку столбца.' : scope === 'documents' ? 'Группируется весь отфильтрованный реестр документов. Добавить уровень — ПКМ по заголовку столбца.' : 'Группируются только загруженные строки. Добавить уровень — ПКМ по заголовку столбца.'}>
     <ListTree size={15} aria-hidden="true" className="journal-grouping-icon" />
     {groups.length ? <>
       <div ref={levels} className="journal-grouping-levels" role="list" aria-label="Порядок группировок">

@@ -301,7 +301,7 @@ export function StatisticsPage(props: StatisticsPageProps) {
 function StatisticsReports({
   fixedTab,
   onOpenReportRowIds,
-  onOpenWeldRowIds,
+  onOpenWeldRowIds: openWeldRows,
 }: Omit<StatisticsPageProps, 'fixedTab'> & { fixedTab?: StatisticsTab }) {
   const { can } = useAccess()
   const [selectedTab, setSelectedTab] = useState<StatisticsTab>(fixedTab ?? 'general')
@@ -379,8 +379,9 @@ function StatisticsReports({
   const calculationStatusId = useId()
   // A successful placeholder belongs to the PREVIOUS query key, not the labels
   // currently selected above. Cached results for this key are usable when idle.
-  const calculationReady = statisticsQuery.isSuccess && Boolean(statisticsQuery.data) &&
-    !statisticsQuery.isPlaceholderData && statisticsQuery.fetchStatus === 'idle'
+  const hasMatchingResult = statisticsQuery.isSuccess && Boolean(statisticsQuery.data) && !statisticsQuery.isPlaceholderData
+  const calculationReady = hasMatchingResult && statisticsQuery.fetchStatus === 'idle'
+  const onOpenWeldRowIds = calculationReady ? openWeldRows : undefined
   const calculationPendingMessage = statisticsQuery.fetchStatus === 'paused'
     ? 'Ожидаем подключения для расчёта статистики.'
     : 'Обновляем статистику для выбранных параметров…'
@@ -717,10 +718,8 @@ function StatisticsReports({
             ) : null}
           </div>
         ) : null}
-      </div>
-
       {statisticsQuery.isError ? (
-        <div id={calculationStatusId} role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div id={calculationStatusId} role="alert" className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           <p>Не удалось рассчитать статистику: {statisticsQuery.error.message}</p>
           {statisticsQuery.fetchStatus !== 'idle' ? <p role="status">{calculationPendingMessage}</p> : null}
           <Button type="button" variant="outline" size="sm" className="mt-2"
@@ -730,15 +729,17 @@ function StatisticsReports({
           </Button>
         </div>
       ) : !calculationReady ? (
-        <div id={calculationStatusId} role="status" className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+        <div id={calculationStatusId} role="status" className="mt-3 rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
           {calculationPendingMessage}
-          {' '}Отчёт будет доступен после завершения расчёта.
+          {hasMatchingResult ? ' Показан предыдущий результат для этих же параметров. Отчёт и переходы к стыкам будут доступны после обновления.'
+            : ' Отчёт будет доступен после завершения расчёта.'}
         </div>
       ) : null}
+      </div>
 
       {/* Keep local chart/table controls mounted, but never expose previous-key
-          values (or empty fallbacks) under the newly selected period/unit. */}
-      <div hidden={!calculationReady}>
+          values (or a failed refresh) under the selected parameters. */}
+      <div hidden={!hasMatchingResult}>
       {activeTab === 'supports' ? <SupportStatisticsPanel summary={supportSummary} onOpenRows={onOpenWeldRowIds} onWelderRowsChange={onSupportWelderRowsChange} /> : activeTab === 'general' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -857,7 +858,7 @@ function StatisticsReports({
           summary={summary}
           unofficialCount={unofficialCount}
           unofficialRowIds={unofficialRowIds}
-          onOpenControlRows={activeTab === 'lnk' ? openLnkRows : openHeatTreatmentRows}
+          onOpenControlRows={calculationReady ? activeTab === 'lnk' ? openLnkRows : openHeatTreatmentRows : undefined}
           onOpenStateRows={onOpenWeldRowIds}
           unit={unit}
         />

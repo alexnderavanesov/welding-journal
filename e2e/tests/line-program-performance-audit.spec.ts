@@ -64,7 +64,7 @@ for (const count of [50, 100, 500]) test(`${count} joints: assignment opening, i
         await measure('cold-assignment-open', cold, openEditor)
         await closeEditor()
         if (cold === 2) {
-          const initialRequests = calls.length
+          const initialRequests = calls.length, localActionsStarted = performance.now()
           for (let round = 0; round < 50; round++) {
             if (round < 20) await measure('warm-assignment-open', round, openEditor)
             else await openEditor()
@@ -86,7 +86,16 @@ for (const count of [50, 100, 500]) test(`${count} joints: assignment opening, i
               retained.push({ round, ...(await cdp.send('Runtime.getHeapUsage')), ...(await cdp.send('Memory.getDOMCounters')) })
             }
           }
-          expect(calls.slice(initialRequests)).toEqual([])
+          const localCalls = calls.slice(initialRequests)
+          // These 50 visits can cross the account's 60s activity interval.
+          // They still must not reload assignments or any other application data.
+          const activityCalls = localCalls.filter(name => /^refreshAccountActivity(?:_|$)/.test(name))
+          const dataCalls = localCalls.filter(name => !/^refreshAccountActivity(?:_|$)/.test(name))
+          const localMilliseconds = performance.now() - localActionsStarted
+          samples.push({ action: 'warm-assignment-rpc-bound', cold, milliseconds: localMilliseconds,
+            activityRpc: activityCalls.length, dataRpc: dataCalls.length })
+          expect(dataCalls).toEqual([])
+          expect(activityCalls.length).toBeLessThanOrEqual(Math.ceil(localMilliseconds / 60_000) + 1)
           await openEditor()
           await expect(editor.getByRole('combobox', { name: 'F0001 · РК', exact: true })).toHaveValue('дополнительный')
           await closeEditor()

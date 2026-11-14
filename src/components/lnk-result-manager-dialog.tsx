@@ -336,6 +336,11 @@ export function LnkResultManagerDialog({
     }))
   }
 
+  const loadMoreResults = hasMoreRows && onLoadMoreRows ? (
+    <Button variant="outline" className="w-full" onClick={onLoadMoreRows}>
+      Загрузить ещё результаты
+    </Button>
+  ) : null
   const content = (
     <>
       <DialogHeader
@@ -411,9 +416,12 @@ export function LnkResultManagerDialog({
                 Загружаю результаты ЛНК...
               </div>
             ) : filteredEntries.length === 0 ? (
-              <div className="px-3 py-10 text-center text-sm text-slate-500">
-                {entries.length === 0 ? 'В выбранной области нет внесенных результатов.' : 'По заданным условиям результаты не найдены.'}
-              </div>
+              <>
+                <div className="px-3 py-10 text-center text-sm text-slate-500">
+                  {entries.length === 0 ? 'В выбранной области нет внесенных результатов.' : 'По заданным условиям результаты не найдены.'}
+                </div>
+                {loadMoreResults}
+              </>
             ) : (
               <DialogVirtualizedRows
                 items={filteredEntries}
@@ -458,11 +466,7 @@ export function LnkResultManagerDialog({
                     </button>
                   )
                 }}
-                footer={hasMoreRows && onLoadMoreRows ? (
-                  <Button variant="outline" className="w-full" onClick={onLoadMoreRows}>
-                    Загрузить ещё результаты
-                  </Button>
-                ) : null}
+                footer={loadMoreResults}
               />
             )}
           </div>

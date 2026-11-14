@@ -386,7 +386,7 @@ export async function importWeldJoints({
   if (input.records.length === 0) return { inserted: 0, rows: [] }
   // Preparation derives line/chain fields in place. A rejected transaction must
   // not add those fields to a caller's DTO that may be corrected and resubmitted.
-  const data = { records: input.records.map(record => ({ ...record })) }
+  const data = { records: input.records.map(({ id: _submittedId, ...record }) => ({ ...record })) }
   const db = requireDb()
 
   return db.transaction(async (tx) => {

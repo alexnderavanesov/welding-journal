@@ -96,6 +96,7 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
 
   return (
     <LargeDialogShell
+      ariaLabel={`Снимки и описание дефектов РК${isBeforeHeatTreatment ? ' до ТО' : ''}`}
       maxWidthClassName="max-w-4xl"
       maxHeightClassName="max-h-[88vh]"
       returnPageScrollPosition={editing.returnPageScrollPosition}

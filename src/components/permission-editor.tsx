@@ -30,23 +30,48 @@ const ACTION_HELP: Record<AccessAction, string> = {
   generate: 'Создавать и пересобирать документы раздела: заявки, заключения и отчётные формы. Для связанных разделов могут понадобиться их права.',
   export: 'Скачивать файлы и печатать доступные данные раздела. Не разрешает менять эти данные.',
 }
+const COLUMN_PERMISSIONS = Object.fromEntries((Object.keys(ACCESS_ACTIONS) as AccessAction[]).map(action => [action, [
+  ...(Object.keys(ACCESS_AREAS) as AccessArea[]).filter(area => AREA_ACTIONS[area].includes(action)).map(area => `${area}.${action}` as Permission),
+  ...(action === 'view' ? ['history.view', 'history.joint'] as const : []),
+]])) as Record<AccessAction, Permission[]>
 
 export function PermissionEditor({ value, onChange, disabled = false }: {
   value: readonly Permission[]; onChange?: (value: Permission[]) => void; disabled?: boolean
 }) {
-  const toggle = (permission: Permission, checked: boolean) => {
+  const toggle = (permissions: readonly Permission[], checked: boolean) => {
     if (disabled || !onChange) return
-    const area = permission.split('.')[0]
-    onChange(checked ? [...new Set([...value, permission, ...(area !== 'history' ? [`${area}.view` as Permission] : [])])] : value.filter(item => item !== permission && !(permission.endsWith('.view') && area !== 'history' && item.startsWith(`${area}.`))))
+    const selected = new Set(permissions)
+    if (checked) {
+      const next = new Set(value)
+      for (const permission of permissions) {
+        next.add(permission)
+        const area = permission.split('.')[0]
+        if (area !== 'history') next.add(`${area}.view` as Permission)
+      }
+      onChange([...next])
+    } else onChange(value.filter(permission => {
+      const area = permission.split('.')[0]
+      return !selected.has(permission) && !(area !== 'history' && selected.has(`${area}.view` as Permission))
+    }))
   }
   const checkbox = (permission: Permission, label: string) => <Checkbox aria-label={label} checked={value.includes(permission)}
-    disabled={disabled || !onChange} onChange={event => toggle(permission, event.target.checked)}
+    disabled={disabled || !onChange} onChange={event => toggle([permission], event.target.checked)}
     className="cursor-pointer disabled:cursor-default disabled:opacity-70" />
   return <div className="space-y-4">
     <p className="text-sm leading-6 text-slate-500">Наведите на <span className="font-medium text-slate-700">ⓘ</span> или нажмите, чтобы прочитать пояснение. Действие автоматически включает просмотр раздела. Прочерк — отдельного разрешения нет.</p>
     <div className="min-w-[850px] rounded-xl border border-slate-200">
       <table className="w-full min-w-[850px] table-fixed text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600"><tr><th scope="col" className="w-[26%] px-4 py-3 text-left font-medium">Раздел и настройки</th>{(Object.entries(ACCESS_ACTIONS) as [AccessAction, string][]).map(([action, label]) => <th scope="col" key={action} className="px-2 py-3 text-center font-medium"><span>{label} </span><FieldHelp label={`О праве «${label}»`}>{ACTION_HELP[action]}</FieldHelp></th>)}</tr></thead>
+        <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600"><tr><th scope="col" className="w-[26%] px-4 py-3 text-left font-medium">Раздел и настройки</th>{(Object.entries(ACCESS_ACTIONS) as [AccessAction, string][]).map(([action, label]) => {
+          const permissions = COLUMN_PERMISSIONS[action]
+          const all = permissions.every(permission => value.includes(permission))
+          const some = permissions.some(permission => value.includes(permission))
+          return <th scope="col" key={action} className="px-2 py-3 text-center align-bottom font-medium"><div className="flex flex-col items-center gap-2">
+            <div><span>{label} </span><FieldHelp label={`О праве «${label}»`}>{ACTION_HELP[action]}</FieldHelp></div>
+            <Checkbox aria-label={`Все: ${label}`} title={`Все доступные разрешения в столбце «${label}»`} checked={all}
+              ref={input => { if (input) input.indeterminate = some && !all }} disabled={disabled || !onChange}
+              onChange={event => toggle(permissions, event.target.checked)} />
+          </div></th>
+        })}</tr></thead>
         <tbody>{(Object.entries(ACCESS_AREAS) as [AccessArea, string][]).map(([area, label], index) => <tr key={area} className={`${index === 7 ? 'border-t-2' : 'border-t'} border-slate-200 hover:bg-sky-50/50`}>
           <th scope="row" className="px-4 py-3 text-left font-medium text-slate-700"><span className="flex items-center justify-between gap-2">{label}<FieldHelp label={`О разделе «${label}»`}>{AREA_HELP[area]}</FieldHelp></span></th>
           {(Object.keys(ACCESS_ACTIONS) as AccessAction[]).map(action => <td key={action} className="px-2 py-3 text-center">{AREA_ACTIONS[area].includes(action)

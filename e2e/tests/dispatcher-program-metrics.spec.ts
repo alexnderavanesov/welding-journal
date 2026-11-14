@@ -39,7 +39,10 @@ test('диспетчер и старый индекс: доступно 2 вме
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
   await expect.poll(async () => (await storedTasks()).length).toBe(2)
-  for (const task of await storedTasks()) expect(task).toMatchObject({ requiredControls: 2, count: 2 })
+  for (const task of await storedTasks()) {
+    expect(task).toMatchObject({ requiredControls: 2, count: 2, row: { weldControlPercent: 50, pvkControlPercent: 30 } })
+    expect(task.row).not.toHaveProperty('pstoRepeatCycles')
+  }
 
   // Simulate an already stored old calculation, without changing welds or
   // marking any scope dirty. The calculation version must force its rebuild.

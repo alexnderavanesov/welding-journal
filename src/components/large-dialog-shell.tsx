@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef } from 'react'
 import { isTopModalDialog } from '@/lib/modal-layer'
 import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
 import { createPortal } from 'react-dom'
@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 import type { PageScrollPosition } from '@/lib/page-scroll-position'
 import { getPageScrollPosition } from '@/lib/page-scroll-position'
 import { cn } from '@/lib/utils'
+import { DialogHeadingIdContext } from './dialog-heading-context'
 
 type LargeDialogShellProps = {
   children: ReactNode
@@ -67,6 +68,7 @@ export function LargeDialogShell({
   panelClassName,
   returnPageScrollPosition,
 }: LargeDialogShellProps) {
+  const headingId = useId()
   const panel = useRef<HTMLDivElement>(null)
   const escape = useRef({ onEscape, escapeDisabled })
   escape.current = { onEscape, escapeDisabled }
@@ -118,6 +120,7 @@ export function LargeDialogShell({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : headingId}
         className={cn(
           'flex w-full flex-col overscroll-contain border border-slate-200 bg-white shadow-2xl',
           maxHeightClassName,
@@ -127,7 +130,7 @@ export function LargeDialogShell({
           panelClassName,
         )}
       >
-        {children}
+        <DialogHeadingIdContext.Provider value={headingId}>{children}</DialogHeadingIdContext.Provider>
       </div>
     </div>
   )

@@ -158,6 +158,10 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     // change cannot escape the dispatcher revision during staged calculation.
     let legacyDlsChanged = false
     if (normalizedKey === PROJECT_SETTING_KEYS.other) {
+      const { prepareOtherSettingsChange } = await import('./other-settings-access')
+      preparedValue = prepareAppSettingValue(prepareOtherSettingsChange(
+        current ? parseStoredSetting(current.value) : undefined, preparedValue,
+      ))
       const [saveCheck] = await tx.select({ value: appSettings.value }).from(appSettings)
         .where(eq(appSettings.key, PROJECT_SETTING_KEYS.saveCheck)).limit(1)
       legacyDlsChanged = legacyDlsSettingChangeAffectsDispatcher(

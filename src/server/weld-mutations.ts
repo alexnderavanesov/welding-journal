@@ -22,7 +22,7 @@ import { assertExistingRowsImportPayload } from '@/lib/existing-row-import-valid
 import { buildLnkRequestExtensionRows, getLnkRequestExtensionDisabledReason, normalizeLnkRequestExtensionRequest, type LnkRequestExtensionRequest } from '@/lib/lnk-request-extension'
 import { buildLnkRequestManagerRows, buildLnkRequestPositionRemovalRow } from '@/lib/lnk-request-mutation-updates'
 import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
-import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
+import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { getPstoLineIdentityKey, normalizePstoLineIdentity } from '@/lib/psto-line-assignment'
 import { getCoilJointNames, normalizeJointChainPart, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getCoilTransitionModeForSource } from '@/lib/joint-chain-transitions'
@@ -61,6 +61,7 @@ import { getProfileTimestampUpdates, toDbInsert, updateWeldJointsInBatches, WELD
 import { assertExpectedInteractiveWeldVersions, lockInteractiveWeldRows } from '@/server/weld-row-version'
 import { getChangedWeldLineMemberships, haveSameWeldLineMemberships, lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
+import { isWeldWorkflowRemoval } from '@/server/weld-workflow-removal'
 import { prepareCardChainActuality, finishCardChainActuality } from './chain-actuality'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { assertEarlyCoilDecisionRowsCanBeDeleted, assertEarlyCoilDecisionSourcesRemainValid, hasActiveEarlyCoilDecisionForSource, refreshEarlyCoilDecisionContextsInTransaction } from '@/server/early-coil-decision-guard'
@@ -403,6 +404,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       return (await loadPreviousWeldRows(tx, [{ id }])).get(id)!
     }
     const [mergedRecord] = mergeWeldRecordsWithPrevious([scopedData], previousRows)
+    if (isWeldWorkflowRemoval(mergedRecord, original, mutationScope)) await assertSecurityScope('delete')
     let record = mergedRecord as WeldRow
     const validationContext = await loadServerWeldValidationContext(tx, [
       ...previousRows.values(),
@@ -451,7 +453,8 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       transferredPreControlIds: preparedMove.transferredPreControlIds,
       preserveRecordedControlHistoryRowIds: preparedMove.preserveRecordedControlHistory ? new Set([id]) : undefined,
     })
-    const insertData = toDbInsert(record, false, { preserveRecordedControlHistory: preparedMove.preserveRecordedControlHistory })
+    const insertData = toDbInsert(record, false, { preserveRecordedControlHistory: preparedMove.preserveRecordedControlHistory,
+      previous: previousRows.get(id) })
     const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(id), new Date())
     const [updated] = await tx
       .update(weldJoints)
@@ -746,11 +749,9 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         records.map((record) => restrictWeldMutationRecord(record, mutationScope)),
         previousRows,
       )
-      if (mutationScope === 'lnk' && records.some(record => {
-        const previous = previousRows.get(Number(record.id))
-        return previous && LNK_METHODS.some(method =>
-          isFinalLnkResultValue(previous[method.resultKey]) && !isFinalLnkResultValue(record[method.resultKey]))
-      })) await assertSecurityScope('delete')
+      if (records.some(record => isWeldWorkflowRemoval(record, previousRows.get(Number(record.id)), mutationScope))) {
+        await assertSecurityScope('delete')
+      }
       await prepareLineProgramWeldRecords(tx, records, previousRows)
       const layeredIds = new Set(data.layeredControl?.rowIds ?? [])
       if (layeredIds.size && (importMode || mutationScope !== 'lnk' || [...layeredIds].some((id) => !previousRows.has(id)))) {

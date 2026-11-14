@@ -174,6 +174,12 @@ test('UI: диапазоны, сроки и архив допуска обнов
     .filter(task => joints.some(row => row.id === task.row.id) && getDispatcherTaskCode(task) === 'СП-02'))
   expect(JSON.stringify(cards)).toContain('ДЛС')
   expect(JSON.stringify(cards)).toContain('Материал 2: М05')
+  for (const card of cards) {
+    if (!('details' in card)) throw new Error('СП-02 must preserve its qualification details')
+    expect(card.details).toContain('не имеет ДЛС')
+    expect(card.details).not.toMatch(/не имеет допуска НАКС|не соответствует сроку действия/)
+  }
+  expect((await stamp()).naks).toEqual(initial.naks)
   await page.getByRole('button', { name: 'Редактировать', exact: true }).click()
   await dls.getByLabel('Толщина до', { exact: true }).fill('20')
   await dialog.getByRole('button', { name: 'Сохранить клеймо', exact: true }).click()

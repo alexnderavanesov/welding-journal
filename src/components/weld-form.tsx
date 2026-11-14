@@ -304,7 +304,7 @@ export function WeldForm({
   }
 
   return (
-    <LargeDialogShell onEscape={onCancel} escapeDisabled={busy}
+    <LargeDialogShell onEscape={onCancel} escapeDisabled={busy} ariaLabel={isEditing ? 'Редактирование стыка' : 'Новый стык'}
       maxWidthClassName="max-w-[min(1500px,96vw)]"
       maxHeightClassName="h-[calc(100dvh-2rem)] max-h-[96vh]"
       overlayClassName={elevated ? 'z-[110] bg-slate-950/30 py-4' : 'z-[70] bg-slate-950/20 py-4'}

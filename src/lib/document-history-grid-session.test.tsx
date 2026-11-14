@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, renderHook } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react'
+import { useRef } from 'react'
 import type { GridApi, IRowNode } from 'ag-grid-community'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { documentGridErrorMessage, EMPTY_DOCUMENT_GRID_SESSION, readDocumentGridSession, writeDocumentGridSession } from './document-history-grid-session'
@@ -129,6 +130,22 @@ describe('document grid session', () => {
     reference.current = null
     act(() => result.current.capture())
     expect(readDocumentGridSession('view')).toMatchObject({ firstRow: 237, rowId: 'document:238', top: 13289, offset: 17, left: 70 })
+  })
+  it('captures the latest rendered child before React removes the registry on tab change', () => {
+    const node = { id: 'document:363', rowIndex: 363, rowTop: 363 * 56, data: { id: 363 }, level: 0, parent: null }
+    const api = { isDestroyed: () => false, getDisplayedRowCount: () => 376,
+      getDisplayedRowAtIndex: () => node } as unknown as GridApi
+    function Registry() {
+      const frame = useRef<HTMLDivElement>(null)
+      useDocumentGridSession(api, frame, 'view', 'scope', '', EMPTY_DOCUMENT_GRID_SESSION, false)
+      return <div ref={frame}><div className="ag-grid-viewport"><div className="ag-row" row-id={node.id} row-index="363" /></div></div>
+    }
+    const view = render(<Registry />), viewport = view.container.querySelector<HTMLElement>('.ag-grid-viewport')!
+    viewport.getBoundingClientRect = () => ({ top: 0, bottom: 1000 }) as DOMRect
+    viewport.querySelector('.ag-row')!.getBoundingClientRect = () => ({ top: 0, bottom: 56 }) as DOMRect
+    viewport.scrollTop = 363 * 56 + 5
+    view.unmount()
+    expect(readDocumentGridSession('view')).toMatchObject({ rowId: node.id, firstRow: 363, top: 363 * 56 + 5 })
   })
   it.each(['before', 'after'] as const)('captures a child block arriving %s scroll end before the registry unmounts', order => {
     let scheduled: FrameRequestCallback | undefined

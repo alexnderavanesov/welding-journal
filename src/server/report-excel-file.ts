@@ -11,6 +11,7 @@ import { buildContentTypesXml, buildRootRelsXml, buildWorkbookXml, buildWorkbook
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
 import type { ReportOutputRequest } from './weld-contracts'
 import { visitReportOutput } from './weld-read'
+import { createLargeExportGuard, type ReportOutputLifecycle } from './large-export-guard'
 
 /** One temporary file per HTTP request, removed on failure, cancellation or
  * completed delivery. No job registry, snapshot store or browser workbook. */
@@ -18,16 +19,18 @@ export async function createReportExcelResponse(input: ReportOutputRequest, sign
   input = (await import('./access-payload')).accessibleReportInput(input)
   const definition = getReportOutputBuilder(input)([]).exportData!
   return createTabularExcelResponse({ sheetName: definition.sheetName, filename: definition.filename,
+    columns: definition.fields.length,
     header: buildWorksheetHeader(definition.fields) + buildWorksheetRow(definition.fields.map(field => field.label), definition.fields, 0),
     row: (values, index) => buildWorksheetRow(values, definition.fields, index),
-  }, consume => visitReportOutput(input, ({ exportData }) =>
-    consume(exportData.rows.map(row => definition.fields.map(field => formatReportFieldValue(row, field)))), signal), signal)
+  }, (consume, lifecycle) => visitReportOutput(input, ({ exportData }) =>
+    consume(exportData.rows.map(row => definition.fields.map(field => formatReportFieldValue(row, field)))), signal, lifecycle), signal)
 }
 
 /** Shared bounded XLSX delivery for joint reports and document registries. */
 export async function createTabularExcelResponse<T>(definition: {
-  sheetName: string; filename: string; header: string; row: (values: T[], index: number) => string
-}, visit: (consume: (rows: T[][]) => Promise<void>) => Promise<{ generatedAt: string }>, signal: AbortSignal) {
+  sheetName: string; filename: string; columns: number; header: string; row: (values: T[], index: number) => string
+}, visit: (consume: (rows: T[][]) => Promise<void>, lifecycle: ReportOutputLifecycle) => Promise<{ generatedAt: string }>, signal: AbortSignal) {
+  signal.throwIfAborted()
   const directory = await mkdtemp(join(tmpdir(), 'welding-report-'))
   const path = join(directory, 'report.xlsx')
   const cleanup = () => rm(directory, { recursive: true, force: true })
@@ -36,6 +39,8 @@ export async function createTabularExcelResponse<T>(definition: {
   try {
     const sheetNames: string[] = []
     let sheetRow = 0
+    let totalRows = 0, complete = false
+    let reserve: ReturnType<typeof createLargeExportGuard> | undefined
     const startSheet = async () => {
       const suffix = sheetNames.length ? ` ${sheetNames.length + 1}` : ''
       sheetNames.push(normalizeSheetName(definition.sheetName).slice(0, 31 - suffix.length) + suffix)
@@ -45,6 +50,10 @@ export async function createTabularExcelResponse<T>(definition: {
     }
     await startSheet()
     const snapshot = await visit(async rows => {
+      if (!reserve) throw new Error('Excel source did not initialize its transaction')
+      totalRows += rows.length
+      // Expanded LNK/PSTO reports can contain more rows than source joints.
+      await reserve(totalRows)
       // One source batch at a time. XML chunks and compression have bounded
       // buffers, including reports expanding one joint into several methods.
       let xml: string[] = []
@@ -58,14 +67,26 @@ export async function createTabularExcelResponse<T>(definition: {
         if (xml.length === 100) { await archive.write(xml.join('')); xml = [] }
       }
       if (xml.length) await archive.write(xml.join(''))
+    }, {
+      start: async (tx, sourceRows) => {
+        if (reserve) throw new Error('Excel source initialized twice')
+        reserve = createLargeExportGuard(tx, definition.columns, signal)
+        await reserve(sourceRows)
+      },
+      finish: async () => {
+        signal.throwIfAborted()
+        await archive.write(WORKSHEET_END); await archive.end()
+        for (const [name, content] of [
+          ['[Content_Types].xml', buildContentTypesXml(sheetNames.length)], ['_rels/.rels', buildRootRelsXml()],
+          ['xl/workbook.xml', buildWorkbookXml(sheetNames)], ['xl/_rels/workbook.xml.rels', buildWorkbookRelsXml(sheetNames.length)],
+          ['xl/styles.xml', buildXlsxStylesXml()],
+        ]) { await archive.start(name); await archive.write(content); await archive.end() }
+        await archive.finish()
+        signal.throwIfAborted()
+        complete = true
+      },
     })
-    await archive.write(WORKSHEET_END); await archive.end()
-    for (const [name, content] of [
-      ['[Content_Types].xml', buildContentTypesXml(sheetNames.length)], ['_rels/.rels', buildRootRelsXml()],
-      ['xl/workbook.xml', buildWorkbookXml(sheetNames)], ['xl/_rels/workbook.xml.rels', buildWorkbookRelsXml(sheetNames.length)],
-      ['xl/styles.xml', buildXlsxStylesXml()],
-    ]) { await archive.start(name); await archive.write(content); await archive.end() }
-    await archive.finish()
+    if (!complete) throw new Error('Excel source did not finish its transaction')
     signal.throwIfAborted()
     const { size } = await file.stat()
     await file.close()

@@ -4,7 +4,7 @@ import { canViewWeldField } from '@/lib/weld-field-access'
 import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { auditChanges, auditOperations } from '@/db/schema'
-import { hasPermission, type AccessIdentity, type Permission } from '@/lib/access-permissions'
+import { ACCESS_AREAS, hasPermission, type AccessIdentity, type Permission } from '@/lib/access-permissions'
 import { requireIdentity } from './access-context'
 
 export type HistoryRequest = {
@@ -22,7 +22,7 @@ export function visibleHistoryFields(identity: AccessIdentity) {
 }
 
 function visibleDetails(identity: AccessIdentity, jointId?: number, kind?: string): SQL {
-  const areas = ['welding', 'lnk', 'psto', 'lines', 'references', 'documents', 'templates', 'dispatcher', 'exceptions', 'checks', 'data', 'wdi', 'processes', 'indexes', 'numbering']
+  const areas = Object.keys(ACCESS_AREAS)
     .filter(area => hasPermission(identity, `${area}.view` as Permission))
   if (hasPermission(identity, 'lnk.view') || hasPermission(identity, 'psto.view')) areas.push('welding')
   if (identity.role !== 'user') areas.push('access')

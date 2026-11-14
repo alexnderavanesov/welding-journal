@@ -21,8 +21,10 @@ test('несохранённая схема: правка стыка повер�
   const lineId = await withLineProgramFixture(async db => {
     const id = (await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent,psto_assignment)
       values ($1,'DRAFT',$2,'II','A',100,100,'unassigned') returning id`, [project, line])).rows[0].id
-    await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,connection_type,officiality,revision_actuality,has_vik,psto_required)
-      select $1,$2,'DRAFT',$3,'S'||n,'С','действующий','актуальная','да','нет' from generate_series(1,2) n`, [id, project, line])
+    // Ordinary creation already stores the pending status. Leaving it NULL
+    // here made the first background calculation change xmin during editing.
+    await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,connection_type,officiality,revision_actuality,has_vik,psto_required,final_status)
+      select $1,$2,'DRAFT',$3,'S'||n,'С','действующий','актуальная','да','нет','ожидает сварку' from generate_series(1,2) n`, [id, project, line])
     await db.query("update weld_joints set connection_type='С17',material_group='М01',welding_method='РД',d1=57,d2=57,t1=3,t2=3,category='II',group_name='A',weld_control_percent=100,pvk_control_percent=100 where line_program_id=$1 and joint='S1'", [id])
     const permit = { id: 'naks', weldType: 'РД', materialGroups: 'М01', diameterFrom: '1', diameterTo: '108', thicknessFrom: '1', thicknessTo: '10', validFrom: '2026-01-01', validTo: '2027-12-31', note: '', archived: false }
     const savedStamp = await db.query<{ id: number }>('insert into welder_stamps(naks_stamp,welder_name,naks_permits,dls_permits) values ($1,$2,$3,$4) returning id', [stamp, 'Сварщик схемы', JSON.stringify([permit]), JSON.stringify([{ ...permit, id: 'dls', number: 'ДЛС-SCHEME' }])])
@@ -90,7 +92,12 @@ test('несохранённая схема: правка стыка повер�
   await openPicture(); await picture.getByRole('button', { name: 'Журнал', exact: true }).click()
   await expect(prompt).toBeVisible(); await prompt.getByRole('button', { name: 'Остаться', exact: true }).click()
   await expect(input).toHaveValue('4321,5'); await input.press('Enter')
-  await scheme.getByRole('button', { name: /^Сохранить/ }).click(); await expect(scheme.getByRole('button', { name: /^Сохранить/ })).toBeDisabled()
+  await scheme.getByRole('button', { name: /^Сохранить/ }).click()
+  // Disabled also means the save is still running. Its successful completion
+  // clears draft selection/menus, so open the next menu after that transition.
+  await expect(scheme.getByText('Разметка сохранена', { exact: true })).toBeVisible()
+  await expect(scheme.getByRole('button', { name: 'Обновить состояния', exact: true })).toBeEnabled()
+  await expect(scheme.getByRole('button', { name: /^Сохранить/ })).toBeDisabled()
   await openPicture(); await picture.getByRole('button', { name: 'Журнал', exact: true }).click()
   await expect(page).toHaveURL(/\/journal$/); await expect(prompt).not.toBeVisible()
   await page.getByRole('button', { name: 'Схемы линий', exact: true }).click(); await filterSchemeProject(page, project)

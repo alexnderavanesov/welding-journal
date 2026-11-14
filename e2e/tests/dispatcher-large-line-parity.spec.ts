@@ -7,7 +7,7 @@ import { withLineProgramFixture } from '../line-program-fixtures'
 import { withE2eDatabase } from '../database'
 import { serializeRpcData, deserializeRpcResponse, siblingRpcUrl } from '../rpc'
 
-test('250 тысяч: все страницы, коды и статусы двух больших линий точно совпадают с полным расчётом', async ({ request, baseURL }) => {
+test('250 тысяч: все страницы, коды и статусы двух больших линий точно совпадают с полным расчётом', async ({ request, baseURL }, info) => {
   test.skip(process.env.DISPATCHER_SCALE_PARITY !== '1', 'Explicit isolated 250k correctness check')
   test.setTimeout(600000)
   const directory = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'server')
@@ -49,7 +49,7 @@ test('250 тысяч: все страницы, коды и статусы дву
   const full = await signature()
   expect(scoped).toEqual(full)
   const { payload: _payload, ...hashes } = full
-  await writeFile(resolve('outputs/dispatcher-large-lines-2026-11-07/full-parity-250000.json'), JSON.stringify({
+  await writeFile(info.outputPath('full-parity-250000.json'), JSON.stringify({
     rows: 250000, affectedRows: 26000, sameSourceFacts: true, allStoredPagesExactlyMatch: true, statusesAndCodesExactlyMatch: true,
     snapshotAndTotalsMatch: true, hashes,
   }, null, 2))

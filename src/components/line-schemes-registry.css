@@ -5,7 +5,15 @@
 .line-schemes-registry .read-only-grid-dialog > .program-grid-frame { height: auto; }
 
 /* Only this registry follows the page; keep the real AG header clickable. */
-.line-schemes-registry .ag-grid-pinned-top-rows { z-index: 5; will-change: translate; box-shadow: 0 1px 3px #33415512; }
+.line-schemes-registry .ag-grid-pinned-top-rows { z-index: 5; box-shadow: 0 1px 3px #33415512; }
+.line-schemes-registry .scheme-stuck-header {
+  position: fixed; top: var(--scheme-header-top); left: var(--scheme-header-left); width: var(--scheme-header-width);
+  translate: none; clip-path: inset(0 var(--scheme-header-clip-right) 0 var(--scheme-header-clip-left));
+}
+.line-schemes-registry .scheme-header-spacer { flex: none; pointer-events: none; }
+.scheme-stuck-header :is(.ag-grid-pinned-left-cells, .ag-grid-pinned-right-cells) { position: relative; left: auto; right: auto; }
+.scheme-stuck-header .ag-grid-pinned-left-cells { translate: var(--scheme-header-scroll-left) 0; }
+.scheme-stuck-header .ag-grid-pinned-right-cells { translate: var(--scheme-header-scroll-right) 0; }
 /* Keep the top edge with the header when the outer frame scrolls away,
    without changing its height or intercepting column controls. */
 .line-schemes-registry .ag-grid-pinned-top-rows::after { content: ''; position: absolute; inset: 0 0 auto; height: 1px; background: #e2e8f0; z-index: 10; pointer-events: none; }

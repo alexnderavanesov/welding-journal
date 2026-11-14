@@ -1418,7 +1418,13 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(stats).toContainText('Количество: 1')
     await expect(stats).toContainText('Сумма: 215')
     await page.waitForLoadState('networkidle')
-    const rangeCalls = calls.slice(before)
+    const observedRangeCalls = calls.slice(before)
+    // Account presence can refresh during active range gestures. Keep its
+    // timer bound separate from the existing eight data/summary RPC budget.
+    const activityCalls = observedRangeCalls.filter(name => /^refreshAccountActivity(?:_|$)/.test(name))
+    const observedRangeMs = performance.now() - started
+    expect(activityCalls.length).toBeLessThanOrEqual(Math.ceil(observedRangeMs / 60_000) + 1)
+    const rangeCalls = observedRangeCalls.filter(name => !/^refreshAccountActivity(?:_|$)/.test(name))
     expect(rangeCalls.some(name => name.startsWith('summarizeJournalGridRange'))).toBe(true)
     expect(rangeCalls.length).toBeLessThanOrEqual(8)
     // The joint/WDI/date summary accompanies numeric cell statistics. Its
@@ -1430,8 +1436,10 @@ export function registerWeldGridContract(report: GridReport) {
     expect(rangeCalls.every(name => /^(readJournalGrid|summarizeJournalGridRange|summarizeJournalGridArea|getDispatcherTaskContext)_/.test(name)), rangeCalls.join(', ')).toBe(true)
     const rendered = await page.locator('.ag-grid-scrolling-rows .ag-row').count()
     expect(rendered).toBeLessThan(60)
-    console.info(`${profile.prefix} accumulated rows:`, JSON.stringify({ rows: 5000, rangeTotalMs: Math.round(duration), renderedRows: rendered, extraRpc: calls.length - before }))
-    await info.attach('accumulated-rows.json', { body: JSON.stringify({ rows: 5000, rangeTotalMs: duration, renderedRows: rendered }), contentType: 'application/json' })
+    const measurement = { rows: 5000, rangeTotalMs: duration, renderedRows: rendered, observedRangeMs,
+      extraRpc: observedRangeCalls.length, activityRpc: activityCalls.length, dataRpc: rangeCalls.length }
+    console.info(`${profile.prefix} accumulated rows:`, JSON.stringify(measurement))
+    await info.attach('accumulated-rows.json', { body: JSON.stringify(measurement), contentType: 'application/json' })
   })
 
 }

@@ -781,6 +781,7 @@ export async function visitReportOutput(
   input: ReportOutputRequest,
   consume: (content: { report: PrintableReport; exportData: TabularReportData }) => Promise<boolean | void>,
   signal?: AbortSignal,
+  lifecycle?: import('./large-export-guard').ReportOutputLifecycle,
 ) {
   await assertSecurityScope('entry')
   const build = getReportOutputBuilder(input)
@@ -799,6 +800,7 @@ export async function visitReportOutput(
     const settings = await loadServerOtherSettings(db)
     const where = buildReportQueryWhere(report, data, settings)
     const [countRow] = await db.select({ total: count() }).from(weldJoints).where(where)
+    await lifecycle?.start(db, Number(countRow.total))
     // A transaction-local cursor preserves order and snapshot across batches,
     // avoiding growing OFFSET scans and retaining all identifiers in JS.
     const selection = db.select({ id: weldJoints.id }).from(weldJoints).where(where)
@@ -819,6 +821,7 @@ export async function visitReportOutput(
         if (await consume(content) === false) break
       }
     } finally { await db.execute(sql`close report_output_cursor`) }
+    await lifecycle?.finish()
     return { sourceRows: Number(countRow.total), generatedAt: new Date(state.generatedAt).toISOString() }
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
@@ -1138,7 +1141,7 @@ function buildHeatTreatmentStagedLnkReadyWhere() {
   ) ?? sql`false`
 }
 
-export async function attachDuplicateControlsToPage<Row extends DuplicateControlCarrier>(rows: Row[], database?: Pick<ReturnType<typeof requireDb>, 'select'>) {
+export async function attachDuplicateControlsToPage<Row extends DuplicateControlCarrier>(rows: Row[], database?: Pick<ReturnType<typeof requireDb>, 'select'>, inPlace = false) {
   if (rows.length === 0) return rows
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
@@ -1150,12 +1153,13 @@ export async function attachDuplicateControlsToPage<Row extends DuplicateControl
     .where(buildNumberArrayMatch(duplicateControls.weldJointId, ids))
     .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
 
-  return mergeDuplicateControlsIntoRows(rows, controls.map(toDuplicateControlRecord))
+  return mergeDuplicateControlsIntoRows(rows, controls.map(toDuplicateControlRecord), inPlace)
 }
 
 export function mergeDuplicateControlsIntoRows<Row extends DuplicateControlCarrier>(
   rows: Row[],
   controls: DuplicateControlRecord[],
+  inPlace = false,
 ) {
   const byWeldId = new Map<number, DuplicateControlRecord[]>()
   for (const control of controls) {
@@ -1163,7 +1167,9 @@ export function mergeDuplicateControlsIntoRows<Row extends DuplicateControlCarri
     current.push(control)
     byWeldId.set(control.weldJointId, current)
   }
-  return rows.map((row) => ({ ...row, duplicateControls: byWeldId.get(row.id) ?? [] }))
+  return inPlace
+    ? rows.map((row) => Object.assign(row, { duplicateControls: byWeldId.get(row.id) ?? [] }))
+    : rows.map((row) => ({ ...row, duplicateControls: byWeldId.get(row.id) ?? [] }))
 }
 
 export async function attachDispatcherTaskCodesToPage<Row extends { id: number }>(

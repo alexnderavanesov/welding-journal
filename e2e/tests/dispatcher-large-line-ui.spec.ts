@@ -16,7 +16,7 @@ test('открытые журнал, ЛНК и ПСТО сохраняют ст�
   const observed = `${baseURL}/_serverFn/${manifest.match(/"([a-f0-9]{64})":/)![1]}`
   const context = await browser.newContext({ baseURL, storageState: process.env.E2E_AUTH_STATE, viewport: { width: 1600, height: 1000 } })
   const other = await browser.newContext({ baseURL, storageState: process.env.E2E_AUTH_STATE, viewport: { width: 1600, height: 1000 } })
-  const output = resolve('outputs/dispatcher-large-lines-2026-11-07', `ui-${info.project.name}`)
+  const output = info.outputPath('dispatcher-ui')
   await mkdir(output, { recursive: true })
   const call = async <T,>(name: string, data: unknown, request: APIRequestContext = context.request): Promise<T> => {
     const response = await request.post(siblingRpcUrl(observed, `${name}_createServerFn_handler`), {

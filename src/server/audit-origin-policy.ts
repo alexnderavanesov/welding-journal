@@ -69,6 +69,12 @@ function resultIsAutomatic(key: string, before: Row | undefined, after: Row | un
 }
 export function createAuditOriginResolver(operation: string, input: unknown, settings: { auditWdiSystem?: boolean } = {}): AuditOriginResolver {
   const data = object(input)
+  if (operation === 'removeLnkResults') {
+    const resultKeys: Record<string, string> = { vikRequest: 'vikResult', rkRequest: 'rkResult', uzkRequest: 'uzkResult', pvkRequest: 'pvkResult' }
+    const selected = new Set(list(data.targets).map(target => `${target.rowId}:${resultKeys[String(target.methodKey)]}`))
+    return (entity, before, after, key) => entity === 'weld_joints' && selected.has(`${(after ?? before)?.id}:${key}`)
+      ? 'user' : 'automatic'
+  }
   const simple = primaryEntities[operation]
   const direct = directWeldFields[operation]
   const weldSave = ['createWeldJoint', 'updateWeldJoint', 'updateWeldJoints', 'massFillWeldJoints', 'importWeldJoints', 'replaceWeldJoints', 'moveWeldJointChain'].includes(operation)

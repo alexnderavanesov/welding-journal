@@ -72,3 +72,14 @@ it('still rejects an explicit forged flag before any preparation or write', asyn
   expect(forged.preHeatTreatmentRequired).toBe(true)
   expect(state.inserted).not.toHaveBeenCalled()
 })
+
+it('rejects a mixed batch with historical control facts before preparing or writing any row', async () => {
+  const records = [{ projectTitle: 'P', line: 'L', joint: 'F14' },
+    { projectTitle: 'P', line: 'L', joint: 'F15', rkRequest: 'R', rkResult: 'годен', rkConclusion: '123' }]
+  const before = structuredClone(records)
+  await expect(importWeldJoints({ data: { records } })).rejects.toThrow('недоступны для импорта')
+  expect(records).toEqual(before)
+  expect(state.inserted).not.toHaveBeenCalled()
+  expect(state.synced).not.toHaveBeenCalled()
+  expect(state.dirty).not.toHaveBeenCalled()
+})

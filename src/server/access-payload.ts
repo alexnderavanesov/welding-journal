@@ -1,9 +1,12 @@
 import { WELD_FIELDS, type WeldFieldKey } from '@/lib/weld-fields'
 import { hasPermission, type AccessIdentity } from '@/lib/access-permissions'
 import { canViewWeldField, RESTRICTED_WELD_FIELDS } from '@/lib/weld-field-access'
-import { WELD_MUTATION_FIELD_KEYS, LNK_PROFILE_FIELD_KEYS, PSTO_PROFILE_FIELD_KEYS, WELDING_PROFILE_FIELD_KEYS } from './weld-mutation-policy'
+import { WELD_MUTATION_FIELD_KEYS, WELDING_PROFILE_FIELD_KEYS } from './weld-mutation-policy'
 import { accessContext } from './access-store'
 import type { WeldMutationScope } from './weld-contracts'
+
+const importFieldKeys = new Set<string>(WELD_FIELDS.map(field => field.key))
+const writableImportFieldKeys = new Set<string>(WELDING_PROFILE_FIELD_KEYS)
 
 /** Validate query selectors before a cache/SQL read, including aggregate/filter probes. */
 export function assertReadableQuery(identity: AccessIdentity, value: unknown, searchArea?: 'lnk' | 'psto') {
@@ -52,24 +55,24 @@ export function requireContextPermission(permission: Parameters<typeof hasPermis
   if (context && !context.permissions.includes(permission)) context.permissions.push(permission)
 }
 
-/** Import can carry historical specialty facts; it needs each affected specialty,
- * in addition to its import permission. Existing business import checks still run. */
+/** Import changes journal fields only. Specialty permissions never authorize
+ * creating workflow history through this entry point, including local calls. */
 export function assertImportedWeldFields(input: Record<string, unknown>, previous?: Record<string, unknown>) {
   assertNoSubmittedWorkflowAccess(input)
   if (Object.hasOwn(input, 'preHeatTreatmentRequired') || Object.hasOwn(input, 'newPreHeatTreatmentChoice')) {
     throw new Error('Требование НК до ТО не задаётся импортом. Измените его в карточке исходного стыка и подтвердите состав цепочки.')
   }
-  const context = accessContext.getStore()
-  if (!context) return
-  const welding = new Set<string>(WELDING_PROFILE_FIELD_KEYS)
+  for (const key of Object.keys(input)) {
+    if (!importFieldKeys.has(key)) throw new Error(`Поле «${key}» недоступно для импорта. Связанные этапы и состояние цепочки определяются по сохранённым данным.`)
+  }
+  const forbidden: string[] = []
   for (const [key, value] of Object.entries(input)) {
-    if (!RESTRICTED_WELD_FIELDS.has(key) || key === 'id') continue
+    if (key === 'id' || writableImportFieldKeys.has(key)) continue
     const normalize = (entry: unknown) => entry == null || entry === '' || key === 'officiality' && entry === 'действующий' ? null : entry instanceof Date ? entry.toISOString() : entry
     if (JSON.stringify(normalize(value)) === JSON.stringify(normalize(previous?.[key]))) continue
-    if (welding.has(key)) continue
-    if (PSTO_PROFILE_FIELD_KEYS.has(key as WeldFieldKey)) requireContextPermission('psto.edit')
-    else if (LNK_PROFILE_FIELD_KEYS.has(key as WeldFieldKey)) requireContextPermission('lnk.edit')
+    forbidden.push(key)
   }
+  if (forbidden.length) throw new Error(`Поля «${forbidden.join('», «')}» недоступны для импорта. Заявки, результаты, заключения и другие системные данные изменяются только через соответствующие разделы системы. Ничего не сохранено.`)
 }
 
 function assertNoSubmittedWorkflowAccess(input: Record<string, unknown>) {

@@ -102,7 +102,7 @@ export function prepareReportRows(
 }
 
 /**
- * Dispatcher-only variant for full-journal calculations. The caller owns the
+ * Owned-row variant for full-journal dispatcher/statistics calculations. The caller owns the
  * freshly loaded rows, so reusing those objects avoids retaining several wide
  * copies of every weld joint while preserving prepareReportRows semantics.
  */
@@ -118,15 +118,7 @@ export function prepareReportRowsInPlace(
   }
 
   for (const row of sourceRows) {
-    const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row)))
-    const withPendingLnk = withPendingLnkResults(normalizedRow)
-    const withPendingPsto = withPendingPstoResultStatus(withPendingLnk)
-    const prepared = toControlCancellationReportRow(withPendingPsto)
-    if (prepared !== row) {
-      for (const key of IN_PLACE_REPORT_PREPARATION_KEYS) {
-        if (!Object.is(row[key], prepared[key])) row[key] = prepared[key]
-      }
-    }
+    prepareReportControlRowInPlace(row)
     const rowDuplicateControls = duplicateControlsByWeldId.get(Number(row.id))
     if (rowDuplicateControls?.length) row.duplicateControls = rowDuplicateControls
   }
@@ -136,6 +128,26 @@ export function prepareReportRowsInPlace(
     row.finalStatus = calculateFinalStatusInRows(row, sourceRows, finalStatusContext)
   }
   return sourceRows
+}
+
+function prepareReportControlRowInPlace(row: WeldRow) {
+  const normalized = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row)))
+  const prepared = toControlCancellationReportRow(withPendingPstoResultStatus(withPendingLnkResults(normalized)))
+  if (prepared !== row) for (const key of IN_PLACE_REPORT_PREPARATION_KEYS) {
+    if (!Object.is(row[key], prepared[key])) row[key] = prepared[key]
+  }
+}
+
+/** Only for freshly loaded summary rows owned by a server calculation. Does
+ * not recalculate final statuses from a partial group or retain mutable facts. */
+export function prepareJournalSummaryRowsInPlace(rows: WeldRow[], report: WeldReportKind) {
+  for (const row of rows) {
+    const primaryPsto = row.pstoResult
+    const preserve = report === 'heatTreatment' && isControlCancelledValue(row.pstoRequired)
+    prepareReportControlRowInPlace(row)
+    if (preserve) row.pstoResult = primaryPsto
+  }
+  return rows
 }
 
 export function useReportRows(

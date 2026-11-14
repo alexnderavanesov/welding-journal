@@ -202,7 +202,13 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     const schedule = () => { if (!disposed && !raf) raf = requestAnimationFrame(update) }
     const onPageScroll = () => {
       if (expectedPageTop != null && close(window.scrollY, expectedPageTop)) expectedPageTop = null
-      else { expectedPageTop = null; pageMoved = true }
+      else {
+        expectedPageTop = null
+        // Another nested adapter can move the document before this event is
+        // delivered. If update() already consumed that position, it must not
+        // suppress the next model/height anchor as a second user movement.
+        if (!close(window.scrollY, observedPageTop)) pageMoved = true
+      }
       schedule()
     }
     const extendKeyboardNavigation = () => {

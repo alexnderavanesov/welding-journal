@@ -122,6 +122,30 @@ test('dispatcher navigation mounts the requested far stamp without a calculation
   expect(await page.locator('[data-program-grid="stamps"]').getByTestId('line-program-stamp').count()).toBeLessThan(60)
 })
 
+test('compact percentage task fetches the current complete joint before stamp correction', async ({ page }) => {
+  await prepare(page, { stamps: 2, firstBranchJoints: 2 })
+  await page.goto('/journal')
+  await page.getByLabel('Диспетчер задач', { exact: true }).getByRole('button', { name: 'Открыть диспетчер', exact: true }).click()
+  const dispatcher = page.getByRole('dialog', { name: 'Диспетчер задач', exact: true })
+  await dispatcher.getByRole('textbox', { name: 'Поиск задач диспетчера', exact: true }).fill('V001')
+  await dispatcher.getByRole('button', { name: 'Найти', exact: true }).click()
+  await expect(dispatcher.getByRole('button', { name: 'Исправить клеймо', exact: true })).toBeVisible()
+  await withLineProgramFixture(async db => {
+    const tasks = (await db.query('select tasks from dispatcher_task_pages')).rows.flatMap(row => JSON.parse(row.tasks))
+    const task = tasks.find(task => task.kind === 'percentage-line-control' && task.issue === 'new-welder' &&
+      task.projectTitle === project && task.stamp === 'V001')
+    expect(task).toBeDefined()
+    expect(task.row).not.toHaveProperty('isometry')
+    expect(task.row).not.toHaveProperty('pstoRepeatCycles')
+    // Another fact arrives while the operator sees the old task. The fixture
+    // helper invalidates both derived/dispatcher revisions in this transaction.
+    await db.query('update weld_joints set isometry=$1 where id=$2', ['FETCHED-CURRENT-JOINT', task.row.id])
+  })
+  await dispatcher.getByRole('button', { name: 'Исправить клеймо', exact: true }).click()
+  const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
+  await expect(editor.getByLabel('Изометрия', { exact: true })).toHaveValue('FETCHED-CURRENT-JOINT')
+})
+
 test('joint-picture quota action opens all line joints and highlights the selected joint, not the task representative', async ({ page }) => {
   test.setTimeout(120000)
   await prepare(page, { stamps: 1, firstBranchJoints: 2 })
@@ -212,7 +236,14 @@ test('retained branches preserve their extent, reading position and history when
     await expect(page.locator('[data-program-motion]')).toHaveCount(0)
     // Reach the following master through document scrolling, as a reader does;
     // the preceding branch stays expanded, with its own filters/history intact.
-    if (index < 2) await workspace.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().bottom + window.scrollY - 150))
+    if (index < 2) {
+      // The outer AG master can measure this child in a later frame. Wait for
+      // its document extent before the one real scroll, otherwise scrollTo is
+      // clamped to the old page end and the next virtual stamp never appears.
+      await expect.poll(() => workspace.evaluate(element =>
+        document.documentElement.scrollHeight + 1 >= element.getBoundingClientRect().bottom + window.scrollY), { timeout: 5000 }).toBe(true)
+      await workspace.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().bottom + window.scrollY - 150))
+    }
   }
   const first = workspaces[0], third = workspaces[2]
   const firstGrid = first.locator('[data-program-grid="joints"]')

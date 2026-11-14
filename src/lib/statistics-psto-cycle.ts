@@ -1,6 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
-import { mergePreHeatTreatmentControlsIntoRows } from '@/lib/heat-treatment-control-relations'
+import { groupPreHeatTreatmentControls, mergePreHeatTreatmentControlsIntoRows } from '@/lib/heat-treatment-control-relations'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import {
@@ -26,6 +26,27 @@ export function applyLatestPstoCycleToStatisticsRows(
   rows: readonly WeldRow[],
   repeatCycles: readonly PstoRepeatCycleRecord[],
 ) {
+  return applyLatestPstoCycle(rows, repeatCycles, false)
+}
+
+/** Server statistics owns its freshly selected rows. Stage readers consume the
+ * relation arrays; materializing dozens of virtual display cells per joint is
+ * unnecessary for the aggregate and retains several copies of the full set. */
+export function prepareStatisticsHeatTreatmentRowsInPlace(
+  rows: WeldRow[], repeatCycles: readonly PstoRepeatCycleRecord[],
+  controls: readonly PreHeatTreatmentControlRecord[],
+  settings: Pick<ControlProcessSettings, 'preHeatTreatmentMode'>,
+) {
+  applyLatestPstoCycle(rows, repeatCycles, true)
+  const byId = groupPreHeatTreatmentControls(controls)
+  for (const row of rows) {
+    row.preHeatTreatmentControls = byId.get(row.id) ?? []
+    row.preHeatTreatmentMode = settings.preHeatTreatmentMode
+  }
+  return rows
+}
+
+function applyLatestPstoCycle(rows: readonly WeldRow[], repeatCycles: readonly PstoRepeatCycleRecord[], inPlace: boolean) {
   const latestByWeldId = new Map<number, PstoRepeatCycleRecord>()
   const cyclesByWeldId = new Map<number, PstoRepeatCycleRecord[]>()
   const rowsById = new Map(rows.map((row) => [row.id, row]))
@@ -52,9 +73,9 @@ export function applyLatestPstoCycleToStatisticsRows(
   return rows.map((row) => {
     const cycles = cyclesByWeldId.get(row.id) ?? []
     const cycle = latestByWeldId.get(row.id)
-    if (!cycle) return { ...row, pstoRepeatCycles: cycles }
-    return {
-      ...row,
+    const target = inPlace ? row : { ...row }
+    if (!cycle) return Object.assign(target, { pstoRepeatCycles: cycles })
+    return Object.assign(target, {
       pstoRequest: cycle.pstoRequest ?? null,
       pstoRequestDate: cycle.pstoRequestDate ?? null,
       pstoDate: cycle.pstoDate ?? null,
@@ -67,7 +88,7 @@ export function applyLatestPstoCycleToStatisticsRows(
       tvmtConclusionDate: cycle.tvmtConclusionDate ?? null,
       tvmtConclusion: cycle.tvmtConclusion ?? null,
       pstoRepeatCycles: cycles,
-    }
+    })
   })
 }
 

@@ -89,7 +89,7 @@ describe('server operation access boundary', () => {
     expect(redactWeldData(lnkOnly, { id: 1, joint: 'F1', d1: 57, weldingJournalNote: 'hidden', lnkNote: 'visible', pstoResult: 'hidden' })).toEqual({ id: 1, joint: 'F1', d1: 57, lnkNote: 'visible' })
     expect(() => assertReadableQuery(lnkOnly, { columnFilters: { weldingJournalNote: 'hidden' } })).toThrow()
   })
-  it('requires each specialty when importing historical control facts, before any mutation', () => {
+  it('rejects workflow facts in import before any mutation', () => {
     expect(getOperationPermissions('@replace', { records: [], deleteIds: [] })).toEqual(['welding.view', 'welding.import'])
     expect(getOperationPermissions('@replace', { records: [], deleteIds: [1] })).toContain('welding.delete')
     accessContext.run({ identity: engineer, operation: 'importWeldJoints', operationId: 'import', area: 'welding', permissions: ['welding.import'] }, () => {

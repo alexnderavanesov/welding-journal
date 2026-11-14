@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { requireIdentity, runWithAccess } from '@/server/access-context'
 import { createDocumentHistoryExcelResponse, readDocumentHistoryReport } from '@/server/document-history-report'
+import { LargeExportBusyError } from '@/server/large-export-guard'
 
 export const Route = createFileRoute('/api/document-history-report')({ server: { handlers: {
   POST: async ({ request }) => {
@@ -11,6 +12,6 @@ export const Route = createFileRoute('/api/document-history-report')({ server: {
       return await runWithAccess(identity, 'documentHistoryReport', ['documents.view', 'documents.export'], () => format === 'excel'
         ? createDocumentHistoryExcelResponse(input, request.signal)
         : readDocumentHistoryReport(input, request.signal).then(report => Response.json(report, { headers: { 'Cache-Control': 'no-store' } })))
-    } catch (error) { return new Response(error instanceof Error ? error.message : 'Не удалось подготовить список документов.', { status: 400, headers: { 'Cache-Control': 'no-store' } }) }
+    } catch (error) { return new Response(error instanceof Error ? error.message : 'Не удалось подготовить список документов.', { status: error instanceof LargeExportBusyError ? 429 : 400, headers: { 'Cache-Control': 'no-store' } }) }
   },
 } } })
