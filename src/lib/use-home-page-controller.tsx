@@ -5018,6 +5018,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     resultManager: {
       elevated: currentWorkflowRootCauseDestination === 'lnk-result-manager',
       rows: managedLnkResultRows,
+      registryScope: managedLnkResultOrderIds === null ? 'all' : 'selected',
       methods: managedLnkResultMethods,
       entries: managedLnkResultEntries,
       pendingEntries: allManagedLnkPendingResultRows,

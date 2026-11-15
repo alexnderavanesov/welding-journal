@@ -41,7 +41,7 @@ it('preserves registry IDs, versions and permit parameters without working-repor
 })
 it('preserves template identities and constructor field configuration for template-only access', () => {
   const template = { id: 'weldingJournal', version: 'v1', constructorConfig: { columns: [{ key: 'lnkNote' }], widths: { connectionType: 20 } } }
-  for (const [name, value] of [['getRemoteDocumentTemplateInventory', { templates: [template], missing: [template] }], ['listRemoteDocumentTemplatesWithFiles', [template]], ['getRemoteDocumentTemplate', template], ['saveRemoteDocumentTemplate', template], ['updateRemoteDocumentTemplate', template]] as const) {
+  for (const [name, value] of [['getRemoteDocumentTemplateInventory', { templates: [template], missing: [template] }], ['getRemoteDocumentTemplate', template], ['saveRemoteDocumentTemplate', template], ['updateRemoteDocumentTemplate', template]] as const) {
     expect(redactOperationResult(user('templates.view'), 'document-templates-api.ts', name, value)).toEqual(value)
   }
 })

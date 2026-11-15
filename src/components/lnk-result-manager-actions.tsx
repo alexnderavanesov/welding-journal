@@ -9,6 +9,7 @@ import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
+import { useAccess } from '@/lib/security-context'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -31,10 +32,13 @@ export function LnkResultManagerActions({
   onReplaceResult,
   onClearResult,
 }: LnkResultManagerActionsProps) {
+  const { can } = useAccess()
   const saveCheckSettings = useSaveCheckSettings()
   const processSettings = useControlProcessSettings()
   const systemIndexSettings = useSystemIndexSettings()
-  const removalBlockReason = getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
+  const removalBlockReason = !can('lnk.delete')
+    ? 'Нет права удаления в ЛНК. Обратитесь к администратору.'
+    : getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
   const officialityReason = getUnofficialLnkGoodResultReason(row, 'годен', currentResult, method.code)
   return (
     <div className="flex content-start flex-col items-end gap-1.5">

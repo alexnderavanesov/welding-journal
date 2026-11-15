@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { buildSpecialistParticipant, buildWelderParticipants, getParticipantTemplateIssues, sortUniqueParticipants } from './document-template-participants'
+import { buildSpecialistParticipant, buildWelderParticipants, getParticipantTemplateIssues, getParticipantValue, sortUniqueParticipants } from './document-template-participants'
 import { createWeldingJournalBlobFromTemplate } from './document-template-workbook'
 import { normalizeDocumentTemplateConstructorConfig, type StoredDocumentTemplate } from './document-template-model'
 
@@ -37,6 +37,14 @@ describe('work participant templates', () => {
     expect(people.map(person => person.kind)).toEqual(['welder', 'thermist', 'inspector', 'inspector'])
     expect(people.filter(person => person.kind === 'inspector')).toHaveLength(2)
     expect(buildSpecialistParticipant('inspector', null)).toBeNull()
+  })
+  it('keeps specialist stamps separate from NAKS stamps and distinct historical assignments', () => {
+    const person = buildSpecialistParticipant('inspector', { id: 3, name: 'Петров', certificate: 'OLD', stamp: 'ДФ №7 / A-б' })!
+    expect(getParticipantValue('__participantSpecialistStamp', person)).toBe('ДФ №7 / A-б')
+    expect(getParticipantValue('__participantStamp', person)).toBe('')
+    expect(getParticipantValue('__participantSpecialistStamp', inspector())).toBe('')
+    const other = buildSpecialistParticipant('inspector', { id: 3, name: 'Петров', certificate: 'OLD', stamp: 'Другое' })!
+    expect(sortUniqueParticipants([person, person, other, inspector()])).toHaveLength(3)
   })
   it('preserves the mode/categories on reload and rejects ambiguous row fields or an empty category choice', () => {
     const config = template().constructorConfig!

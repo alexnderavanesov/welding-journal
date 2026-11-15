@@ -56,12 +56,14 @@ export const archiveSpecialist = createServerFn({ method: 'POST' }).validator(no
 export function normalizeSpecialistCard(data: Omit<SpecialistRecord, 'id' | 'revision'> & { id?: number; revision?: number }) {
   const name = String(data?.name ?? '').trim()
   const certificate = String(data?.certificate ?? '').trim()
+  const stamp = String(data?.stamp ?? '').trim()
+  if (stamp.length > 200) throw new Error('Клеймо специалиста — до 200 символов.')
   if (!name || !certificate || name.length > 300 || certificate.length > 200) throw new Error('Укажите ФИО и № квалификационного удостоверения (до 300 и 200 символов).')
   if (data.kind !== 'inspector' && data.kind !== 'thermist') throw new Error('Выберите тип специалиста.')
   const methods = data.kind === 'thermist' ? [] : [...new Set(data.methods ?? [])]
   if (data.kind === 'inspector' && (!methods.length || methods.some(method => !SPECIALIST_METHODS.includes(method)))) throw new Error('Выберите виды контроля специалиста.')
   if (data.id !== undefined && (!Number.isSafeInteger(data.id) || data.id <= 0 || !Number.isSafeInteger(data.revision) || data.revision! <= 0)) throw new Error('Обновите карточку специалиста.')
-  return { id: data.id, revision: data.revision, name, certificate, kind: data.kind, methods }
+  return { id: data.id, revision: data.revision, name, certificate, stamp, kind: data.kind, methods }
 }
 
 export const saveSpecialist = createServerFn({ method: 'POST' })

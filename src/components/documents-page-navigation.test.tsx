@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 
 import { DocumentsPage } from '@/components/documents-page'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
-import { parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
+import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
 
 const { getDocumentGenerationData, loadGeneratedDocumentHistoryGrid, loadSystemDocumentHistoryGrid,
   loadGeneratedDocumentHistoryFilterOptions, loadSystemDocumentHistoryFilterOptions, downloadGeneratedDocument } = vi.hoisted(() => ({
@@ -26,6 +26,7 @@ vi.mock('@/components/documents-history-grid', async () => {
     viewId: string
     sourceRevision: string | number
     columnFilters: { [key: string]: string }
+    onColumnFilterChange: (key: string, value: string) => void
     loadRows: (request: DocumentHistoryGridRequest) => Promise<DocumentHistoryGridResult<Record>>
     onTotalChange?: (total: number) => void
     renderActions?: (row: Record) => ReactNode
@@ -49,6 +50,8 @@ vi.mock('@/components/documents-history-grid', async () => {
         return () => { disposed = true }
       }, [props.viewId, props.sourceRevision, filters])
       return <div data-testid="document-history-grid" aria-busy={!loaded}>
+        {['РК', 'рк', 'ВИК', 'ТВМТ', ''].map(method => <button key={method} onClick={() => props.onColumnFilterChange('method', method ? buildWeldColumnValueFilter([method]) : '')}>Метод столбца: {method || 'сброс'}</button>)}
+        <button onClick={() => props.onColumnFilterChange('method', ' рк ')}>Метод столбца: текст</button>
         {rows.map(row => <div key={row.id}><span>{row.title}</span>{props.renderActions?.(row)}</div>)}
       </div>
     },
@@ -111,6 +114,22 @@ describe('DocumentsPage report navigation', () => {
     loadSystemDocumentHistoryFilterOptions.mockReset()
     loadSystemDocumentHistoryFilterOptions.mockResolvedValue({ options: [], hasMore: false })
     downloadGeneratedDocument.mockReset()
+  })
+
+  it.each(['Заявка ЛНК', 'Заключения ЛНК'])('applies the method column within %s and preserves scope when reset', async title => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentsPage welderStamps={[]} /></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('button', { name: title }))
+    await waitFor(() => expect(loadSystemDocumentHistoryGrid).toHaveBeenCalled())
+    for (const [method, expected] of [['текст', ['РК']], ['рк', ['РК']], ['РК', ['РК']], ['ВИК', ['ВИК']], ['ТВМТ', ['__no_matching_document_method__']], ['сброс', ['ВИК', 'РК', 'УЗК', 'ПВК']]] as const) {
+      const calls = loadSystemDocumentHistoryGrid.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: `Метод столбца: ${method}` }))
+      await waitFor(() => {
+        expect(loadSystemDocumentHistoryGrid).toHaveBeenCalledTimes(calls + 1)
+        expect(parseWeldColumnChoiceFilter(loadSystemDocumentHistoryGrid.mock.lastCall?.[0].columnFilters.method)).toEqual({ kind: 'values', values: [...expected] })
+      })
+      expect(loadSystemDocumentHistoryFilterOptions).toHaveBeenCalledTimes(title === 'Заключения ЛНК' ? 1 : 0)
+    }
   })
 
   it('shows a failed Excel download and lets the operator retry without losing the registry', async () => {

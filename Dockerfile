@@ -46,6 +46,7 @@ RUN pnpm config set --global verifyDepsBeforeRun false
 
 COPY package.json ./
 COPY --from=build /app/.output ./.output
+COPY --from=build /app/scripts/prewarm-dispatcher.mjs ./scripts/prewarm-dispatcher.mjs
 
 EXPOSE 3000
 

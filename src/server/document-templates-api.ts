@@ -36,12 +36,6 @@ type UpdateDocumentTemplateInput = {
   constructorConfig?: DocumentTemplateConstructorConfig
 }
 
-export const listRemoteDocumentTemplatesWithFiles = createServerFn({ method: 'GET' })
-  .handler(async (): Promise<RemoteDocumentTemplate[]> => {
-    const server = await import('@/server/document-templates')
-    return server.listRemoteDocumentTemplatesWithFiles()
-  })
-
 export const getRemoteDocumentTemplateInventory = createServerFn({ method: 'GET' }).handler(async () => {
   const server = await import('@/server/document-templates')
   return server.getRemoteDocumentTemplateInventory()

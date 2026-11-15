@@ -30,6 +30,7 @@ import { Route as ApiDocumentHistoryReportRouteImport } from './routes/api/docum
 import { Route as ApiLineSchemeFileRouteImport } from './routes/api/line-scheme-file'
 import { Route as ApiReportExcelRouteImport } from './routes/api/report-excel'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiMaintenanceDispatcherPrewarmRouteImport } from './routes/api/maintenance/dispatcher-prewarm'
 import { Route as ApiMaintenanceDispatcherRefreshRouteImport } from './routes/api/maintenance/dispatcher-refresh'
 
 const IndexRoute = IndexRouteImport.update({
@@ -137,6 +138,12 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMaintenanceDispatcherPrewarmRoute =
+  ApiMaintenanceDispatcherPrewarmRouteImport.update({
+    id: '/api/maintenance/dispatcher-prewarm',
+    path: '/api/maintenance/dispatcher-prewarm',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiMaintenanceDispatcherRefreshRoute =
   ApiMaintenanceDispatcherRefreshRouteImport.update({
     id: '/api/maintenance/dispatcher-refresh',
@@ -165,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/maintenance/dispatcher-prewarm': typeof ApiMaintenanceDispatcherPrewarmRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesByTo {
@@ -188,6 +196,7 @@ export interface FileRoutesByTo {
   '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/maintenance/dispatcher-prewarm': typeof ApiMaintenanceDispatcherPrewarmRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesById {
@@ -213,6 +222,7 @@ export interface FileRoutesById {
   '/api/line-scheme-file': typeof ApiLineSchemeFileRoute
   '/api/report-excel': typeof ApiReportExcelRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/maintenance/dispatcher-prewarm': typeof ApiMaintenanceDispatcherPrewarmRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRouteTypes {
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
+    | '/api/maintenance/dispatcher-prewarm'
     | '/api/maintenance/dispatcher-refresh'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
+    | '/api/maintenance/dispatcher-prewarm'
     | '/api/maintenance/dispatcher-refresh'
   id:
     | '__root__'
@@ -285,6 +297,7 @@ export interface FileRouteTypes {
     | '/api/line-scheme-file'
     | '/api/report-excel'
     | '/api/auth/$'
+    | '/api/maintenance/dispatcher-prewarm'
     | '/api/maintenance/dispatcher-refresh'
   fileRoutesById: FileRoutesById
 }
@@ -298,6 +311,7 @@ export interface RootRouteChildren {
   ApiLineSchemeFileRoute: typeof ApiLineSchemeFileRoute
   ApiReportExcelRoute: typeof ApiReportExcelRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiMaintenanceDispatcherPrewarmRoute: typeof ApiMaintenanceDispatcherPrewarmRoute
   ApiMaintenanceDispatcherRefreshRoute: typeof ApiMaintenanceDispatcherRefreshRoute
 }
 
@@ -450,6 +464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/maintenance/dispatcher-prewarm': {
+      id: '/api/maintenance/dispatcher-prewarm'
+      path: '/api/maintenance/dispatcher-prewarm'
+      fullPath: '/api/maintenance/dispatcher-prewarm'
+      preLoaderRoute: typeof ApiMaintenanceDispatcherPrewarmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/maintenance/dispatcher-refresh': {
       id: '/api/maintenance/dispatcher-refresh'
       path: '/api/maintenance/dispatcher-refresh'
@@ -502,6 +523,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLineSchemeFileRoute: ApiLineSchemeFileRoute,
   ApiReportExcelRoute: ApiReportExcelRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiMaintenanceDispatcherPrewarmRoute: ApiMaintenanceDispatcherPrewarmRoute,
   ApiMaintenanceDispatcherRefreshRoute: ApiMaintenanceDispatcherRefreshRoute,
 }
 export const routeTree = rootRouteImport

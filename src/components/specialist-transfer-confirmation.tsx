@@ -23,12 +23,12 @@ export function useSpecialistTransferConfirmation(rowIds: number[], target: 'pri
       <p>Не удалось проверить специалистов: {(query.error as Error).message}</p>
       <Button variant="outline" size="sm" onClick={refresh}>Повторить проверку специалистов</Button>
     </> : conflicts.length ? <>
-      <p>При объединении различаются специалисты или сохранённые удостоверения. В итоговых заключениях будут очищены обе роли. Документов: {conflicts.length}.</p>
+      <p>При объединении различаются сохранённые ФИО, удостоверения или клейма специалистов. В итоговых заключениях будут очищены обе роли. Документов: {conflicts.length}.</p>
       <p className="mt-1 text-xs">{conflicts.slice(0, 5).map(item => `${item.title} (${item.date})`).join('; ')}{conflicts.length > 5 ? '…' : ''}</p>
       <label className="mt-2 flex items-center gap-2"><Checkbox checked={accepted === query.data?.confirmation}
         onChange={event => setAccepted(event.target.checked ? query.data!.confirmation : '')} />Подтверждаю очистку обеих ролей в объединяемых заключениях</label>
       <Button variant="ghost" size="sm" onClick={refresh}>Обновить проверку специалистов</Button>
-    </> : <><p>ФИО и удостоверения сохранятся. Конфликтов назначений нет.</p><Button variant="ghost" size="sm" onClick={refresh}>Обновить проверку специалистов</Button></>}
+    </> : <><p>ФИО, удостоверения и клейма сохранятся. Конфликтов назначений нет.</p><Button variant="ghost" size="sm" onClick={refresh}>Обновить проверку специалистов</Button></>}
   </div> : null
   return { ready, notice, refresh, confirmation: ready && conflicts.length ? query.data?.confirmation : undefined }
 }

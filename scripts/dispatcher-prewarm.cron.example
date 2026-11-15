@@ -1,0 +1,6 @@
+# Example only; this file does not install or enable a schedule.
+# Install separately in an operator environment with Node, the application's
+# MAINTENANCE_TOKEN and PORT. Replace /path/to/app; never put the token here.
+# Use a cron implementation supporting CRON_TZ. No missed-run catch-up queue.
+CRON_TZ=Europe/Moscow
+30 6 * * * cd /path/to/app && node scripts/prewarm-dispatcher.mjs

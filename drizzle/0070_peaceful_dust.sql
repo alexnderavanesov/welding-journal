@@ -1,0 +1,1 @@
+ALTER TABLE "specialists" ADD COLUMN "stamp" text DEFAULT '' NOT NULL;

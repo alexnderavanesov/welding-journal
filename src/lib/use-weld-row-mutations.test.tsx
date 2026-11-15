@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWeldRowMutations } from '@/lib/use-weld-row-mutations'
+import { assertCurrentInteractiveWeldRowVersions } from '@/lib/weld-row-version'
 
 const mocks = vi.hoisted(() => ({
   deleteWeldJoint: vi.fn(),
@@ -36,6 +37,32 @@ vi.mock('@/server/weld-mutations-api', () => ({
 describe('useWeldRowMutations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('preserves a draft but cannot retry an editor version invalidated only by status publication', async () => {
+    const original = { id: 17, line: 'L', joint: 'S1', rowVersion: '101', finalStatus: 'ожидает НК', weldingJournalNote: '' }
+    const published = { ...original, rowVersion: '102', finalStatus: 'годен' }
+    const draft = { ...original, weldingJournalNote: 'Новое примечание' }
+    const setEditing = vi.fn(), setMessage = vi.fn()
+    mocks.prepareWeldSaveValue.mockImplementation(({ value }) => value)
+    mocks.updateWeldRowOrThrow.mockImplementation(async value => {
+      assertCurrentInteractiveWeldRowVersions({ targetIds: [17], expectedVersions: [{ id: 17, version: value.rowVersion }],
+        currentVersions: [{ id: 17, version: published.rowVersion, line: 'L', joint: 'S1' }] })
+      return value
+    })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    const { result } = renderHook(() => useWeldRowMutations({ rows: [published], editingRecord: original,
+      welderStamps: [], welderStampSuspensions: [], weldFormStampSelectOptions: {}, setEditing, setMessage,
+      highlightChangedRows: vi.fn(), dismissRepeatedJointTask: vi.fn() }), { wrapper })
+    for (let attempt = 0; attempt < 2; attempt++) await act(async () => {
+      await expect(result.current.saveMutation.mutateAsync(draft)).rejects.toMatchObject({ code: 'ROW_VERSION_STALE' })
+    })
+    expect(setEditing).not.toHaveBeenCalled()
+    expect(mocks.scheduleWeldDataRefresh).not.toHaveBeenCalled()
+    expect(draft).toMatchObject({ rowVersion: '101', weldingJournalNote: 'Новое примечание' })
+    expect(mocks.updateWeldRowOrThrow).toHaveBeenCalledTimes(2)
+    expect(setMessage).toHaveBeenCalledWith(expect.stringContaining('Ничего не сохранено'))
   })
 
   it.each(['missing', 'stale', 'empty'] as const)('validates against the editor original when the table row is %s', async mode => {

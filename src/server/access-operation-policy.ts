@@ -144,7 +144,6 @@ export const OPERATION_POLICIES = {
   "account-api.ts#completeAccountLink": "@account",
   "account-api.ts#updateOwnProfile": "@account",
   "account-api.ts#changeOwnPassword": "@account",
-  "document-templates-api.ts#listRemoteDocumentTemplatesWithFiles": "@templateRead",
   "document-templates-api.ts#getRemoteDocumentTemplateInventory": "templates.view",
   "document-templates-api.ts#cleanupRemoteDocumentTemplateFiles": "templates.delete",
   "document-templates-api.ts#listRemoteDocumentTemplateIds": "@templateRead",

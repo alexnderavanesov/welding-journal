@@ -1,6 +1,8 @@
 # Матрица доступа — реализация 29.10.2026
 
-Статус: локальная реализация, не выпуск. Better Auth 1.7.14; использованы официальные MCP и четыре skills. Реестр содержит 181 RPC, включая обновление активности; результаты реализации и границы проверок — в [отчёте](authentication-implementation-2026-10-30.md). Итоговая предкоммитная проверка описана отдельно.
+Статус исходного этапа: локальная реализация, не выпуск. Better Auth 1.7.14; использованы официальные MCP и четыре skills. На этом этапе реестр содержал 181 RPC, включая обновление активности; результаты реализации и границы проверок — в [отчёте](authentication-implementation-2026-10-30.md). Итоговая предкоммитная проверка описана отдельно.
+
+Дополнение 15.11.2026: удалён неиспользуемый RPC загрузки всех файлов шаблонов; каталог и чтение выбранного файла сохраняют прежние проверки доступа. Актуальный полный реестр проверяется сборкой по `src/server/access-operation-policy.ts`.
 
 Каждый RPC внесён в явный реестр; неизвестный обработчик закрыт. Динамические политики разрешают только известную область отчёта/изменения, ключ настроек или вид документа. Файловый HTTP API проверяется отдельно. Внутренние проверки бизнес-правил сохраняются. Владелец и администратор имеют рабочие разрешения; управление администраторами доступно только владельцу.
 
@@ -136,7 +138,6 @@
 | `account-api.ts#completeAccountLink` | `@account` |
 | `account-api.ts#updateOwnProfile` | `@account` |
 | `account-api.ts#changeOwnPassword` | `@account` |
-| `document-templates-api.ts#listRemoteDocumentTemplatesWithFiles` | `@templateRead` |
 | `document-templates-api.ts#getRemoteDocumentTemplateInventory` | `templates.view` |
 | `document-templates-api.ts#cleanupRemoteDocumentTemplateFiles` | `templates.delete` |
 | `document-templates-api.ts#listRemoteDocumentTemplateIds` | `@templateRead` |

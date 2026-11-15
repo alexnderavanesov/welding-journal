@@ -19,6 +19,9 @@ describe('specialist server validation and bounded database traffic', () => {
   beforeEach(() => vi.clearAllMocks())
   it('validates cards, normalizes thermists without method choices and requires a version for edits', () => {
     expect(normalizeSpecialistCard({ ...card, name: ' Иванов ' }).name).toBe('Иванов')
+    expect(normalizeSpecialistCard(card).stamp).toBe('')
+    expect(normalizeSpecialistCard({ ...card, stamp: ' ДФ №7 / A-б ' }).stamp).toBe('ДФ №7 / A-б')
+    expect(() => normalizeSpecialistCard({ ...card, stamp: 'x'.repeat(201) })).toThrow('до 200')
     expect(normalizeSpecialistCard({ ...card, kind: 'thermist' }).methods).toEqual([])
     for (const change of [{ name: '' }, { certificate: '' }, { methods: [] }, { id: 1 }]) expect(() => normalizeSpecialistCard({ ...card, ...change })).toThrow()
   })

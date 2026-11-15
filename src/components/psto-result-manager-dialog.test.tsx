@@ -1,10 +1,36 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PstoResultManagerDialog } from '@/components/psto-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
+const access = vi.hoisted(() => ({ canDelete: true }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: (permission: string) => permission !== 'psto.delete' || access.canDelete }) }))
+beforeEach(() => { access.canDelete = true })
+
 describe('PstoResultManagerDialog', () => {
+  it('explains missing stage-delete permission and keeps request correction available', () => {
+    access.canDelete = false
+    const row = { id: 7, rowVersion: '107', pstoRequired: 'да', weldDate: '2026-08-01',
+      pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-08-02' } as WeldRow
+    const onDeleteStage = vi.fn(), onCorrectStage = vi.fn()
+    render(<PstoResultManagerDialog rows={[row]} diagramDrafts={{}} isPending={false} canOpenDocument={false}
+      onClose={vi.fn()} onDiagramDraftChange={vi.fn()} onRenameDiagram={vi.fn()} onDeleteResult={vi.fn()}
+      onDeleteStage={onDeleteStage} onCorrectStage={onCorrectStage} onOpenDocument={vi.fn()}
+      onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} />)
+    const input = screen.getByRole('textbox', { name: 'Наименование заявки' })
+    const card = input.closest('article')!
+    expect(within(card).getByText(/Нет права удаления в ПСТО/)).toBeVisible()
+    expect(within(card).getByRole('button', { name: 'Удалить этап' })).toBeDisabled()
+    fireEvent.change(input, { target: { value: 'ПСТО-исправлено' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'Сохранить' }))
+    expect(onCorrectStage).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', name: 'ПСТО-исправлено' }))
+    fireEvent.contextMenu(card)
+    const remove = within(screen.getByTestId('context-action-menu')).getByRole('button', { name: /^Удалить:/ })
+    expect(remove).toBeDisabled()
+    expect(within(screen.getByTestId('context-action-menu')).getByText('Нет права удаления в ПСТО. Обратитесь к администратору.')).toBeVisible()
+    expect(onDeleteStage).not.toHaveBeenCalled()
+  })
   it('preserves the selected repeat while server search temporarily clears the rows', () => {
     const row = { preHeatTreatmentMode: 'allPsto' as const,
       id: 7, pstoRequired: 'да', pstoRequest: 'ПСТО-1',

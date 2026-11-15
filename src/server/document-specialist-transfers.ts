@@ -59,7 +59,7 @@ export async function captureTransferredSpecialists(tx: SystemDocumentSequenceTr
   await lockLayeredControlDocumentsForWeldChange(tx)
   await lockSystemDocumentIndexes(tx)
   const plan = await planTransferredSpecialists(tx, rowIds, target, true)
-  if (plan.conflicts.length && confirmation !== plan.confirmation) throw new Error('При переносе объединяются заключения с разными специалистами или удостоверениями. Ничего не изменено. Обновите проверку специалистов и подтвердите очистку обеих ролей.')
+  if (plan.conflicts.length && confirmation !== plan.confirmation) throw new Error('При переносе объединяются заключения с разными реквизитами специалистов (ФИО, удостоверение или клеймо). Ничего не изменено. Обновите проверку специалистов и подтвердите очистку обеих ролей.')
   return plan.transfers
 }
 

@@ -257,7 +257,7 @@ export async function applyOperation(input: DocumentOperationRequest & { fingerp
     if (groups.some(group => group.error)) throw new Error(groups.filter(group => group.error).map(group => `${group.label}: ${group.error}`).join('\n'))
     const preview = publicPreview(state, request, groups)
     if (preview.previewHash !== input.previewHash) throw stale()
-    if (preview.groups.some(group => group.specialistsCleared) && input.acceptSpecialistClearing !== true) throw new Error('Специалисты или удостоверения различаются. Откройте актуальное окно объединения и подтвердите предупреждение об очистке обеих ролей. Документы не изменены.')
+    if (preview.groups.some(group => group.specialistsCleared) && input.acceptSpecialistClearing !== true) throw new Error('Сохранённые реквизиты специалистов различаются (ФИО, удостоверение или клеймо). Откройте актуальное окно объединения и подтвердите предупреждение об очистке обеих ролей. Документы не изменены.')
     const unchanged = new Set(preview.groups.filter(group => group.unchanged).flatMap(group => group.sourceIds))
     const changedGroups = groups.filter(group => !group.sourceIds.every(sourceId => unchanged.has(sourceId)))
     const newNumbers = changedGroups.filter(group => group.reserveNumber)

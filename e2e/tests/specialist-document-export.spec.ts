@@ -33,12 +33,12 @@ test.afterEach(async ({ page }) => {
 async function seedDocument(thermist: boolean, title: string) {
   const book = XLSX.utils.book_new()
   const sheet = XLSX.utils.aoa_to_sheet([
-    ['Провёл контроль', 'Удостоверение', 'Выдал заключение', 'Удостоверение', 'Оператор-термист', 'Удостоверение', 'Руководитель по ТО', 'Удостоверение'],
+    ['Провёл контроль', 'Удостоверение', 'Выдал заключение', 'Удостоверение', 'Оператор-термист', 'Удостоверение', 'Руководитель по ТО', 'Удостоверение', 'Клеймо 1', 'Клеймо 2', 'Клеймо 3', 'Клеймо 4'],
     ['', '', '', '', '', '', '', ''],
     ['Стык'],
     [''],
   ])
-  sheet['!cols'] = Array.from({ length: 8 }, () => ({ wpx: 230 }))
+  sheet['!cols'] = Array.from({ length: 12 }, () => ({ wpx: 230 }))
   XLSX.utils.book_append_sheet(book, sheet, 'Подписи')
   const data = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
   fileKey = `e2e-specialist-export/${randomUUID()}.xlsx`
@@ -49,6 +49,7 @@ async function seedDocument(thermist: boolean, title: string) {
   const fields = [
     '__controlPerformedName', '__controlPerformedCertificate', '__conclusionIssuedName', '__conclusionIssuedCertificate',
     '__thermistOperatorName', '__thermistOperatorCertificate', '__heatTreatmentSupervisorName', '__heatTreatmentSupervisorCertificate',
+    '__controlPerformedStamp', '__conclusionIssuedStamp', '__thermistOperatorStamp', '__heatTreatmentSupervisorStamp',
   ]
   await withE2eDatabase(async db => {
     expect((await db.query('select id from document_templates where id=$1', [templateId])).rows).toHaveLength(0)
@@ -83,6 +84,7 @@ async function createPerson(page: Page, name: string, certificate: string, therm
   if (thermist) await page.getByLabel('Тип специалиста', { exact: true }).selectOption('thermist')
   else await page.getByLabel('ВИК', { exact: true }).check()
   await page.getByLabel('№ квалификационного удостоверения', { exact: true }).fill(certificate)
+  await page.getByLabel('Клеймо специалиста', { exact: true }).fill(`ДФ №7 / ${certificate}`)
   await page.getByRole('button', { name: 'Сохранить специалиста', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Добавление специалиста', exact: true })).toBeHidden()
   const id = await withE2eDatabase(async db => (await db.query<{ id: number }>('select id from specialists where name=$1', [name])).rows[0].id)
@@ -113,7 +115,7 @@ async function readDownloadedSignatures(page: Page, title: string, expectedNames
   expect(workbook.SheetNames).toEqual(['Подписи'])
   const sheet = workbook.Sheets['Подписи']
   expect(sheet.A4?.v).toBe('F-SIGNATURES')
-  const values = ['A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'H2'].map(cell => sheet[cell]?.v ?? '')
+  const values = ['A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'H2', 'I2', 'J2', 'K2', 'L2'].map(cell => sheet[cell]?.v ?? '')
   await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
   return values
 }
@@ -142,12 +144,15 @@ for (const thermist of [false, true]) test(`${thermist ? 'ПСТО' : 'ВИК'}:
   await expect(assignment).toBeHidden()
   await openDocuments(page, thermist)
   const pair = [firstName, 'УД-ИСТОРИЯ-А', secondName, 'УД-ИСТОРИЯ-Б']
-  const expected = thermist ? ['', '', '', '', ...pair] : [...pair, '', '', '', '']
+  const stamps = ['ДФ №7 / УД-ИСТОРИЯ-А', 'ДФ №7 / УД-ИСТОРИЯ-Б']
+  const expected = thermist ? ['', '', '', '', ...pair, '', '', ...stamps] : [...pair, '', '', '', '', ...stamps, '', '']
   expect(await readDownloadedSignatures(page, title, [firstName, secondName])).toEqual(expected)
 
   await page.goto('/references')
   await page.getByRole('tab', { name: 'Специалисты', exact: true }).click()
   await page.getByRole('row').filter({ hasText: firstName }).getByRole('button', { name: 'Изменить', exact: true }).click()
+  await expect(page.getByLabel('Клеймо специалиста', { exact: true })).toHaveValue('ДФ №7 / УД-ИСТОРИЯ-А')
+  await page.getByLabel('Клеймо специалиста', { exact: true }).fill('НОВОЕ КЛЕЙМО')
   await page.getByLabel('ФИО', { exact: true }).fill(updatedName)
   await page.getByLabel('№ квалификационного удостоверения', { exact: true }).fill('УД-НОВОЕ')
   await page.getByRole('button', { name: 'Сохранить специалиста', exact: true }).click()
@@ -155,7 +160,21 @@ for (const thermist of [false, true]) test(`${thermist ? 'ПСТО' : 'ВИК'}:
   await page.reload()
   await page.getByRole('tab', { name: 'Специалисты', exact: true }).click()
   await expect(page.getByRole('row').filter({ hasText: updatedName })).toContainText('УД-НОВОЕ')
+  await page.getByRole('row').filter({ hasText: updatedName }).getByRole('button', { name: 'Изменить', exact: true }).click()
+  await expect(page.getByLabel('Клеймо специалиста', { exact: true })).toHaveValue('НОВОЕ КЛЕЙМО')
+  await page.getByRole('button', { name: 'Отмена', exact: true }).click()
   await openDocuments(page, thermist)
   expect(await readDownloadedSignatures(page, title, [firstName, secondName])).toEqual(expected)
+  await (await documentGridRow(page, title)).checkbox.check()
+  await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
+  await page.getByRole('button', { name: 'Назначить специалистов', exact: true }).click()
+  await chooseSpecialist(assignment.getByRole('combobox', { name: thermist ? 'Оператор-термист' : 'Провёл контроль', exact: true }), first)
+  await assignment.getByRole('button', { name: 'Применить', exact: true }).click()
+  await expect(assignment).toBeHidden()
+  const reassigned = [...expected]
+  reassigned[thermist ? 4 : 0] = updatedName
+  reassigned[thermist ? 5 : 1] = 'УД-НОВОЕ'
+  reassigned[thermist ? 10 : 8] = 'НОВОЕ КЛЕЙМО'
+  expect(await readDownloadedSignatures(page, title, [updatedName, secondName])).toEqual(reassigned)
   expect(errors).toEqual([])
 })

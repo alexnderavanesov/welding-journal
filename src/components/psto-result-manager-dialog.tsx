@@ -43,6 +43,7 @@ import {
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { useAccess } from '@/lib/security-context'
 import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
 import type {
   WorkflowRootCauseAction,
@@ -119,6 +120,7 @@ export function PstoResultManagerDialog({
   onLoadMoreRows,
   onRegistrySearchChange,
 }: PstoResultManagerDialogProps) {
+  const { can } = useAccess()
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
@@ -216,7 +218,9 @@ export function PstoResultManagerDialog({
     const stageData = getStageData(cycle, stage)
     const fieldKey = getStageDocumentField(stage)
     const documentRow = getCycleDocumentRow(row, cycle)
-    const deleteReason = getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
+    const deleteReason = !can('psto.delete')
+      ? 'Нет права удаления в ПСТО. Обратитесь к администратору.'
+      : getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
       heading: `${text(row.line) || '-'} · ${text(row.joint) || '-'}`,
@@ -505,13 +509,15 @@ function CycleStageEditor({
   onDocumentDateSaved?: () => void
   onMessage?: (message: string) => void
 }) {
+  const { can } = useAccess()
   const stageData = getStageData(cycle, stage)
   const documentField = getStageDocumentField(stage)
   const documentReference = getSystemDocumentReferenceForField(getCycleDocumentRow(row, cycle), documentField)
   const usesWholeDocumentDateEditor = Boolean(documentReference)
   const [draft, setDraft] = useState<StageDraft>(stageData)
   useEffect(() => setDraft(stageData), [stageData.date, stageData.name, stageData.result])
-  const deleteReason = getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
+  const deletePermissionReason = can('psto.delete') ? '' : 'Нет права удаления в ПСТО. Обратитесь к администратору.'
+  const deleteReason = deletePermissionReason || getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
   const hasChanges = (
     (!usesWholeDocumentDateEditor && draft.date !== stageData.date) ||
     draft.name !== stageData.name ||
@@ -636,7 +642,8 @@ function CycleStageEditor({
                   type="button"
                   size="sm"
                   variant="destructive"
-                  disabled={isPending}
+                  disabled={isPending || Boolean(deletePermissionReason)}
+                  title={deletePermissionReason || undefined}
                   onClick={() => onCorrectTvmtAndRemoveLaterCycles(draft)}
                 >
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />

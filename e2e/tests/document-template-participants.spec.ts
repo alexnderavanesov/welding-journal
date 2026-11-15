@@ -26,7 +26,7 @@ test('participant template config, exact roster, historic performers, categories
       stamps.push((await db.query('insert into welder_stamps(welder_name,naks_stamp,internal_stamp,archived) values($1,$2,$3,true) returning id', [name, code, internal])).rows[0].id)
     }
     const second = { id: 500, name: 'Подписант — не включать', certificate: 'SIGN' }
-    const inspector = { id: 501, name: 'Петров', certificate: 'OLD' }
+    const inspector = { id: 501, name: 'Петров', certificate: 'OLD', stamp: 'ДФ-7' }
     for (const [type, first, members, source] of [
       ['system:lnkConclusionVik', inspector, rows.slice(0, 2), 'primary'],
       ['system:lnkConclusionRk', inspector, [rows[0]], 'beforeHeatTreatment'],
@@ -53,13 +53,13 @@ test('participant template config, exact roster, historic performers, categories
     await page.goto('/settings')
     await page.getByRole('tab', { name: 'Пользовательские', exact: true }).click()
     const book = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['СПИСОК'], ['№', 'ФИО', 'Специальность', 'Разряд', 'Удостоверение', 'Клеймо'], ['', '', '', '', '', ''], ['Подпись руководителя']]), 'Список')
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['СПИСОК'], ['№', 'ФИО', 'Специальность', 'Разряд', 'Удостоверение', 'Клеймо НАКС', 'Клеймо специалиста'], ['', '', '', '', '', '', ''], ['Подпись руководителя']]), 'Список')
     const chooser = page.waitForEvent('filechooser')
     await page.getByRole('button', { name: 'Загрузить первый шаблон', exact: true }).click()
     await (await chooser).setFiles({ name: 'participants.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) as Buffer })
     await page.getByRole('button', { name: 'Открыть конструктор', exact: true }).click()
     const builder = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Конструктор шаблона', exact: true }) })
-    for (const [cell, field] of [['A3', '__index'], ['B3', '__participantName'], ['C3', '__participantKind'], ['E3', '__participantCertificate'], ['F3', '__participantStamp']]) {
+    for (const [cell, field] of [['A3', '__index'], ['B3', '__participantName'], ['C3', '__participantKind'], ['E3', '__participantCertificate'], ['F3', '__participantStamp'], ['G3', '__participantSpecialistStamp']]) {
       await builder.getByRole('cell', { name: `Ячейка ${cell}`, exact: true }).click()
       await builder.getByRole('button', { name: 'Назначить данные', exact: true }).click()
       if (cell === 'A3') await builder.getByLabel('Создавать блок для', { exact: true }).selectOption('participants')
@@ -124,6 +124,7 @@ test('participant template config, exact roster, historic performers, categories
     expect(Array.from({ length: 5 }, (_, i) => [sheet[`A${i + 3}`].v, sheet[`B${i + 3}`].v, sheet[`E${i + 3}`]?.v ?? ''])).toEqual([
       [1, 'Иванов', ''], [2, 'Иванов', ''], [3, 'Сидоров', 'THERM'], [4, 'Петров', 'NEW'], [5, 'Петров', 'OLD'],
     ])
+    expect([sheet.G3?.v ?? '', sheet.G4?.v ?? '', sheet.G5?.v ?? '', sheet.G6?.v ?? '', sheet.G7?.v ?? '']).toEqual(['', '', '', 'ДФ-7', 'ДФ-7'])
     expect(sheet.A8.v).toBe('Подпись руководителя')
     expect(sheet.D3?.v ?? '').toBe('')
     await withE2eDatabase(db => db.query("update generated_documents set specialists=jsonb_set(specialists,'{first,name}',to_jsonb('Исправленный термист'::text)) where id=$1", [docs[3]]))

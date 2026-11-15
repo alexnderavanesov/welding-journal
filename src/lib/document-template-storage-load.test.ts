@@ -5,40 +5,37 @@ const apiMocks = vi.hoisted(() => ({
   getRemoteDocumentTemplate: vi.fn(),
   getRemoteDocumentTemplateInventory: vi.fn(),
   cleanupRemoteDocumentTemplateFiles: vi.fn(),
-  listRemoteDocumentTemplatesWithFiles: vi.fn(),
   saveRemoteDocumentTemplate: vi.fn(),
   updateRemoteDocumentTemplate: vi.fn(),
 }))
 
 vi.mock('@/server/document-templates-api', () => apiMocks)
 
-import { loadDocumentTemplates, loadDocumentTemplateInventory } from '@/lib/document-template-storage'
+import { loadDocumentTemplateInventory, loadDocumentTemplate } from '@/lib/document-template-storage'
 
-describe('document template bulk loading', () => {
+describe('document template metadata and selected-file loading', () => {
   beforeEach(() => vi.clearAllMocks())
   it('loads missing-file metadata and its version separately in one settings request', async () => {
     const { fileDataBase64: _, ...missing } = remoteTemplate('weldingJournal', 'ЖСР.xlsx', '')
-    apiMocks.getRemoteDocumentTemplateInventory.mockResolvedValue({ templates: [remoteTemplate('checklist', 'Чек-лист.xlsx', 'AwQ=')], missing: [missing] })
+    const { fileDataBase64: __, ...summary } = remoteTemplate('checklist', 'Чек-лист.xlsx', 'AwQ=')
+    apiMocks.getRemoteDocumentTemplateInventory.mockResolvedValue({ templates: [summary], missing: [missing] })
     const inventory = await loadDocumentTemplateInventory()
     expect(inventory.templates.weldingJournal).toBeUndefined()
     expect(inventory.missing.weldingJournal).toEqual(missing)
-    expect(inventory.templates.checklist?.fileData).toEqual(new Uint8Array([3, 4]).buffer)
+    expect(inventory.templates.checklist).toEqual(summary)
+    expect(inventory.templates.checklist).not.toHaveProperty('fileData')
+    expect(inventory.templates.checklist).not.toHaveProperty('fileDataBase64')
     expect(apiMocks.getRemoteDocumentTemplateInventory).toHaveBeenCalledOnce()
     expect(apiMocks.getRemoteDocumentTemplate).not.toHaveBeenCalled()
   })
 
-  it('loads every template through one server request', async () => {
-    apiMocks.listRemoteDocumentTemplatesWithFiles.mockResolvedValue([
-      remoteTemplate('weldingJournal', 'ЖСР.xlsx', 'AQI='),
-      remoteTemplate('checklist', 'Чек-лист.xlsx', 'AwQ='),
-    ])
-
-    const templates = await loadDocumentTemplates()
-
-    expect(apiMocks.listRemoteDocumentTemplatesWithFiles).toHaveBeenCalledTimes(1)
-    expect(apiMocks.getRemoteDocumentTemplate).not.toHaveBeenCalled()
-    expect(templates.weldingJournal?.fileData).toEqual(new Uint8Array([1, 2]).buffer)
-    expect(templates.checklist?.fileData).toEqual(new Uint8Array([3, 4]).buffer)
+  it('loads only the selected file and does not retain its encoded duplicate', async () => {
+    apiMocks.getRemoteDocumentTemplate.mockResolvedValue(remoteTemplate('checklist', 'Чек-лист.xlsx', 'AwQ='))
+    const template = await loadDocumentTemplate('checklist')
+    expect(template?.fileData).toEqual(new Uint8Array([3, 4]).buffer)
+    expect(template).not.toHaveProperty('fileDataBase64')
+    expect(apiMocks.getRemoteDocumentTemplate).toHaveBeenCalledExactlyOnceWith({ data: { id: 'checklist' } })
+    expect(apiMocks.getRemoteDocumentTemplateInventory).not.toHaveBeenCalled()
   })
 })
 

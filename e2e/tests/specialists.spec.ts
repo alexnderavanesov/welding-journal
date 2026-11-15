@@ -188,7 +188,10 @@ test('specialist dialogs: desktop and mobile, Escape, return focus and stable do
   await expect(tab.locator('svg')).toHaveClass(/lucide-users-round/)
   await tab.click()
   const add = page.getByRole('button', { name: 'Добавить специалиста', exact: true })
-  await add.click()
+  // Keyboard activation supplies a real previous focus in browsers that do
+  // not focus buttons on a mouse click, so restoring it is observable.
+  await add.focus()
+  await page.keyboard.press('Enter')
   const editor = page.getByRole('dialog', { name: 'Добавление специалиста', exact: true })
   await expect(editor.getByRole('textbox', { name: 'ФИО', exact: true })).toBeFocused()
   await editor.getByRole('textbox', { name: 'ФИО', exact: true }).fill('Иванов Иван Иванович')
@@ -276,10 +279,11 @@ test('server atomicity, stale clients, wrong methods and concurrent replacements
   await expect(applyOperation({ ...request, fingerprint: preview.fingerprint, previewHash: preview.previewHash, operationId: randomUUID() })).rejects.toThrow('Нажмите «Проверить изменения»')
 })
 
-test('merge warns before clearing conflicting snapshots; cancel preserves them', async ({ page }) => {
+for (const conflict of ['empty-role', 'stamp-only']) test(`merge warns before clearing conflicting snapshots (${conflict}); cancel preserves them`, async ({ page }) => {
   const documents = await seed()
-  const snapshot = { first: { id: 100001, name: 'Исторический специалист', certificate: 'СТАРОЕ' }, second: null }
+  const snapshot = { first: { id: 100001, name: 'Исторический специалист', certificate: 'СТАРОЕ', stamp: 'ДФ-7' }, second: null }
   await withE2eDatabase(db => db.query('update generated_documents set specialists=$1::jsonb where id=$2', [JSON.stringify(snapshot), documents[0].id]))
+  if (conflict === 'stamp-only') await withE2eDatabase(db => db.query('update generated_documents set specialists=$1::jsonb where id=$2', [JSON.stringify({ ...snapshot, first: { ...snapshot.first, stamp: 'ДФ-8' } }), documents[1].id]))
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
   for (const doc of documents.slice(0, 2)) await (await documentGridRow(page, doc.title)).checkbox.check()

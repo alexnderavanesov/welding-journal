@@ -75,6 +75,6 @@ export async function restoreCorrectedDocumentSpecialists(tx: SystemDocumentSequ
     type: change.document.type, title: change.document.title, date: change.document.date, positions: change.document.positions, total: change.document.total, membership: change.document.membership,
     sources: change.sources.map(source => ({ type: source.type, title: source.title, date: source.date, revision: source.revision, snapshot: source.snapshot, positions: source.positions, total: source.total, membership: source.membership })),
   })))).digest('hex')
-  if (conflicts.length && confirmation !== fingerprint) throw new Error(`Исправление объединяет заключения с разными специалистами или удостоверениями. После подтверждения обе роли объединённых документов будут очищены. Пока ничего не сохранено. [specialist-confirmation:${fingerprint}]`)
+  if (conflicts.length && confirmation !== fingerprint) throw new Error(`Исправление объединяет заключения с разными реквизитами специалистов (ФИО, удостоверение или клеймо). После подтверждения обе роли объединённых документов будут очищены. Пока ничего не сохранено. [specialist-confirmation:${fingerprint}]`)
   await writeDocumentSpecialists(tx, changes.map(change => ({ id: change.document.id, snapshot: change.snapshot })))
 }

@@ -4,7 +4,6 @@ import {
   getRemoteDocumentTemplate,
   getRemoteDocumentTemplateInventory,
   cleanupRemoteDocumentTemplateFiles,
-  listRemoteDocumentTemplatesWithFiles,
   saveRemoteDocumentTemplate,
   updateRemoteDocumentTemplate,
 } from '@/server/document-templates-api'
@@ -95,19 +94,14 @@ export async function loadDocumentTemplate(templateId: DocumentTemplateId) {
   return remote ? fromRemoteDocumentTemplate(remote) : undefined
 }
 
-export async function loadDocumentTemplates() {
-  const records = (await listRemoteDocumentTemplatesWithFiles()).map(fromRemoteDocumentTemplate)
-  return records.reduce<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>((accumulator, record) => {
-    if (record) accumulator[record.id] = record
-    return accumulator
-  }, {})
-}
-
 /** Settings need to distinguish a missing file from a genuinely absent template. */
 export async function loadDocumentTemplateInventory() {
   const inventory = await getRemoteDocumentTemplateInventory()
   return {
-    templates: Object.fromEntries(inventory.templates.map(remote => [remote.id, fromRemoteDocumentTemplate(remote)])) as Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>,
+    templates: Object.fromEntries(inventory.templates.map(summary => [summary.id, {
+      ...summary,
+      constructorConfig: summary.constructorConfig ? normalizeDocumentTemplateConstructorConfig(summary.constructorConfig, summary.id) : undefined,
+    }])) as Partial<Record<DocumentTemplateId, Omit<StoredDocumentTemplate, 'fileData'>>>,
     missing: Object.fromEntries(inventory.missing.map(summary => [summary.id, summary])) as Partial<Record<DocumentTemplateId, Omit<StoredDocumentTemplate, 'fileData'>>>,
     storageWarnings: inventory.storageWarnings ?? {},
   }
@@ -132,12 +126,13 @@ function notifyDocumentTemplateStorageChanged() {
 function fromRemoteDocumentTemplate(
   remote: Awaited<ReturnType<typeof getRemoteDocumentTemplate>> & { fileDataBase64: string },
 ): StoredDocumentTemplate {
+  const { fileDataBase64, ...summary } = remote
   return {
-    ...remote,
+    ...summary,
     constructorConfig: remote.constructorConfig
       ? normalizeDocumentTemplateConstructorConfig(remote.constructorConfig, remote.id)
       : undefined,
-    fileData: base64ToArrayBuffer(remote.fileDataBase64),
+    fileData: base64ToArrayBuffer(fileDataBase64),
   }
 }
 

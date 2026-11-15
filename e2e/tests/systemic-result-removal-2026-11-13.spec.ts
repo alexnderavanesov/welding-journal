@@ -41,10 +41,10 @@ async function seed(stage: 'primary' | 'beforeHeatTreatment', project: string, l
   })
 }
 
-async function account() {
-  const email = `delete-only-results-${randomUUID()}@e2e.test`
-  await asE2eOwner(inviteAccount, 'welding.view')({ name: 'Удаление результатов без редактирования', email, title: '', role: 'user',
-    permissions: ['welding.view', 'lnk.view', 'lnk.delete'] })
+async function account(permission: 'delete' | 'edit' = 'delete') {
+  const email = `${permission}-only-results-${randomUUID()}@e2e.test`
+  await asE2eOwner(inviteAccount, 'welding.view')({ name: permission === 'delete' ? 'Удаление результатов без редактирования' : 'Редактирование результатов без удаления', email, title: '', role: 'user',
+    permissions: ['welding.view', 'lnk.view', `lnk.${permission}`] })
   await completeAccountLink({ token: await latestE2eToken(), kind: 'invite', password: 'audit123!' })
   return email
 }
@@ -65,9 +65,10 @@ async function openManager(page: Page, stage: 'primary' | 'beforeHeatTreatment',
 }
 
 for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
-  test(`${stage}: delete-only user removes a result through the real confirmation UI`, async ({ browser, baseURL }, info) => {
+  for (const permission of ['delete', 'edit'] as const) {
+  test(`${stage}: ${permission}-only user has the corresponding result actions in the real UI`, async ({ browser, baseURL }, info) => {
     test.skip(process.env.E2E_USE_PRODUCTION_BUILD !== '1', 'Checks the production RPC manifest')
-    const email = await account(), project = `RESULT-DELETE-${randomUUID()}`, line = `DELETE-${randomUUID()}`
+    const email = await account(permission), project = `RESULT-DELETE-${randomUUID()}`, line = `DELETE-${randomUUID()}`
     const [id] = await seed(stage, project, line)
     const settings = await withE2eDatabase(async db => {
       const previous = (await db.query("select value,updated_at from app_settings where key='control-processes'")).rows[0]
@@ -87,6 +88,22 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
       expect((await context.request.post('/api/auth/sign-in/email', { data: { email, password: 'audit123!' }, headers: { origin: baseURL! } })).ok()).toBe(true)
       const page = await context.newPage(), manager = await openManager(page, stage, line)
       const before = await facts()
+      if (permission === 'edit') {
+        await expect(manager.getByRole('button', { name: 'Удалить результат', exact: true })).toBeDisabled()
+        await expect(manager.getByText('Нет права удаления в ЛНК. Обратитесь к администратору.', { exact: true })).toBeVisible()
+        page.on('dialog', async dialog => { alerts.push(dialog.message()); await dialog.accept() })
+        const correctedName = 'EDIT-ONLY-CORRECTED-CONCLUSION'
+        if (stage === 'primary') {
+          await manager.getByPlaceholder('Наименование заключения для этого стыка').fill(correctedName)
+          await manager.getByRole('button', { name: 'Переименовать', exact: true }).click()
+        } else {
+          await manager.getByLabel('Наименование заключения', { exact: true }).fill(correctedName)
+          await manager.getByRole('button', { name: 'Сохранить реквизиты', exact: true }).click()
+        }
+        await expect.poll(facts).toEqual({ ...before, conclusion: correctedName })
+        expect(alerts.filter(message => message.includes('Недостаточно прав'))).toEqual([])
+        return
+      }
       await manager.getByRole('button', { name: 'Удалить результат', exact: true }).click()
       page.on('dialog', async dialog => { alerts.push(dialog.message()); await dialog.accept() })
       await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
@@ -110,6 +127,7 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
       })
     }
   })
+  }
 }
 
 test('narrow result removal rejects forged edits and stale batches, then removes only selected facts', async ({ browser, baseURL }) => {

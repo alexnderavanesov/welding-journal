@@ -5,6 +5,9 @@ import { LnkResultManagerActions } from '@/components/lnk-result-manager-actions
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 
+const access = vi.hoisted(() => ({ canDelete: true }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: (permission: string) => permission !== 'lnk.delete' || access.canDelete }) }))
+
 const row = {
   id: 17,
   joint: 'F17',
@@ -15,7 +18,28 @@ const row = {
 
 describe('LnkResultManagerActions', () => {
   beforeEach(() => {
+    access.canDelete = true
     window.localStorage.clear()
+  })
+
+  it('explains denied deletion without blocking a permitted result correction, and reacts to permission changes', () => {
+    access.canDelete = false
+    const onReplaceResult = vi.fn(), onClearResult = vi.fn()
+    const props = { row, method: LNK_METHODS[1], currentResult: 'годен', pendingResult: '',
+      isResultReplacementPending: false, onReplaceResult, onClearResult }
+    const { rerender } = render(<LnkResultManagerActions {...props} />)
+    expect(screen.getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
+    expect(onClearResult).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'вырез' }))
+    expect(onReplaceResult).toHaveBeenCalledWith(row, LNK_METHODS[1].requestKey, 'вырез')
+    access.canDelete = true
+    rerender(<LnkResultManagerActions {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
+    expect(onClearResult).toHaveBeenCalledExactlyOnceWith(row, LNK_METHODS[1].requestKey)
+    access.canDelete = false
+    rerender(<LnkResultManagerActions {...props} />)
+    expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
   })
 
   it('keeps a stored forbidden result visible while explaining every reason and allowing correction', () => {

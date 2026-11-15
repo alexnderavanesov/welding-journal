@@ -44,6 +44,6 @@ export function SpecialistSelect({ label, value, onChange, profile, options, all
       <SpecialistPicker label={label} value={value} onChange={onChange} records={records} selected={selected} allowKeep={allowKeep} disabled={disabled} currentLabel={currentLabel} compact={density !== 'card'} search={<SpecialistSearch options={options} />} />
       <Button type="button" variant="ghost" size="icon" className="h-8 w-7 shrink-0 text-slate-400 hover:bg-rose-50 hover:text-rose-700" aria-label={`Очистить роль «${label}»`} title="Очистить назначение" disabled={disabled || value === null || (!allowKeep && value === undefined)} onClick={() => onChange(null)}><X aria-hidden="true" className="h-3.5 w-3.5" /></Button>
     </div>
-    {density === 'card' ? <p className={`mt-2 min-h-4 break-words text-xs ${allowKeep && value === null ? 'text-rose-600' : 'text-slate-400'}`}>{selected ? `Удостоверение № ${selected.certificate}` : allowKeep ? value === null ? 'ФИО и удостоверение будут убраны' : value === undefined ? 'Текущее назначение сохранится' : 'Выбран специалист' : 'Назначение необязательно'}</p> : null}
+    {density === 'card' ? <p className={`mt-2 min-h-4 break-words text-xs ${allowKeep && value === null ? 'text-rose-600' : 'text-slate-400'}`}>{selected ? `Удостоверение № ${selected.certificate}` : allowKeep ? value === null ? 'ФИО, удостоверение и клеймо будут убраны' : value === undefined ? 'Текущее назначение сохранится' : 'Выбран специалист' : 'Назначение необязательно'}</p> : null}
   </div>
 }

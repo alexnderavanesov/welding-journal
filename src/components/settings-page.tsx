@@ -53,6 +53,7 @@ import {
   DOCUMENT_TEMPLATE_TYPES,
   formatFileSize,
   getWeldingJournalTemplateOptions,
+  loadDocumentTemplate,
   loadDocumentTemplateInventory,
   cleanupDocumentTemplateFiles,
   parseDocumentTemplateFile,
@@ -1953,7 +1954,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const templateTypes = DOCUMENT_TEMPLATE_TYPES.map(template => isCustomDocumentType(template.id) ? { ...template, label: customNames[template.id] } : template)
   const templateGroup = (id: DocumentTemplateId) => isCustomDocumentType(id) ? 'custom' : isManualGeneratedDocumentType(id) ? 'general' : 'system'
   const activeGroup = templateGroup(activeTemplateId)
-  const [uploads, setUploads] = useState<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>({})
+  const [uploads, setUploads] = useState<Partial<Record<DocumentTemplateId, Omit<StoredDocumentTemplate, 'fileData'> & { fileData?: ArrayBuffer }>>>({})
   const [missingUploads, setMissingUploads] = useState<Partial<Record<DocumentTemplateId, Omit<StoredDocumentTemplate, 'fileData'>>>>({})
   const [storageWarnings, setStorageWarnings] = useState<Partial<Record<DocumentTemplateId, string>>>({})
   const [isCleaningFiles, setIsCleaningFiles] = useState(false)
@@ -1961,6 +1962,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const [templateLoadError, setTemplateLoadError] = useState<string | null>(null)
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true)
   const [templateLoadAttempt, setTemplateLoadAttempt] = useState(0)
+  const [templateFileError, setTemplateFileError] = useState<{ id: DocumentTemplateId; message: string } | null>(null)
+  const [templateFileLoadAttempt, setTemplateFileLoadAttempt] = useState(0)
   const [builderTemplate, setBuilderTemplate] = useState<StoredDocumentTemplate | null>(null)
   const [nextDocumentNumber, setNextDocumentNumber] = useState<number | null>(null)
   const [beforeHeatTreatmentNumber, setBeforeHeatTreatmentNumber] = useState<number | null>(null)
@@ -1979,6 +1982,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const confirmAction = useConfirmAction()
   const activeTemplate = templateTypes.find((template) => template.id === activeTemplateId) ?? templateTypes[0]
   const activeUpload = uploads[activeTemplateId]
+  const activeFile = activeUpload?.fileData === undefined ? undefined : activeUpload as StoredDocumentTemplate
+  const needsTemplateFile = Boolean(activeUpload && !activeFile)
   const missingUpload = missingUploads[activeTemplateId]
   const savedDocumentOptions = getWeldingJournalTemplateOptions(
     isManualGeneratedDocumentType(activeTemplateId)
@@ -2027,6 +2032,30 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }, [templateLoadAttempt])
 
   useEffect(() => {
+    if (!needsTemplateFile) return
+    let current = true
+    const requestedVersion = activeUpload?.version
+    setTemplateFileError(null)
+    loadDocumentTemplate(activeTemplateId).then(template => {
+      if (!current) return
+      // Read metadata and bytes from one server snapshot. If another operator
+      // replaced it, option drafts retain their old version and become stale.
+      setUploads(uploads => {
+        const entry = uploads[activeTemplateId]
+        // A save/delete can settle in the same React batch, before cleanup.
+        if (!entry || entry.fileData !== undefined || entry.version !== requestedVersion) return uploads
+        const next = { ...uploads }
+        if (template) next[activeTemplateId] = template
+        else delete next[activeTemplateId]
+        return next
+      })
+    }).catch(error => {
+      if (current) setTemplateFileError({ id: activeTemplateId, message: getErrorMessage(error, 'Не удалось загрузить файл шаблона.') })
+    })
+    return () => { current = false }
+  }, [activeTemplateId, needsTemplateFile, activeUpload?.version, templateFileLoadAttempt])
+
+  useEffect(() => {
     if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentTemplateId(activeTemplateId)) {
       setNextDocumentNumber(null)
       return
@@ -2059,7 +2088,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }, [activeTemplateId])
 
   const handleTemplateUploadRequest = async () => {
-    if (!can('templates.edit')) return
+    if (!can('templates.edit') || (activeUpload && !activeFile)) return
     setUploadError(null)
     const allowed = await runProtectedSettingsChange(() => undefined)
     if (!allowed) return
@@ -2070,7 +2099,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const handleTemplateUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file || !can('templates.edit')) return
+    if (!file || !can('templates.edit') || (activeUpload && !activeFile)) return
 
     setUploadError(null)
     setIsUploadingTemplate(true)
@@ -2093,13 +2122,13 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         setMissingUploads(current => { const next = { ...current }; delete next[activeTemplateId]; return next })
         return
       }
-      if (activeUpload) {
-        const analysis = await analyzeDocumentTemplateReplacement(activeUpload, parsedTemplate)
+      if (activeFile) {
+        const analysis = await analyzeDocumentTemplateReplacement(activeFile, parsedTemplate)
         if (analysis.status === 'incompatible') {
           setPendingTemplateReplacement({
             templateId: activeTemplateId,
             templateLabel: activeTemplate.label,
-            currentTemplate: activeUpload,
+            currentTemplate: activeFile,
             parsedTemplate,
             analysis,
           })
@@ -2114,7 +2143,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
               : 'У текущего шаблона нет назначений ячеек, поэтому перенос не требуется.'
         const confirmed = await confirmAction({
           title: `Заменить шаблон «${activeTemplate.label}»?`,
-          itemName: `${activeUpload.fileName} → ${file.name}`,
+          itemName: `${activeFile.fileName} → ${file.name}`,
           description:
             'Система проверила листы, назначенные ячейки, повторяемый блок и объединения. Новый файл станет активным только после успешного сохранения.',
           warning: mappingDescription,
@@ -2125,7 +2154,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
         const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate, {
           constructorConfig: analysis.constructorConfig,
-          expectedVersion: String(activeUpload.version ?? ''),
+          expectedVersion: String(activeFile.version ?? ''),
         })
         setStorageWarnings(current => ({ ...current, [activeTemplateId]: savedTemplate.storageWarning }))
         setUploads((currentUploads) => ({
@@ -2205,13 +2234,13 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }
 
   const handleTemplateDownload = () => {
-    if (!activeUpload) return
+    if (!activeFile) return
 
-    const blob = new Blob([activeUpload.fileData], { type: getTemplateMimeType(activeUpload.fileType) })
+    const blob = new Blob([activeFile.fileData], { type: getTemplateMimeType(activeFile.fileType) })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = activeUpload.fileName || `${activeTemplate.label}.${activeUpload.fileType || 'xlsx'}`
+    link.download = activeFile.fileName || `${activeTemplate.label}.${activeFile.fileType || 'xlsx'}`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -2527,8 +2556,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 {['xlsx', 'xls'].includes(activeUpload.fileType) ? (
                   <button
                     type="button"
-                    disabled={!can('templates.edit')}
-                    onClick={() => setBuilderTemplate(activeUpload)}
+                    disabled={!can('templates.edit') || !activeFile}
+                    onClick={() => { if (activeFile) setBuilderTemplate(activeFile) }}
                     className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100"
                   >
                     <SlidersHorizontal className="h-4 w-4" />
@@ -2549,6 +2578,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                   <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-md border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-300/40">
                     <button
                       type="button"
+                      disabled={!activeFile}
                       onClick={() => {
                         templateFileMenuRef.current?.removeAttribute('open')
                         handleTemplateDownload()
@@ -2566,7 +2596,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                     <div className="my-1 border-t border-slate-100" />
                     <button
                       type="button"
-                      disabled={isUploadingTemplate || !can('templates.edit')}
+                      disabled={isUploadingTemplate || !can('templates.edit') || !activeFile}
                       onClick={() => void handleTemplateUploadRequest()}
                       className="flex w-full items-start gap-3 rounded px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50"
                     >
@@ -2615,6 +2645,13 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           </div>
 
           <div className="space-y-6">
+            {activeUpload && !activeFile ? <div role={templateFileError?.id === activeTemplateId ? 'alert' : 'status'} className="m-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              {templateFileError?.id === activeTemplateId ? <>
+                <p>{templateFileError.message}</p>
+                <button type="button" className={buttonVariants({ className: 'mt-2' })} onClick={() => setTemplateFileLoadAttempt(attempt => attempt + 1)}>Повторить загрузку файла</button>
+                <button type="button" className={buttonVariants({ className: 'ml-2 mt-2' })} onClick={() => setTemplateLoadAttempt(attempt => attempt + 1)}>Обновить список шаблонов</button>
+              </> : 'Загружаем выбранный файл шаблона. Сведения и параметры уже доступны.'}
+            </div> : null}
             {(storageWarnings[activeTemplateId] || activeUpload?.storageWarning) && !missingUpload ? <div role="status" className="m-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <p>{storageWarnings[activeTemplateId] || activeUpload?.storageWarning}</p>
               <button type="button" disabled={isCleaningFiles || !can('templates.delete')} className={buttonVariants({ className: 'mt-2' })} onClick={async () => {
@@ -3058,7 +3095,7 @@ function EmptyTemplateState() {
   )
 }
 
-function TemplateUploadPreview({ upload }: { upload: StoredDocumentTemplate }) {
+function TemplateUploadPreview({ upload }: { upload: Omit<StoredDocumentTemplate, 'fileData'> }) {
   return (
     <div className="space-y-4 p-4">
       <div className="grid gap-3 md:grid-cols-3">

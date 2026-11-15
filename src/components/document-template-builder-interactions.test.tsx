@@ -115,7 +115,8 @@ describe('document template builder cell clipboard', () => {
     if (id === 'weldingJournal') { expect(groups).toHaveLength(0); return }
     expect(groups.length).toBeGreaterThan(0)
     for (const group of groups) {
-      expect(group.children).toHaveLength(4)
+      expect(group.children).toHaveLength(6)
+      expect(group.textContent).toContain('Клеймо специалиста')
       expect(group.textContent).toContain(id === 'pstoConclusion' ? 'Оператор-термист — ФИО' : 'Провёл контроль — ФИО')
       expect(group.textContent).not.toContain(id === 'pstoConclusion' ? 'Провёл контроль' : 'Оператор-термист')
     }

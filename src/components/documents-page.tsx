@@ -334,9 +334,12 @@ function getSystemDocumentViewId(
 
 function intersectChoiceFilterValues(filterValue: string | undefined, allowedValues: string[]) {
   const choiceFilter = parseWeldColumnChoiceFilter(filterValue ?? '')
-  if (choiceFilter?.kind !== 'values') return allowedValues
-  const requestedValues = new Set(choiceFilter.values)
-  return allowedValues.filter((value) => requestedValues.has(value))
+  if (!choiceFilter) {
+    const query = (filterValue ?? '').trim().toLocaleLowerCase('ru-RU')
+    return allowedValues.filter(value => value.toLocaleLowerCase('ru-RU').includes(query))
+  }
+  const requestedValues = new Set(choiceFilter.values.map(value => value.toLocaleLowerCase('ru-RU')))
+  return allowedValues.filter(value => requestedValues.has(value.toLocaleLowerCase('ru-RU')))
 }
 
 type LnkConclusionTemplateFilter = 'all' | LnkConclusionTemplateId
@@ -1596,7 +1599,10 @@ function SystemDocumentsPanel({
       }
       const methodValues = getScopedSystemDocumentMethodValues(methodScope)
       if (methodValues.length > 0) {
-        filters.method = buildWeldColumnValueFilter(methodValues)
+        const selectedMethodValues = intersectChoiceFilterValues(columnFilters.method, methodValues)
+        filters.method = buildWeldColumnValueFilter(
+          selectedMethodValues.length > 0 ? selectedMethodValues : ['__no_matching_document_method__'],
+        )
       }
       if (documentType === 'lnkConclusion' && methodScope === 'lnk' && lnkConclusionTemplateFilter !== 'all') {
         const profile = LNK_CONCLUSION_TEMPLATE_PROFILES.find((candidate) => candidate.id === lnkConclusionTemplateFilter)

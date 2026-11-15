@@ -6,12 +6,13 @@ export const PARTICIPANT_KINDS = ['welder', 'thermist', 'inspector'] as const
 export type ParticipantKind = typeof PARTICIPANT_KINDS[number]
 export const PARTICIPANT_LABELS: Record<ParticipantKind, string> = { welder: 'Сварщик', thermist: 'Оператор-термист', inspector: 'Дефектоскопист' }
 export const PARTICIPANT_CATEGORY_LABELS: Record<ParticipantKind, string> = { welder: 'Сварщики', thermist: 'Операторы-термисты', inspector: 'Дефектоскописты' }
-export type TemplateParticipant = { key: string; kind: ParticipantKind; name: string; certificate: string; stamp: string; internalStamp: string }
+export type TemplateParticipant = { key: string; kind: ParticipantKind; name: string; certificate: string; stamp: string; internalStamp: string; specialistStamp?: string }
 export const PARTICIPANT_FIELDS = [
   { key: '__participantName', label: 'ФИО участника' },
   { key: '__participantKind', label: 'Специальность' },
   { key: '__participantCertificate', label: '№ удостоверения' },
   { key: '__participantStamp', label: 'Клеймо НАКС' },
+  { key: '__participantSpecialistStamp', label: 'Клеймо специалиста' },
   { key: '__participantInternalStamp', label: 'Внутреннее клеймо' },
 ] as const
 export type ParticipantFieldKey = typeof PARTICIPANT_FIELDS[number]['key']
@@ -23,7 +24,7 @@ export function getParticipantValue(field: ParticipantFieldKey, person?: Templat
   if (!person) return ''
   return field === '__participantKind' ? PARTICIPANT_LABELS[person.kind]
     : field === '__participantName' ? person.name : field === '__participantCertificate' ? person.certificate
-      : field === '__participantStamp' ? person.stamp : person.internalStamp
+      : field === '__participantStamp' ? person.stamp : field === '__participantSpecialistStamp' ? person.specialistStamp ?? '' : person.internalStamp
 }
 
 const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('ru-RU')
@@ -50,9 +51,10 @@ export function buildWelderParticipants(stamps: string[], registry: Pick<WelderS
 export function buildSpecialistParticipant(kind: 'thermist' | 'inspector', snapshot: SpecialistSnapshot | null | undefined): TemplateParticipant | null {
   if (!snapshot?.name?.trim()) return null
   const name = snapshot.name.trim(), certificate = String(snapshot.certificate ?? '').trim()
-  // Keep different certificates/names from historical assignments separate;
+  const specialistStamp = snapshot.stamp ?? ''
+  // Keep different certificates/names/stamps from historical assignments separate;
   // matching names alone are never sufficient to collapse two people.
-  return { key: JSON.stringify([kind, snapshot.id, normalize(name), normalize(certificate)]), kind, name, certificate, stamp: '', internalStamp: '' }
+  return { key: JSON.stringify([kind, snapshot.id, normalize(name), normalize(certificate), specialistStamp]), kind, name, certificate, specialistStamp, stamp: '', internalStamp: '' }
 }
 
 export function sortUniqueParticipants(people: TemplateParticipant[]) {

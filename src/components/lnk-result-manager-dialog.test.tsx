@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultManagerDialog } from '@/components/lnk-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -8,6 +8,9 @@ import { LNK_METHODS } from '@/lib/lnk-report-config'
 const vikMethod = LNK_METHODS.find((method) => method.requestKey === 'vikRequest')!
 const rkMethod = LNK_METHODS.find((method) => method.requestKey === 'rkRequest')!
 const pvkMethod = LNK_METHODS.find((method) => method.requestKey === 'pvkRequest')!
+const access = vi.hoisted(() => ({ canDelete: true }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: (permission: string) => permission !== 'lnk.delete' || access.canDelete }) }))
+beforeEach(() => { access.canDelete = true })
 
 const vikRow = {
   id: 1,
@@ -80,6 +83,42 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialo
 }
 
 describe('LnkResultManagerDialog', () => {
+  it('distinguishes loaded joints from matching results and keeps an empty portion loadable without automatic requests', () => {
+    const onLoadMoreRows = vi.fn(), onRegistrySearchChange = vi.fn(), onRegistryResultFilterChange = vi.fn()
+    renderDialog({ registryScope: 'all', rows: Array.from({ length: 500 }, (_, index) => ({ ...vikRow, id: index + 1 })),
+      entries: [], hasMoreRows: true, onLoadMoreRows, onRegistrySearchChange, onRegistryResultFilterChange })
+    expect(screen.getByText('Загружено стыков: 500')).toBeVisible()
+    expect(screen.getByText('Результатов в загруженной части: 0')).toBeVisible()
+    expect(screen.getByPlaceholderText('Стык, линия, заявка или заключение')).toHaveAttribute('title', 'Поиск и фильтр результата отбирают стыки во всём реестре.')
+    expect(screen.getByLabelText('Вид контроля в реестре')).toHaveAttribute('aria-description', 'Вид контроля применяется к загруженной части.')
+    expect(screen.getByText(/В загруженной части нет подходящих результатов. Загрузите ещё/)).toBeVisible()
+    expect(onLoadMoreRows).not.toHaveBeenCalled()
+    expect(onRegistrySearchChange).not.toHaveBeenCalled()
+    expect(onRegistryResultFilterChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Загрузить ещё результаты' }))
+    expect(onLoadMoreRows).toHaveBeenCalledTimes(1)
+  })
+
+  it('describes a selected composition without claiming a global registry search', () => {
+    renderDialog({ registryScope: 'selected' })
+    expect(screen.getByText('Стыков в выборе: 2')).toBeVisible()
+    expect(screen.getByText('Результатов по фильтрам: 2')).toBeVisible()
+    expect(screen.getByPlaceholderText('Стык, линия, заявка или заключение')).toHaveAttribute('title', 'Поиск и фильтры применяются только к выбранным стыкам.')
+    expect(screen.getByLabelText('Вид контроля в реестре')).toHaveAttribute('aria-description', 'Вид контроля применяется только к выбранным стыкам.')
+  })
+
+  it('does not offer deletion through the context menu when the user only has edit permission', () => {
+    access.canDelete = false
+    const onClearResult = vi.fn()
+    renderDialog({ onClearResult })
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Линия-2/ }))
+    const remove = within(screen.getByTestId('context-action-menu')).getByRole('button', { name: 'Удалить результат' })
+    expect(remove).toBeDisabled()
+    expect(within(screen.getByTestId('context-action-menu')).getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
+    fireEvent.click(remove)
+    expect(onClearResult).not.toHaveBeenCalled()
+    expect(screen.getByPlaceholderText('Наименование заключения для этого стыка')).toBeEnabled()
+  })
   const layeredRow = { ...vikRow, layeredControlAssigned: true, pvkResult: 'годен', pvkConclusion: 'ПВК-1', pvkConclusionDate: '2026-08-15', hasPvk: 'да' } as WeldRow
   const layeredEntry = { row: layeredRow, method: pvkMethod, changeKey: '1:pvkRequest' }
 
@@ -172,7 +211,7 @@ describe('LnkResultManagerDialog', () => {
     fireEvent.click(within(resultFilters).getByRole('button', { name: 'ремонт' }))
 
     expect(screen.getByRole('heading', { name: 'Линия-2 · F2' })).toBeInTheDocument()
-    expect(screen.queryByText('Выберите результат слева, чтобы открыть его карточку.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Выберите результат в списке, чтобы открыть его карточку.')).not.toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveClass('h-[calc(100dvh-1rem)]')
   })
 

@@ -37,6 +37,7 @@ const documentTypes: Record<string, string> = {
 const sourceKinds: Record<string, string> = { beforeHeatTreatment: 'НК до ТО', pstoCycle: 'ПСТО / ТВМТ', pstoRepeat: 'Повторное ПСТО / ТВМТ' }
 export function activityFieldLabel(entity: string, key: string) {
   if (key === 'name' && ['account', 'specialists'].includes(entity)) return 'ФИО'
+  if (key === 'stamp' && ['specialists', 'generated_documents'].includes(entity)) return 'Клеймо специалиста'
   if (entity === 'account' && key === 'title') return 'Должность'
   return weldLabels.get(key) ?? fieldLabels[key] ?? key
 }

@@ -47,6 +47,7 @@ import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import type { PreHeatTreatmentRegistryFilters } from '@/lib/pre-heat-treatment-registry'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { useAccess } from '@/lib/security-context'
 import {
   getSystemDocumentReferenceForField,
   type SystemDocumentReference,
@@ -135,6 +136,8 @@ export function PreHeatTreatmentResultManagerDialog({
   onDocumentDateSaved,
   onMessage,
 }: PreHeatTreatmentResultManagerDialogProps) {
+  const { can } = useAccess()
+  const deletePermissionReason = can('lnk.delete') ? '' : 'Нет права удаления в ЛНК. Обратитесь к администратору.'
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [localSearch, setSearch] = useState('')
@@ -254,13 +257,13 @@ export function PreHeatTreatmentResultManagerDialog({
 
     const deleteReason = readOnly
       ? 'История доступна только для просмотра.'
-      : managesResult
+      : deletePermissionReason || (managesResult
         ? getPreHeatTreatmentResultRemovalBlockReason(
             entry.row,
             entry.control,
             saveCheckSettings,
           )
-        : getPreHeatTreatmentRequestRemovalBlockReason(entry.row, entry.control)
+        : getPreHeatTreatmentRequestRemovalBlockReason(entry.row, entry.control))
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
       heading: `${text(entry.row.line) || '-'} · ${text(entry.row.joint) || '-'}`,
@@ -320,16 +323,16 @@ export function PreHeatTreatmentResultManagerDialog({
   const selectedDocumentReference = selectedEntry && selectedDocumentField
     ? getSystemDocumentReferenceForField(selectedEntry.row, selectedDocumentField)
     : null
-  const resultDeleteReason = selectedEntry
+  const resultDeleteReason = deletePermissionReason || (selectedEntry
     ? getPreHeatTreatmentResultRemovalBlockReason(
         selectedEntry.row,
         selectedEntry.control,
         saveCheckSettings,
       )
-    : ''
-  const requestDeleteReason = selectedEntry
+    : '')
+  const requestDeleteReason = deletePermissionReason || (selectedEntry
     ? getPreHeatTreatmentRequestRemovalBlockReason(selectedEntry.row, selectedEntry.control)
-    : ''
+    : '')
   const hasRequestChanges = Boolean(selectedEntry) && (
     (!selectedDocumentReference && requestDraft.date !== (parseDateLikeToIso(selectedEntry.control.requestDate) ?? '')) ||
     requestDraft.name !== text(selectedEntry.control.requestName)
@@ -655,7 +658,9 @@ export function PreHeatTreatmentResultManagerDialog({
                 </div>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
                   <p className="max-w-2xl text-xs leading-5 text-slate-500">
-                    Заявку можно исправить при сохранении хронологии. Для удаления сначала удалите результат этого вида НК.
+                    {deletePermissionReason && !readOnly
+                      ? deletePermissionReason
+                      : 'Заявку можно исправить при сохранении хронологии. Для удаления сначала удалите результат этого вида НК.'}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button

@@ -4,7 +4,7 @@ import { writeDocumentSpecialists } from './specialists'
 vi.mock('./layered-control-documents', () => ({ lockLayeredControlDocumentsForWeldChange: vi.fn() }))
 vi.mock('./system-document-index', () => ({ lockSystemDocumentIndexes: vi.fn() }))
 vi.mock('./specialists', () => ({ writeDocumentSpecialists: vi.fn() }))
-const snapshot = { first: { id: 1, name: 'Историческое ФИО', certificate: 'СТАРОЕ' }, second: null }
+const snapshot = { first: { id: 1, name: 'Историческое ФИО', certificate: 'СТАРОЕ', stamp: 'ДФ-7' }, second: null }
 const doc = { id: 1, type: 'system:lnkConclusionVik', title: 'ВИК', date: '2026-10-01', snapshot, revision: 2, positions: ['vik:1:pre:1'], total: 1 }
 
 it('preserves snapshots when ordinary correction recreates or splits a document, without registry lookup', () => {
@@ -35,4 +35,14 @@ it('confirmation survives recreated IDs but rejects changed certificate/revision
   await expect(restoreCorrectedDocumentSpecialists(tx as never, { ...captured, documents: [{ ...doc, revision: 3 }] }, token)).rejects.toThrow('specialist-confirmation')
   tx.execute.mockResolvedValue({ rows: [{ ...doc, id: 4, title: 'Объединённое', total: 2, snapshot: null, revision: 0, membership: 'another-weld-with-the-same-count' }] })
   await expect(restoreCorrectedDocumentSpecialists(tx as never, captured, token)).rejects.toThrow('specialist-confirmation')
+})
+
+it('requires new confirmation when only a saved stamp changes, even at the same revision', async () => {
+  const tx = { execute: vi.fn().mockResolvedValue({ rows: [{ ...doc, id: 3, title: 'Объединённое', total: 2, snapshot: { ...snapshot, first: { ...snapshot.first, stamp: 'Другое' } } }] }) }
+  const captured = { rowIds: [1], documents: [doc] }
+  const message = await restoreCorrectedDocumentSpecialists(tx as never, captured).catch(error => error.message as string)
+  expect(message).toContain('клеймо')
+  const token = String(message).match(/specialist-confirmation:([a-f0-9]{64})/)![1]
+  await expect(restoreCorrectedDocumentSpecialists(tx as never, captured, token)).resolves.toBeUndefined()
+  await expect(restoreCorrectedDocumentSpecialists(tx as never, { ...captured, documents: [{ ...doc, snapshot: { ...snapshot, first: { ...snapshot.first, stamp: 'Ещё другое' } } }] }, token)).rejects.toThrow('specialist-confirmation')
 })

@@ -41,7 +41,6 @@ const ownDomainResults = new Set([
   'welder-stamps.ts#loadWelderStampRegistrySnapshot',
   'welder-stamps.ts#saveWelderStampRecords',
   'welder-stamps.ts#saveWelderStampSuspensionRecords',
-  'document-templates-api.ts#listRemoteDocumentTemplatesWithFiles',
   'document-templates-api.ts#getRemoteDocumentTemplateInventory',
   'document-templates-api.ts#listRemoteDocumentTemplateIds',
   'document-templates-api.ts#getRemoteDocumentTemplate',

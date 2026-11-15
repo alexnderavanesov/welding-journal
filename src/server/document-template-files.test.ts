@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -44,6 +44,10 @@ describe('document template files', () => {
 
     try {
       await store.set(key, new Uint8Array([1, 2, 3]).buffer)
+      expect(await store.exists(key)).toBe(true)
+      expect(await store.exists('checklist/missing.xlsx')).toBe(false)
+      await mkdir(join(directory, 'checklist', 'directory.xlsx'))
+      await expect(store.exists('checklist/directory.xlsx')).rejects.toThrow('Вместо файла шаблона найден каталог.')
       expect(Array.from(new Uint8Array((await store.get(key))!))).toEqual([1, 2, 3])
       expect(await store.list('checklist/')).toEqual([key])
       await store.delete(key)
@@ -108,6 +112,7 @@ function createStore(keys: string[], deleted: string[]): DocumentTemplateFileSto
     delete: vi.fn(async (key: string) => {
       deleted.push(key)
     }),
+    exists: vi.fn(async () => true),
     get: vi.fn(async () => null),
     list: vi.fn(async () => keys),
     set: vi.fn(async () => undefined),

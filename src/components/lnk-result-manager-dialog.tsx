@@ -37,6 +37,7 @@ import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { useAccess } from '@/lib/security-context'
 import type { LayeredControlRemovalFeedback } from '@/lib/use-layered-control-removal'
 import {
   getSystemDocumentReferenceForField,
@@ -53,6 +54,7 @@ export type LnkResultManagerDialogProps = {
   embedded?: boolean
   elevated?: boolean
   rows: WeldRow[]
+  registryScope?: 'all' | 'selected'
   methods: LnkResultMethod[]
   entries: LnkResultManagerEntryData[]
   pendingEntries: LnkResultManagerEntryData[]
@@ -99,6 +101,7 @@ export function LnkResultManagerDialog({
   embedded = false,
   elevated = false,
   rows,
+  registryScope = 'selected',
   methods,
   entries,
   isContextReady,
@@ -139,6 +142,13 @@ export function LnkResultManagerDialog({
   onRegistrySearchChange,
   onRegistryResultFilterChange,
 }: LnkResultManagerDialogProps) {
+  const { can } = useAccess()
+  const registryFilterDescription = registryScope === 'all'
+    ? 'Поиск и фильтр результата отбирают стыки во всём реестре.'
+    : 'Поиск и фильтры применяются только к выбранным стыкам.'
+  const methodFilterDescription = registryScope === 'all'
+    ? 'Вид контроля применяется к загруженной части.'
+    : 'Вид контроля применяется только к выбранным стыкам.'
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
@@ -256,7 +266,9 @@ export function LnkResultManagerDialog({
     const pendingResult = pendingResultChanges[changeKey]
     const conclusionName = String(row[method.conclusionKey] ?? '').trim()
     const conclusionDraft = formatCustomDocumentName(conclusionDrafts[changeKey] ?? conclusionName)
-    const removalBlockReason = getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
+    const removalBlockReason = !can('lnk.delete')
+      ? 'Нет права удаления в ЛНК. Обратитесь к администратору.'
+      : getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
     const actionPending = isResultReplacementPending || isLayeredControlRemovalPending
     const documentReason = !conclusionName
       ? 'Заключение не указано'
@@ -353,7 +365,7 @@ export function LnkResultManagerDialog({
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
+        <aside className="flex min-h-0 flex-1 flex-col overflow-y-auto border-b border-slate-200 bg-slate-50/70 lg:overflow-visible lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
             <Button className="w-full" onClick={onOpenAddResult}>
               <Plus className="mr-2 h-4 w-4" />
@@ -368,11 +380,15 @@ export function LnkResultManagerDialog({
                   onRegistrySearchChange?.(value)
                 }}
                 placeholder="Стык, линия, заявка или заключение"
+                title={registryFilterDescription}
+                aria-description={registryFilterDescription}
                 className="h-10 bg-white pl-9"
               />
             </label>
             <Select
               aria-label="Вид контроля в реестре"
+              title={methodFilterDescription}
+              aria-description={methodFilterDescription}
               value={methodKey}
               onChange={(event) => {
                 setSelectedEntryKey('')
@@ -385,7 +401,7 @@ export function LnkResultManagerDialog({
                 <option key={method.requestKey} value={method.requestKey}>{method.code}</option>
               ))}
             </Select>
-            <div className="grid grid-cols-4 rounded-md border border-slate-200 bg-white p-1 text-xs" role="group" aria-label="Фильтр результатов">
+            <div className="grid grid-cols-4 rounded-md border border-slate-200 bg-white p-1 text-xs" role="group" aria-label="Фильтр результатов" title={registryFilterDescription} aria-description={registryFilterDescription}>
               {(['all', 'годен', 'ремонт', 'вырез'] as const).map((value) => (
                 <button
                   key={value}
@@ -404,13 +420,13 @@ export function LnkResultManagerDialog({
                 </button>
               ))}
             </div>
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Найдено: {filteredEntries.length}</span>
-              <span>Стыков в области: {rows.length}</span>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span>{registryScope === 'all' ? 'Загружено стыков' : 'Стыков в выборе'}: {rows.length}</span>
+              <span>{registryScope === 'all' ? 'Результатов в загруженной части' : 'Результатов по фильтрам'}: {filteredEntries.length}</span>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col p-2 lg:max-h-none">
+          <div className="flex min-h-32 flex-1 flex-col p-2 lg:min-h-0">
             {!isContextReady ? (
               <div className="px-3 py-10 text-center text-sm text-slate-500">
                 Загружаю результаты ЛНК...
@@ -418,7 +434,9 @@ export function LnkResultManagerDialog({
             ) : filteredEntries.length === 0 ? (
               <>
                 <div className="px-3 py-10 text-center text-sm text-slate-500">
-                  {entries.length === 0 ? 'В выбранной области нет внесенных результатов.' : 'По заданным условиям результаты не найдены.'}
+                  {registryScope === 'all'
+                    ? hasMoreRows ? 'В загруженной части нет подходящих результатов. Загрузите ещё или уточните поиск.' : 'В загруженной части нет подходящих результатов.'
+                    : entries.length === 0 ? 'В выбранных стыках нет внесённых результатов.' : 'В выбранных стыках нет результатов по заданным условиям.'}
                 </div>
                 {loadMoreResults}
               </>
@@ -472,14 +490,14 @@ export function LnkResultManagerDialog({
           </div>
         </aside>
 
-        <main className="min-h-0 overflow-y-auto bg-white">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-white">
           {!isContextReady ? (
             <div className="flex min-h-[420px] items-center justify-center p-8">
               <RequestManagerEmptyState>Загружаю реестр и карточки результатов ЛНК...</RequestManagerEmptyState>
             </div>
           ) : !selectedEntry || !selectedRow || !selectedMethod ? (
             <div className="flex min-h-[420px] items-center justify-center p-8">
-              <RequestManagerEmptyState>Выберите результат слева, чтобы открыть его карточку.</RequestManagerEmptyState>
+              <RequestManagerEmptyState>Выберите результат в списке, чтобы открыть его карточку.</RequestManagerEmptyState>
             </div>
           ) : (
             <div className="space-y-5 p-5 lg:p-6">

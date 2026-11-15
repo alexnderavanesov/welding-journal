@@ -84,6 +84,7 @@ export const specialists = pgTable('specialists', {
   name: text('name').notNull(),
   kind: text('kind').$type<SpecialistKind>().notNull(),
   certificate: text('certificate').notNull(),
+  stamp: text('stamp').default('').notNull(),
   methods: text('methods').array().$type<SpecialistMethod[]>().notNull(),
   revision: integer('revision').default(1).notNull(),
   archived: boolean('archived').default(false).notNull(),

@@ -154,6 +154,45 @@ test('failed database save retains the active file; restart and explicit orphan 
   expect(await reopened.list('weldingJournal/')).toEqual([before.blob_key])
 })
 
+test('selected file loads independently from settings and never replaces a later template selection', async ({ page }) => {
+  const key = 'weldingJournal/lazy.xlsx'
+  await store.set(key, new Uint8Array(file().buffer).buffer)
+  await withE2eDatabase(async db => { await db.query("update document_templates set blob_key=$1 where id='weldingJournal'", [key]) })
+  const before = await stored()
+  const calls: string[] = []
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url()).replace(/_createServerFn_handler$/, '')) })
+  let release!: () => void
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (rpcName(route.request().url()).replace(/_createServerFn_handler$/, '') === 'getRemoteDocumentTemplate') await blocked
+    await route.continue()
+  })
+  try {
+    await page.goto('/settings')
+    await expect(page.getByText('original.xlsx', { exact: true })).toBeVisible()
+    await expect(page.getByText('Загружаем выбранный файл шаблона. Сведения и параметры уже доступны.', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Открыть конструктор', exact: true })).toBeDisabled()
+    await expect(page.getByRole('checkbox', { name: /Учет официальных стыков/ })).toBeEnabled()
+    await expect.poll(() => calls.filter(name => name === 'getRemoteDocumentTemplate').length).toBe(1)
+    expect(calls.filter(name => name === 'getRemoteDocumentTemplateInventory')).toHaveLength(1)
+    await page.getByRole('button', { name: /^Чек-лист/ }).click()
+    await expect(page.getByRole('button', { name: 'Загрузить первый шаблон', exact: true })).toBeVisible()
+    const oldReply = page.waitForResponse(response => rpcName(response.url()).replace(/_createServerFn_handler$/, '') === 'getRemoteDocumentTemplate')
+    release()
+    await oldReply
+    await expect(page.getByRole('button', { name: 'Открыть конструктор', exact: true })).toBeHidden()
+    await page.getByRole('button', { name: /^ЖСР/ }).click()
+    await expect(page.getByRole('button', { name: 'Открыть конструктор', exact: true })).toBeEnabled()
+    expect(calls.filter(name => name === 'getRemoteDocumentTemplate')).toHaveLength(2)
+    await page.getByRole('button', { name: /^Чек-лист/ }).click()
+    await page.getByRole('button', { name: /^ЖСР/ }).click()
+    await page.getByRole('button', { name: 'Открыть конструктор', exact: true }).click()
+    await expect(page.getByRole('cell', { name: 'Ячейка A2', exact: true })).toBeVisible()
+    expect(calls.filter(name => name === 'getRemoteDocumentTemplate')).toHaveLength(2)
+    expect(await stored()).toEqual(before)
+  } finally { release() }
+})
+
 test('metadata and file readers wait for a concurrent replacement instead of falsely reporting a missing file', async () => {
   let readers: Promise<unknown[]> | undefined
   let completed = false
@@ -176,7 +215,8 @@ test('metadata and file readers wait for a concurrent replacement instead of fal
   const [single, inventory] = await readers! as [Awaited<ReturnType<typeof getRemoteDocumentTemplate>>, Awaited<ReturnType<typeof getRemoteDocumentTemplateInventory>>]
   expect(single?.fileDataBase64).toBe(bytes.toString('base64'))
   expect(inventory.missing).toEqual([])
-  expect(inventory.templates.find(template => template.id === 'weldingJournal')?.fileDataBase64).toBe(bytes.toString('base64'))
+  expect(inventory.templates.find(template => template.id === 'weldingJournal')).toMatchObject({ id: 'weldingJournal', fileName: single?.fileName, version: single?.version })
+  expect(inventory.templates.find(template => template.id === 'weldingJournal')).not.toHaveProperty('fileDataBase64')
 })
 
 const getRemoteDocumentTemplate = asE2eOwner(raw_getRemoteDocumentTemplate, 'welding.view')

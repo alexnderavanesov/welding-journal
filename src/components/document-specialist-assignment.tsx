@@ -86,7 +86,7 @@ function SpecialistAssignmentEditor({ documents, onClose, onlyRole }: { document
       {!compatible ? <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">Выберите заключения НК/ТВМТ либо ПСТО отдельно.</p> : <>
         <div className="flex items-center gap-2 text-xs leading-5 text-slate-500">
           <span>{onlyRole ? 'Изменение коснётся только этой роли документа.' : 'Выбранные роли изменятся во всех отмеченных документах.'}</span>
-          <FieldHelp label="Как назначить, заменить или очистить специалистов">«Не изменять» сохраняет прежние ФИО и удостоверение. Выбор специалиста назначает или заменяет его. Крестик очищает только выбранную роль. Изменения сохраняются после «Применить».</FieldHelp>
+          <FieldHelp label="Как назначить, заменить или очистить специалистов">«Не изменять» сохраняет прежние ФИО, удостоверение и клеймо. Выбор специалиста назначает или заменяет его. Крестик очищает только выбранную роль. Изменения сохраняются после «Применить».</FieldHelp>
         </div>
         {onlyRole ? <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">Сейчас: <span className="font-medium text-slate-700">{person(documents[0], onlyRole)}</span></div> : null}
         <div className={onlyRole ? '' : 'grid gap-3 sm:grid-cols-2'}>{roles.map(role => <SpecialistSelect key={role} label={profile!.labels[role === 'first' ? 0 : 1]} profile={requiredProfile!} options={options} value={selection[role]} allowKeep disabled={busy} onChange={value => setSelection(current => ({ ...current, [role]: value }))} />)}</div>

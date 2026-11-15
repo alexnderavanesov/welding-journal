@@ -70,20 +70,16 @@ type UpdateDocumentTemplateInput = {
   constructorConfig?: DocumentTemplateConstructorConfig
 }
 
-export async function listRemoteDocumentTemplatesWithFiles(): Promise<RemoteDocumentTemplate[]> {
-  return (await getRemoteDocumentTemplateInventory()).templates
-}
-
 export async function getRemoteDocumentTemplateInventory() {
   await assertSecurityScope('entry')
   return requireDb().transaction(async tx => {
-    // Keep metadata and file reads together: a concurrent replacement must not
-    // delete the old file after we read its key but before we read its bytes.
+    // Keep metadata and availability together: a concurrent replacement must
+    // not make the catalog report a missing file. File bytes load on selection.
     await lockDocumentTemplateReads(tx, [...DOCUMENT_TEMPLATE_IDS])
     const rows = await tx.select().from(documentTemplates)
     const entries = await Promise.all(rows.map(async (record) => {
-      const fileData = await templateStore.get(record.blobKey)
-      return { summary: toTemplateSummary(record), fileData }
+      const available = await templateStore.exists(record.blobKey)
+      return { summary: toTemplateSummary(record), available }
     }))
     const activeKeys = new Map(rows.map(row => [row.id, row.blobKey]))
     const storageWarnings: Partial<Record<DocumentTemplateId, string>> = {}
@@ -95,8 +91,8 @@ export async function getRemoteDocumentTemplateInventory() {
       } catch { storageWarnings[id] = 'Не удалось проверить очистку файлов. Проверьте доступность хранилища и повторите очистку.' }
     }))
     return {
-      templates: entries.flatMap(({ summary, fileData }) => fileData ? [{ ...summary, fileDataBase64: Buffer.from(fileData).toString('base64') }] : []),
-      missing: entries.flatMap(({ summary, fileData }) => fileData ? [] : [summary]),
+      templates: entries.flatMap(({ summary, available }) => available ? [summary] : []),
+      missing: entries.flatMap(({ summary, available }) => available ? [] : [summary]),
       storageWarnings,
     }
   })

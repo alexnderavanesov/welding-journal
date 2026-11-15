@@ -21,12 +21,13 @@ export function SpecialistPicker({ label, value, onChange, records, selected, al
   const effectiveValue = value === undefined && !allowKeep ? null : value
   const choices: Choice[] = [
     ...(allowKeep ? [{ value: undefined, name: 'Не изменять', detail: 'Сохранить текущее назначение' }] : []),
-    { value: null, name: allowKeep ? 'Очистить назначение' : 'Не назначен', detail: allowKeep ? 'Убрать ФИО и удостоверение' : undefined },
+    { value: null, name: allowKeep ? 'Очистить назначение' : 'Не назначен', detail: allowKeep ? 'Убрать ФИО, удостоверение и клеймо' : undefined },
     ...records.map(record => ({ value: record.id, name: record.name, detail: `№ ${record.certificate}` })),
   ]
   const selectedChoice = choices.find(choice => choice.value === effectiveValue) ?? (value ? { name: selected?.name || currentLabel || `Специалист №${value}`, detail: selected?.certificate ? `№ ${selected.certificate}` : undefined } : undefined)
   const show = () => {
     if (disabled || trigger.current?.matches(':disabled')) return
+    trigger.current?.focus({ preventScroll: true })
     typed.current = { text: '', time: 0 }
     setActive(Math.max(0, choices.findIndex(choice => choice.value === effectiveValue)))
     setOpen(true)

@@ -64,18 +64,30 @@ describe('document specialists requirements', () => {
   })
   it.each(['layeredVikEdges', 'layeredVikLayers', 'layeredPvkEdges', 'layeredPvkLayers', 'tvmtConclusion'])('allows the relevant inspector methods for %s', type => {
     expect(getSpecialistDocumentProfile(type)?.kind).toBe('inspector')
-    expect(getSpecialistTemplateFields(type)).toHaveLength(4)
+    expect(getSpecialistTemplateFields(type)).toHaveLength(6)
   })
   it('preserves individual empty and changed roles when the common pair changes', () => {
     expect(getDraftSpecialists({ common: { first: 5, second: 5 }, documents: { doc: { first: null } } }, 'doc')).toEqual({ first: null, second: 5 })
     expect(getDraftSpecialists({ common: { first: 6, second: 6 }, documents: { doc: { first: 1 } } }, 'doc')).toEqual({ first: 1, second: 6 })
   })
-  it('has eight distinct fields with four visible per matching template and no live card lookup', () => {
-    expect(new Set(SPECIALIST_TEMPLATE_FIELDS.map(field => field.key)).size).toBe(8)
+  it('has twelve distinct fields with six visible per matching template and no live card lookup', () => {
+    expect(new Set(SPECIALIST_TEMPLATE_FIELDS.map(field => field.key)).size).toBe(12)
     const snapshot = { first: { id: 1, name: 'Иванов', certificate: '123' } }
-    for (const field of getSpecialistTemplateFields('lnkConclusionVik')) expect(getSpecialistTemplateValue(field.key, snapshot, 'lnkConclusion', 'ВИК')).toBe(field.role === 'second' ? '' : field.value === 'name' ? 'Иванов' : '123')
+    for (const field of getSpecialistTemplateFields('lnkConclusionVik')) expect(getSpecialistTemplateValue(field.key, snapshot, 'lnkConclusion', 'ВИК')).toBe(field.role === 'second' ? '' : field.value === 'name' ? 'Иванов' : field.value === 'certificate' ? '123' : '')
     for (const field of getSpecialistTemplateFields('pstoConclusion')) expect(getSpecialistTemplateValue(field.key, snapshot, 'lnkConclusion', 'ВИК')).toBe('')
     expect(getSpecialistTemplateValue('__controlPerformedName', null, 'lnkConclusion', 'ВИК')).toBe('')
+  })
+  it('captures free-form stamps, preserves old documents, and detects stamp-only merge conflicts', () => {
+    const stamped = new Map([[1, { ...ivan, stamp: 'ДФ №7 / A-б' }]])
+    const snapshot = resolveDocumentSpecialists(null, { first: 1 }, stamped, profile)
+    expect(getSpecialistTemplateValue('__controlPerformedStamp', snapshot, 'lnkConclusionVik')).toBe('ДФ №7 / A-б')
+    const changed = new Map([[1, { ...ivan, stamp: 'новое' }]])
+    expect(resolveDocumentSpecialists(snapshot, {}, changed, profile)).toEqual(snapshot)
+    expect(resolveDocumentSpecialists(snapshot, { first: 1 }, changed, profile).first?.stamp).toBe('новое')
+    expect(inheritDocumentSpecialists([snapshot, { first: { ...snapshot.first!, stamp: 'новое' } }]).conflict).toBe(true)
+    const legacy = { first: { id: 1, name: ivan.name, certificate: ivan.certificate } }
+    expect(getSpecialistTemplateValue('__controlPerformedStamp', legacy, 'lnkConclusionVik')).toBe('')
+    expect(inheritDocumentSpecialists([legacy, { first: { ...legacy.first, stamp: '' } }]).conflict).toBe(false)
   })
   it('passes per-document assignments with creation grouping without leaking them into request documents', () => {
     const build = (type: 'lnkConclusion' | 'lnkRequest') => buildSystemDocumentCreationPlan({ type, methodCode: 'ВИК', date: '2026-10-12', rows: [{ id: 1, projectTitle: 'P', line: 'L' } as WeldRow], naming: { mode: 'system', customName: '', specialists: { common: { first: 1, second: null } } }, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS })

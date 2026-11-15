@@ -144,7 +144,8 @@ for (const scenario of removalCases) for (const entry of ['single', 'batch', ...
         ? { records: [{ id: jointId, ...patch }], expectedVersions: [{ id: jointId, version: before.result.rowVersion }], mutationScope: scenario.scope }
         : { id: jointId, expectedVersion: before.result.rowVersion, mutationScope: scenario.scope, ...patch }
       if (entry === 'ui') {
-        // The normal UI already asks for delete rights: the direct RPC must match it.
+        // Explain the missing delete right before preparing a change; ordinary
+        // editing remains available. A forged RPC must still be rejected.
         await page.goto('/lnk')
         await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
         await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
@@ -155,11 +156,14 @@ for (const scenario of removalCases) for (const entry of ['single', 'batch', ...
         // Opening the report can populate its persisted derived status. Take
         // the full-row baseline after that normal read-side preparation.
         original = await storedFacts()
-        await manager.getByRole('button', { name: 'Удалить результат', exact: true }).click()
-        let denial = ''
-        page.once('dialog', async alert => { denial = alert.message(); await alert.accept() })
-        await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
-        await expect.poll(() => denial).toContain('Недостаточно прав')
+        await expect(manager.getByRole('button', { name: 'Удалить результат', exact: true })).toBeDisabled()
+        await expect(manager.getByText('Нет права удаления в ЛНК. Обратитесь к администратору.', { exact: true })).toBeVisible()
+        await expect(manager.getByRole('group', { name: 'Изменить на:', exact: true }).getByRole('button', { name: 'ремонт', exact: true })).toBeEnabled()
+        await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeDisabled()
+        const current = await call('getWeldJointById', { id: jointId }, 'GET')
+        const denied = await call(operation, { ...payload, expectedVersion: current.result.rowVersion })
+        expect(denied.error?.message).toContain('Недостаточно прав')
+        expect(denied.result).toBeUndefined()
       } else {
         const result = await call(operation, payload)
         expect(result.error?.message).toContain('Недостаточно прав')

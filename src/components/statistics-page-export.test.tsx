@@ -69,6 +69,19 @@ function renderStatistics(props: { onOpenWeldRowIds?: (rowIds: number[], message
 const reportButton = () => screen.getByRole('button', { name: 'Отчет PDF' })
 const readPreview = (): PrintableReport => JSON.parse(screen.getByTestId('preview-report').textContent!)
 const metric = (report: PrintableReport) => report.metrics?.find(item => item.label === 'Сварено за период')?.value
+
+it('distinguishes zero period production from complete current scope without another statistics request', async () => {
+  mocks.rpc.mockImplementation(async ({ data }) => {
+    const result = resultFor(data, 0)
+    return { ...result, generalProgressSummary: { ...result.generalProgressSummary, total: 100, completed: 100 } }
+  })
+  renderStatistics()
+  const progressLabel = await screen.findByText('Выполнение сварки · без ограничения периода')
+  await waitFor(() => expect(progressLabel.parentElement?.parentElement).toHaveTextContent('100%'))
+  expect(screen.getByText('Сварено за период', { exact: true }).parentElement).toHaveTextContent('0')
+  expect(screen.getByText('Годность сварки за выбранный период')).toBeVisible()
+  expect(mocks.rpc).toHaveBeenCalledTimes(1)
+})
 const meta = (report: PrintableReport, label: string) => report.meta?.find(item => item.label === label)?.value
 const closePreview = () => fireEvent.click(screen.getByRole('button', { name: 'Закрыть предпросмотр' }))
 

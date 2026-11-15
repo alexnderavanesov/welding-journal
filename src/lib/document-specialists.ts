@@ -6,11 +6,12 @@ export type SpecialistRecord = {
   name: string
   kind: SpecialistKind
   certificate: string
+  stamp?: string
   methods: SpecialistMethod[]
   revision: number
   archived?: boolean
 }
-export type SpecialistSnapshot = Pick<SpecialistRecord, 'id' | 'name' | 'certificate'>
+export type SpecialistSnapshot = Pick<SpecialistRecord, 'id' | 'name' | 'certificate' | 'stamp'>
 export type DocumentSpecialists = { first?: SpecialistSnapshot | null; second?: SpecialistSnapshot | null }
 export type SpecialistSelection = { first?: number | null; second?: number | null }
 export type SpecialistDraft = { common?: SpecialistSelection; documents?: Record<string, SpecialistSelection> }
@@ -48,12 +49,12 @@ export function getDraftSpecialists(draft: SpecialistDraft | undefined, membersh
   return { ...draft?.common, ...draft?.documents?.[membership] }
 }
 
-/** Compare each role's saved name/certificate, not registry IDs or today's card. A conflicting merge clears both roles. */
+/** Compare each role's saved name/certificate/stamp, not registry IDs or today's card. A conflicting merge clears both roles. */
 export function inheritDocumentSpecialists(snapshots: Array<DocumentSpecialists | null | undefined>) {
   const pair = (value: DocumentSpecialists | null | undefined): DocumentSpecialists => ({ first: value?.first ?? null, second: value?.second ?? null })
   const identity = (value: DocumentSpecialists) => JSON.stringify(['first', 'second'].map(role => {
     const person = value[role as keyof DocumentSpecialists]
-    return person ? [person.name, person.certificate] : null
+    return person ? [person.name, person.certificate, person.stamp ?? ''] : null
   }))
   const snapshot = pair(snapshots[0])
   const conflict = snapshots.some(value => identity(pair(value)) !== identity(snapshot))
@@ -68,7 +69,7 @@ export function resolveDocumentSpecialists(current: DocumentSpecialists | null |
     if (id === null) { result[role] = null; continue }
     const record = records.get(id)
     if (!record || !specialistMatches(record, profile)) throw new Error(`Специалист не найден, архивирован или не имеет допуска для роли «${profile.labels[role === 'first' ? 0 : 1]}» (${profile.methods.join(', ') || 'ПСТО'}). Обновите выбор.`)
-    result[role] = { id: record.id, name: record.name, certificate: record.certificate }
+    result[role] = { id: record.id, name: record.name, certificate: record.certificate, ...(record.stamp ? { stamp: record.stamp } : {}) }
   }
   return result
 }
@@ -76,12 +77,16 @@ export function resolveDocumentSpecialists(current: DocumentSpecialists | null |
 export const SPECIALIST_TEMPLATE_FIELDS = [
   { key: '__controlPerformedName', label: 'Провёл контроль — ФИО', role: 'first', value: 'name', kind: 'inspector' },
   { key: '__controlPerformedCertificate', label: 'Провёл контроль — № удостоверения', role: 'first', value: 'certificate', kind: 'inspector' },
+  { key: '__controlPerformedStamp', label: 'Провёл контроль — Клеймо специалиста', role: 'first', value: 'stamp', kind: 'inspector' },
   { key: '__conclusionIssuedName', label: 'Выдал заключение — ФИО', role: 'second', value: 'name', kind: 'inspector' },
   { key: '__conclusionIssuedCertificate', label: 'Выдал заключение — № удостоверения', role: 'second', value: 'certificate', kind: 'inspector' },
+  { key: '__conclusionIssuedStamp', label: 'Выдал заключение — Клеймо специалиста', role: 'second', value: 'stamp', kind: 'inspector' },
   { key: '__thermistOperatorName', label: 'Оператор-термист — ФИО', role: 'first', value: 'name', kind: 'thermist' },
   { key: '__thermistOperatorCertificate', label: 'Оператор-термист — № удостоверения', role: 'first', value: 'certificate', kind: 'thermist' },
+  { key: '__thermistOperatorStamp', label: 'Оператор-термист — Клеймо специалиста', role: 'first', value: 'stamp', kind: 'thermist' },
   { key: '__heatTreatmentSupervisorName', label: 'Руководитель по ТО — ФИО', role: 'second', value: 'name', kind: 'thermist' },
   { key: '__heatTreatmentSupervisorCertificate', label: 'Руководитель по ТО — № удостоверения', role: 'second', value: 'certificate', kind: 'thermist' },
+  { key: '__heatTreatmentSupervisorStamp', label: 'Руководитель по ТО — Клеймо специалиста', role: 'second', value: 'stamp', kind: 'thermist' },
 ] as const
 export type SpecialistTemplateFieldKey = typeof SPECIALIST_TEMPLATE_FIELDS[number]['key']
 export function isSpecialistTemplateField(key: string): key is SpecialistTemplateFieldKey {

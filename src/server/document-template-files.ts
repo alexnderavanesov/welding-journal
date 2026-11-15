@@ -4,6 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path'
 
 export type DocumentTemplateFileStore = {
   delete: (key: string) => Promise<void>
+  exists: (key: string) => Promise<boolean>
   get: (key: string) => Promise<ArrayBuffer | null>
   list: (prefix: string) => Promise<string[]>
   set: (key: string, data: ArrayBuffer) => Promise<void>
@@ -27,6 +28,18 @@ export function createDocumentTemplateFileStore(directory: string): DocumentTemp
   return {
     async delete(key) {
       await rm(resolveStoragePath(rootDirectory, key), { force: true })
+    },
+    async exists(key) {
+      try {
+        const handle = await open(resolveStoragePath(rootDirectory, key), 'r')
+        try {
+          if (!(await handle.stat()).isFile()) throw new Error('Вместо файла шаблона найден каталог.')
+          return true
+        } finally { await handle.close() }
+      } catch (error) {
+        if (isMissingFileError(error)) return false
+        throw error
+      }
     },
     async get(key) {
       try {

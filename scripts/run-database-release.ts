@@ -27,7 +27,16 @@ try {
   databasePool = (db as unknown as { $client: pg.Pool }).$client
   const data = await db.transaction(prepareReleaseData)
   if (!await isDatabaseReleaseReady(db)) throw new Error('Итоговая проверка готовности не пройдена.')
-  console.log(JSON.stringify({ phase: 'complete', host: target.host, database: target.database, ready: true, data }, null, 2))
+  // This is deliberately outside the committed preparation transaction: that
+  // transaction may hold locks needed by the existing calculation engine.
+  const { prepareDispatcherCalculation } = await import('../src/server/dispatcher-prewarm')
+  const dispatcher = await prepareDispatcherCalculation().catch(() => {
+    // Prewarming is optional preparation, not a new availability gate. The
+    // normal user-triggered calculation remains available after a failed run.
+    console.warn('Подготовка базы завершена, но предварительный расчёт не готов. Повторите maintenance:dispatcher-prewarm; обычный пересчёт остаётся доступен.')
+    return { ready: false as const }
+  })
+  console.log(JSON.stringify({ phase: 'complete', host: target.host, database: target.database, ready: true, data, dispatcher }, null, 2))
 } finally {
   await databasePool?.end()
   await lock.end()

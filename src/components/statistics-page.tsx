@@ -781,7 +781,7 @@ function StatisticsReports({
 
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             <ProgressMetricCard
-              label="Выполнение сварки"
+              label="Выполнение сварки · без ограничения периода"
               value={generalProgressSummary.total > 0
                 ? formatPercent((generalProgressSummary.completed / generalProgressSummary.total) * 100)
                 : '—'}
@@ -794,7 +794,7 @@ function StatisticsReports({
               tone="sky"
             />
             <ProgressMetricCard
-              label="Годность сварки"
+              label="Годность сварки за выбранный период"
               value={summary.good + summary.rejected > 0 ? formatPercent(summary.qualityPercent) : '—'}
               detail={summary.good + summary.rejected > 0
                 ? `${formatGeneralStatisticValue(summary.good, unit)} годен · ${formatGeneralStatisticValue(summary.rejected, unit)} не годен`

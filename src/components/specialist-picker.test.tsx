@@ -16,6 +16,7 @@ describe('specialist picker', () => {
     const picker = screen.getByRole('combobox')
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
     fireEvent.click(picker)
+    expect(picker).toHaveFocus()
     const search = screen.getByRole('searchbox')
     search.focus()
     expect(screen.getByRole('listbox')).toBeInTheDocument()

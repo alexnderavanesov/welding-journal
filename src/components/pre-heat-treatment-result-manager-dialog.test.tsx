@@ -1,8 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PreHeatTreatmentResultManagerDialog } from '@/components/pre-heat-treatment-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
+
+const access = vi.hoisted(() => ({ canDelete: true }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: (permission: string) => permission !== 'lnk.delete' || access.canDelete }) }))
+beforeEach(() => { access.canDelete = true })
 
 const resultEditProps = () => ({
   pendingResultChanges: {}, pendingResultCount: 0,
@@ -10,6 +14,32 @@ const resultEditProps = () => ({
 })
 
 describe('PreHeatTreatmentResultManagerDialog', () => {
+  it.each(['request', 'result'] as const)('explains missing delete permission in the %s card and menu while preserving requisite editing', registryMode => {
+    access.canDelete = false
+    const control = { id: 11, weldJointId: 7, method: 'ВИК', requestName: 'З-11', requestDate: '2026-08-04',
+      result: registryMode === 'result' ? 'годен' : 'ожидает НК', conclusionDate: registryMode === 'result' ? '2026-08-05' : null,
+      conclusionName: registryMode === 'result' ? 'К-11' : null }
+    const row = { id: 7, rowVersion: '107', line: 'L7', joint: 'F7', preHeatTreatmentControls: [control] } as WeldRow
+    const onDeleteRequest = vi.fn(), onStageResultChange = vi.fn(), onCorrect = vi.fn()
+    render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode={registryMode} isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={onCorrect} onDeleteRequest={onDeleteRequest}
+      onStageResultChange={onStageResultChange} onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()}
+      onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+    const deleteLabel = registryMode === 'request' ? 'Удалить заявку' : 'Удалить результат'
+    expect(screen.getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
+    expect(screen.getByRole('button', { name: deleteLabel })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: deleteLabel }))
+    expect(onDeleteRequest).not.toHaveBeenCalled()
+    expect(onStageResultChange).not.toHaveBeenCalled()
+    const input = screen.getByLabelText(registryMode === 'request' ? 'Наименование заявки' : 'Наименование заключения')
+    fireEvent.change(input, { target: { value: 'Исправлено' } })
+    fireEvent.click(screen.getByRole('button', { name: registryMode === 'request' ? 'Сохранить заявку' : 'Сохранить реквизиты' }))
+    expect(onCorrect).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', relationId: 11 }))
+    fireEvent.contextMenu(within(screen.getByRole('complementary')).getByText(registryMode === 'request' ? 'З-11' : 'К-11'))
+    const remove = within(screen.getByTestId('context-action-menu')).getByRole('button', { name: deleteLabel })
+    expect(remove).toBeDisabled()
+    expect(within(screen.getByTestId('context-action-menu')).getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
+  })
   it.each(['request', 'result'] as const)('opens the %s row menu without offering a stage transfer', registryMode => {
     const row = { id: 7, joint: 'F7', line: 'L7',
       preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'ВИК',
