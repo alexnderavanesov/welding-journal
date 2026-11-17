@@ -41,6 +41,35 @@ describe('duplicate-control bounded queries', () => {
     ))
   })
 
+  it.each([false, true])('manual retry restores a failed refresh without appending a page (registry=%s)', async registry => {
+    const fetch = registry ? serverMocks.listDuplicateControlRegistryPage : serverMocks.listDuplicateControlCandidatePage
+    const page = { rows: [{ id: 1, joint: 'F1' }], totalCount: 1, page: 1, pageSize: 100, hasMore: false }
+    fetch.mockResolvedValue(page)
+    const queryClient = createQueryClient()
+    const { result } = renderHook(() => {
+      const candidates = useDuplicateControlCandidates({ enabled: !registry, search: '' })
+      const controls = useDuplicateControls({ registryEnabled: registry })
+      return registry ? { ready: controls.duplicateControlRegistryReady, error: controls.duplicateControlRegistryError,
+        retry: controls.loadMoreDuplicateControls, rows: controls.duplicateControls }
+        : { ready: candidates.isReady, error: candidates.error, retry: candidates.loadMore, rows: candidates.rows }
+    }, { wrapper: createWrapper(queryClient) })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    fetch.mockRejectedValue(new Error('Нет связи'))
+    await act(async () => { await queryClient.invalidateQueries() })
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error))
+    expect(result.current.rows).toHaveLength(1)
+    let finish!: (value: typeof page) => void
+    fetch.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    act(() => result.current.retry())
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    act(() => result.current.retry()) // A pending refresh must not be cancelled by paging.
+    expect(fetch).toHaveBeenCalledTimes(3)
+    await act(async () => finish({ ...page, rows: [{ id: 1, joint: 'F1 updated' }] }))
+    await waitFor(() => expect(result.current.error).toBeNull())
+    expect(result.current.rows[0].joint).toBe('F1 updated')
+    expect(fetch.mock.calls.every(([request]) => request.data.page === 1)).toBe(true)
+  })
+
   it('loads one candidate page only after the dialog is enabled and ignores focus/reconnect', async () => {
     const queryClient = createQueryClient()
     const { result, rerender } = renderHook(

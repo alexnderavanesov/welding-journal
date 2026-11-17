@@ -349,12 +349,16 @@ export function DuplicateControlDialog({
             {candidateRowsLoading && filteredRows.length === 0 ? (
               <DialogEmptyState minHeightClassName="min-h-60">Загрузка стыков…</DialogEmptyState>
             ) : candidateRowsError && filteredRows.length === 0 ? (
-              <DialogEmptyState minHeightClassName="min-h-60">{candidateRowsError}</DialogEmptyState>
+              <DialogEmptyState minHeightClassName="min-h-60"><div role="alert" className="space-y-3">
+                <p>{candidateRowsError}</p>
+                {candidatePagination ? <Button type="button" variant="outline" onClick={candidatePagination.onLoadMore}>Повторить загрузку</Button> : null}
+              </div></DialogEmptyState>
             ) : filteredRows.length === 0 ? (
               <DialogEmptyState minHeightClassName="min-h-60">По фильтру ничего не найдено.</DialogEmptyState>
             ) : (
               <DialogVirtualizedRows
                 items={visibleRows}
+                onEndReached={activeCandidatePagination.hasMore && !candidateRowsLoading && !candidateRowsError ? activeCandidatePagination.onLoadMore : undefined}
                 estimateRowHeight={74}
                 getItemKey={(row) => row.id}
                 renderItem={(row) => (
@@ -373,6 +377,8 @@ export function DuplicateControlDialog({
                       lastItemNumber={activeCandidatePagination.lastItemNumber}
                       pageSize={activeCandidatePagination.pageSize}
                       hasMore={activeCandidatePagination.hasMore}
+                      autoLoad={false}
+                      loadError={candidateRowsError}
                       onLoadMore={activeCandidatePagination.onLoadMore}
                       onPageSizeChange={activeCandidatePagination.onPageSizeChange}
                     />
@@ -554,6 +560,7 @@ function DuplicateControlPreviewDialog({
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
             <DialogVirtualizedRows
               items={rowsPagination.pageItems}
+              onEndReached={rowsPagination.hasMore ? rowsPagination.loadMore : undefined}
               estimateRowHeight={76}
               getItemKey={(row) => row.id}
               renderItem={(row) => {
@@ -609,6 +616,7 @@ function DuplicateControlPreviewDialog({
                     lastItemNumber={rowsPagination.lastItemNumber}
                     pageSize={rowsPagination.pageSize}
                     hasMore={rowsPagination.hasMore}
+                    autoLoad={false}
                     onLoadMore={rowsPagination.loadMore}
                     onPageSizeChange={rowsPagination.setPageSize}
                   />
@@ -657,7 +665,10 @@ function DuplicateControlList({
       {loading && controls.length === 0 ? (
         <div className="px-3 py-3 text-sm text-slate-500">Загрузка реестра дубль-контроля…</div>
       ) : error && controls.length === 0 ? (
-        <div className="px-3 py-3 text-sm text-rose-700">{error}</div>
+        <div role="alert" className="space-y-3 px-3 py-3 text-sm text-rose-700">
+          <p>{error}</p>
+          {pagination ? <Button type="button" variant="outline" onClick={pagination.onLoadMore}>Повторить загрузку</Button> : null}
+        </div>
       ) : controls.length === 0 ? (
         <div className="px-3 py-3 text-sm text-slate-500">Пока нет дубль-контроля.</div>
       ) : (
@@ -705,6 +716,7 @@ function DuplicateControlList({
               lastItemNumber={activePagination.lastItemNumber}
               pageSize={activePagination.pageSize}
               hasMore={activePagination.hasMore}
+              loadError={error}
               onLoadMore={activePagination.onLoadMore}
               onPageSizeChange={activePagination.onPageSizeChange}
             />

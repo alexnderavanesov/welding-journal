@@ -70,6 +70,33 @@ test.afterEach(async () => {
   await cleanupDuplicateControlRows()
 })
 
+test('дубль-контроль запрашивает следующую порцию только у конца списка', async ({ page }) => {
+  await seedDuplicateControlRows(351, false)
+  const reads: Request[] = []
+  page.on('request', request => {
+    if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('listDuplicateControlCandidatePage_')) reads.push(request)
+  })
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('1-100', { exact: true })).toBeVisible()
+  // Let the observer and any unintended chained requests settle.
+  await page.waitForTimeout(1_000)
+  expect(reads).toHaveLength(1)
+  const first = dialog.getByRole('button').filter({ hasText: 'E2E-DUP-001' }).first()
+  await first.click()
+  const viewport = dialog.locator('.overflow-auto.overscroll-contain')
+  await viewport.evaluate(element => { element.scrollTop = element.scrollHeight })
+  await expect(dialog.getByText('1-200', { exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(reads).toHaveLength(2)
+  await expect(dialog.getByText(/Выбрано: 1/, { exact: false })).toBeVisible()
+  await dialog.getByPlaceholder('Проект, шифр, линия, спул или стык').fill('E2E-DUP-351')
+  await expect(dialog.getByText('E2E-DUP-351', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Выбрать найденные', exact: true }).click()
+  await expect(dialog.getByText('Найдено: 1 · Выбрано: 2', { exact: true })).toBeVisible()
+})
+
 test('окно дубль-контроля ищет по всему журналу и лениво открывает реестр', async ({ page }) => {
   test.setTimeout(120_000)
   await seedDuplicateControlRows()
@@ -94,6 +121,79 @@ test('окно дубль-контроля ищет по всему журнал
   await expect(dialog.getByText('ВИК', { exact: true })).toBeVisible()
   await expect(dialog.getByText('годен', { exact: true })).toBeVisible()
   await expect(dialog.getByText(/Заключение E2E дубль/)).toBeVisible()
+})
+
+for (const registry of [false, true]) test(`ошибка догрузки дубль-контроля (${registry ? 'реестр' : 'кандидаты'}) не запускает бесконечные запросы и допускает ручной повтор`, async ({ page }) => {
+  await seedDuplicateControlRows(351, false)
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('1-100', { exact: true })).toBeVisible()
+  if (registry) {
+    await withE2eDatabase(db => db.query(`insert into duplicate_controls(weld_joint_id,method,result,control_date,conclusion,conclusion_date)
+      select id,'ВИК','годен','2026-08-02','Проверка догрузки','2026-08-03' from weld_joints where project_title='E2E-DUP'`))
+    await dialog.getByRole('button', { name: /Внесенные дубли/ }).click()
+    await expect(dialog.getByText('1-100', { exact: true })).toBeVisible()
+  }
+  let failures = 0
+  const endpoint = registry ? 'listDuplicateControlRegistryPage_' : 'listDuplicateControlCandidatePage_'
+  await page.route(url => url.pathname.includes('/_serverFn/') && rpcName(url.href).startsWith(endpoint), route => {
+    failures++
+    return route.abort('failed')
+  })
+  await dialog.locator(registry ? 'div.overflow-y-auto.rounded-md' : '.overflow-auto.overscroll-contain').evaluate(element => { element.scrollTop = element.scrollHeight })
+  await expect.poll(() => failures).toBeGreaterThan(0)
+  await page.waitForTimeout(1_000)
+  expect(failures).toBe(1)
+  await expect(dialog.getByText('1-100', { exact: true })).toBeVisible()
+  await page.unrouteAll({ behavior: 'wait' })
+  await dialog.getByRole('button', { name: 'Повторить загрузку', exact: true }).click()
+  await expect(dialog.getByText('1-200', { exact: true })).toBeVisible()
+})
+
+for (const registry of [false, true]) test(`первая загрузка дубль-контроля (${registry ? 'реестр' : 'кандидаты'}) восстанавливается явным повтором`, async ({ page }) => {
+  await seedDuplicateControlRows(151, true)
+  await page.goto('/lnk')
+  let failures = 0
+  const endpoint = registry ? 'listDuplicateControlRegistryPage_' : 'listDuplicateControlCandidatePage_'
+  await page.route(url => url.pathname.includes('/_serverFn/') && rpcName(url.href).startsWith(endpoint), route => {
+    failures++
+    return route.abort('failed')
+  })
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  if (registry) await dialog.getByRole('button', { name: /Внесенные дубли/ }).click()
+  await expect(dialog.getByRole('button', { name: 'Повторить загрузку', exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(failures).toBe(1)
+  await page.unrouteAll({ behavior: 'wait' })
+  await dialog.getByRole('button', { name: 'Повторить загрузку', exact: true }).click()
+  await expect(dialog.getByText(registry ? '1-1' : '1-100', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Повторить загрузку', exact: true })).toHaveCount(0)
+})
+
+test('предпросмотр всех найденных дубль-стыков догружается при прокрутке и не теряет выбор', async ({ page }) => {
+  await seedDuplicateControlRows(351, false)
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByPlaceholder('Проект, шифр, линия, спул или стык').fill('E2E-DUP')
+  await expect(dialog.getByText('Найдено: 351 · Выбрано: 0', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Выбрать найденные', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Предпросмотр (351)', exact: true }).click()
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр выбранных стыков', exact: true })
+  await expect(preview.getByText('1-100', { exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  await expect(preview.getByText('1-100', { exact: true })).toBeVisible()
+  const viewport = preview.locator('.overflow-auto.overscroll-contain')
+  for (const count of [200, 300, 351]) {
+    await viewport.evaluate(element => { element.scrollTop = element.scrollHeight })
+    await expect(preview.getByText(`1-${count}`, { exact: true })).toBeVisible()
+  }
+  await viewport.evaluate(element => { element.scrollTop = element.scrollHeight })
+  await expect(preview.getByText('E2E-DUP-351', { exact: true })).toBeVisible()
+  await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+  await expect(dialog.getByText('Найдено: 351 · Выбрано: 351', { exact: true })).toBeVisible()
 })
 
 test('широкий поиск не выбирает больше 5 000 стыков и предлагает уточнение', async ({ page }) => {

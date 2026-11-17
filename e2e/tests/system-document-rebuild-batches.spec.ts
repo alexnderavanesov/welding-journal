@@ -60,7 +60,10 @@ test('each packet is atomic: completed work survives later failure/cancel; retry
   await indexSeededRequests()
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
-  const dialog = await openDocumentOperation(page, names, 'Заявка ЛНК')
+  // This fixture deliberately clicks 201 individual checkboxes across several
+  // viewports, including WebKit. Give that operator sequence its own budget;
+  // assertions on membership, rollback, retry and request counts stay intact.
+  const dialog = await openDocumentOperation(page, names, 'Заявка ЛНК', 'split', 45_000)
   const apply = dialog.getByRole('button', { name: 'Подтвердить и применить', exact: true })
   await expect(apply).toBeEnabled()
   await apply.click()
@@ -93,8 +96,13 @@ test('each packet is atomic: completed work survives later failure/cancel; retry
   await apply.click()
   await expect(dialog.getByRole('alert')).toBeVisible()
   await expect(dialog.getByRole('alert')).toBeInViewport()
-  await expect(dialog.getByRole('alert')).toContainText('Не удалось подтвердить сохранение пакета')
+  // The RPC boundary now removes raw database details before the dialog sees
+  // them. Keep the operator contract: uncertain result, explicit retry, and no
+  // SQL disclosure; the legacy fallback wording is not itself a business rule.
+  await expect(dialog.getByRole('alert')).toContainText('Результат записи пока не подтверждён')
+  await expect(dialog.getByRole('button', { name: 'Повторить тот же запрос', exact: true })).toBeEnabled()
   await expect(dialog.getByRole('alert')).not.toContainText('Failed query:')
+  await expect(dialog.getByRole('alert')).not.toContainText('E2E second packet failure')
   expect(await snapshot()).toEqual(saved)
   await page.screenshot({ path: info.outputPath('second-packet-rolled-back.png') })
   await withE2eDatabase(async db => {

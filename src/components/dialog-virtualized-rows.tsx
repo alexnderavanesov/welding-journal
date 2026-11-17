@@ -1,4 +1,4 @@
-import { useRef, type Key, type ReactNode } from 'react'
+import { useEffect, useRef, type Key, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 const VIRTUALIZATION_THRESHOLD = 20
@@ -7,6 +7,7 @@ const FALLBACK_RENDER_COUNT = 12
 type DialogVirtualizedRowsProps<T> = {
   items: readonly T[]
   footer: ReactNode
+  onEndReached?: () => void
   estimateRowHeight?: number
   getItemKey: (item: T) => Key
   renderItem: (item: T) => ReactNode
@@ -15,11 +16,21 @@ type DialogVirtualizedRowsProps<T> = {
 export function DialogVirtualizedRows<T>({
   items,
   footer,
+  onEndReached,
   estimateRowHeight = 68,
   getItemKey,
   renderItem,
 }: DialogVirtualizedRowsProps<T>) {
   const viewportRef = useRef<HTMLDivElement>(null)
+  const endRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!onEndReached || !endRef.current) return
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) onEndReached()
+    }, { root: viewportRef.current, rootMargin: '200px 0px' })
+    observer.observe(endRef.current)
+    return () => observer.disconnect()
+  }, [onEndReached, items.length])
   const enabled = typeof window !== 'undefined' && items.length > VIRTUALIZATION_THRESHOLD
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -72,6 +83,7 @@ export function DialogVirtualizedRows<T>({
             <div key={getItemKey(item)}>{renderItem(item)}</div>
           ))}</div>
         )}
+        {onEndReached ? <div ref={endRef} className="h-px" aria-hidden="true" /> : null}
       </div>
       {footer}
     </div>

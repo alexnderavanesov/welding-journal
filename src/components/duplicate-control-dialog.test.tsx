@@ -22,6 +22,24 @@ class IntersectionObserverStub implements IntersectionObserver {
 }
 
 describe('DuplicateControlDialog', () => {
+  it.each([false, true])('offers an explicit retry when the first page failed (registry=%s)', registry => {
+    const retry = vi.fn(), onSave = vi.fn(), onDraftChange = vi.fn()
+    const pagination = { totalCount: 0, firstItemNumber: 0, lastItemNumber: 0, pageSize: 100,
+      hasMore: false, onLoadMore: retry, onPageSizeChange: vi.fn() }
+    render(<DuplicateControlDialog draft={createEmptyDuplicateControlDraft()}
+      filteredRows={[]} selectedRows={[]} controls={[]} saveBlockReason={null} isSaving={false}
+      candidateRowsError={registry ? null : 'Нет связи'} candidatePagination={pagination}
+      controlsError={registry ? 'Нет связи' : null} controlsPagination={pagination}
+      onClose={vi.fn()} onSave={onSave} onDelete={vi.fn()} onEdit={vi.fn()} onDraftChange={onDraftChange}
+      onToggleRow={vi.fn()} onSetVisibleRowsSelected={vi.fn()} onToggleMethod={vi.fn()} />)
+    if (registry) fireEvent.click(screen.getByRole('button', { name: /Внесенные дубли/ }))
+    expect(screen.getByText('Нет связи')).toBeVisible()
+    expect(retry).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    expect(retry).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onDraftChange).not.toHaveBeenCalled()
+  })
   it('blocks RK in mixed support selection while retaining the selected method for explicit removal', () => {
     const rows = [{ id: 1, joint: 'ОП-1R12', connectionType: 'Т1', d1: 57 }, { id: 2, joint: 'S1', connectionType: 'С17', d1: 108 }] as WeldRow[]
     const props = { draft: { ...createEmptyDuplicateControlDraft(), rowIds: new Set([1, 2]), methods: new Set(['УЗК'] as const), result: 'ремонт' as const },

@@ -44,4 +44,25 @@ describe('PaginationBar independent summary', () => {
     expect(screen.getByText('Загружаются строки…')).toBeVisible()
     expect(screen.queryByText('показано все')).not.toBeInTheDocument()
   })
+
+  it('stops automatic retries after a page error and allows an explicit retry with retained rows', () => {
+    const observe = vi.fn()
+    vi.stubGlobal('IntersectionObserver', class {
+      observe = observe
+      disconnect() {}
+    })
+    const onLoadMore = vi.fn()
+    const props = { totalCount: 351, firstItemNumber: 1, lastItemNumber: 100,
+      pageSize: 100, hasMore: true, onLoadMore, onPageSizeChange: vi.fn() }
+    const { rerender } = render(<PaginationBar {...props} loadError="Нет связи" />)
+    expect(observe).not.toHaveBeenCalled()
+    expect(screen.getByText('1-100')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('Нет связи')
+    expect(screen.queryByText('дальше подгрузится при скролле')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    expect(onLoadMore).toHaveBeenCalledOnce()
+    rerender(<PaginationBar {...props} />)
+    expect(observe).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

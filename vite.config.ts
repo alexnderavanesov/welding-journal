@@ -49,5 +49,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [tanstackClientRpcDevCompatibility(), tanstackStart({ start: { entry: './start.ts' } }), nitro(), react(), devTransportCancellation(), pdfAssets()],
+  plugins: [tanstackClientRpcDevCompatibility(), tanstackStart({ start: { entry: './start.ts' } }), nitro({ plugins: ['./src/server/dispatcher-prewarm-plugin.ts'] }), react(), devTransportCancellation(), pdfAssets()],
 })

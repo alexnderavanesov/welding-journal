@@ -39,12 +39,17 @@ export function useDuplicateControls({ registryEnabled = false }: { registryEnab
   const {
     fetchNextPage: fetchNextRegistryPage,
     hasNextPage: hasNextRegistryPage,
-    isFetchingNextPage: isFetchingNextRegistryPage,
+    isFetching: registryFetching,
+    isError: registryFailed,
+    isFetchNextPageError: nextRegistryPageFailed,
+    refetch: refetchRegistry,
   } = registryQuery
   const loadMoreDuplicateControls = useCallback(() => {
-    if (!hasNextRegistryPage || isFetchingNextRegistryPage) return
+    if (registryFetching) return
+    if (registryFailed && !nextRegistryPageFailed) { void refetchRegistry(); return }
+    if (!hasNextRegistryPage) return
     void fetchNextRegistryPage()
-  }, [fetchNextRegistryPage, hasNextRegistryPage, isFetchingNextRegistryPage])
+  }, [fetchNextRegistryPage, hasNextRegistryPage, registryFetching, registryFailed, nextRegistryPageFailed, refetchRegistry])
   const setDuplicateControlPageSize = useCallback((value: number) => {
     if (DUPLICATE_CONTROL_PAGE_SIZE_OPTIONS.includes(value as DuplicateControlPageSize)) {
       setRegistryPageSizeState(value as DuplicateControlPageSize)

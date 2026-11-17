@@ -41,11 +41,15 @@ export function useDuplicateControlCandidates({
   })
   const rows = useMemo(() => query.data?.pages.flatMap((page) => page.rows) ?? [], [query.data])
   const totalCount = query.data?.pages[0]?.totalCount ?? 0
-  const { fetchNextPage, hasNextPage, isFetchingNextPage } = query
+  const { fetchNextPage, hasNextPage, isFetching, isError, isFetchNextPageError, refetch } = query
   const loadMore = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage) return
+    if (isFetching) return
+    // The footer's explicit retry must recover a failed refresh too, even
+    // when the retained result had no next page.
+    if (isError && !isFetchNextPageError) { void refetch(); return }
+    if (!hasNextPage) return
     void fetchNextPage()
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
+  }, [fetchNextPage, hasNextPage, isFetching, isError, isFetchNextPageError, refetch])
   const setPageSize = useCallback((value: number) => {
     if (DUPLICATE_CONTROL_PAGE_SIZE_OPTIONS.includes(value as DuplicateControlPageSize)) {
       setPageSizeState(value as DuplicateControlPageSize)
@@ -61,7 +65,7 @@ export function useDuplicateControlCandidates({
     hasMore: Boolean(hasNextPage),
     isLoading: query.isPending,
     isFetching: query.isFetching,
-    isFetchingNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
     isReady: query.data !== undefined,
     error: query.error,
     loadMore,

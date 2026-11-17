@@ -1,4 +1,6 @@
 # Example only; this file does not install or enable a schedule.
+# Docker now schedules this inside the application. Do not install this cron
+# alongside it. For an external scheduler, set DISPATCHER_PREWARM_ENABLED=0.
 # Install separately in an operator environment with Node, the application's
 # MAINTENANCE_TOKEN and PORT. Replace /path/to/app; never put the token here.
 # Use a cron implementation supporting CRON_TZ. No missed-run catch-up queue.

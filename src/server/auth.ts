@@ -4,6 +4,7 @@ import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { APIError } from 'better-auth/api'
 import { requireDb } from '@/db'
 import { authAccounts, authRateLimits, authSessions, authUsers, authVerifications } from '@/db/schema'
+import { logAuthEvent } from './error-diagnostics'
 
 export function getAuthConfiguration() {
   const secret = process.env.BETTER_AUTH_SECRET
@@ -20,6 +21,7 @@ export function createAuth(database: ReturnType<typeof requireDb>) {
   const configuration = getAuthConfiguration()
   return betterAuth({
     ...configuration, appName: 'Учёт сварки',
+    logger: { log: logAuthEvent },
     plugins: [tanstackStartCookies()],
     trustedOrigins: [configuration.baseURL],
     database: drizzleAdapter(database, { provider: 'pg', transaction: true, schema: {

@@ -33,11 +33,15 @@ export function SecurityProvider({ children }: { children: ReactNode }) {
       setIdentity(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next)
       setError('')
     } catch (reason) { if (sequence !== refreshSequence.current) return; setIdentity(null); currentIdentity.current = null; setStorageIdentity(null); queryClient.clear(); setError(reason instanceof Error ? reason.message : 'Не удалось проверить доступ.') }
-    finally { setLoading(false) }
+    finally { if (sequence === refreshSequence.current) setLoading(false) }
   }, [queryClient])
   useEffect(() => {
     const stop = watchAccountActivity(refresh)
-    const check = () => { void refresh() }
+    // Several rejected RPCs can report the same expired session together.
+    // Share only that unfinished check; explicit refresh after sign-in, sign-out
+    // or permission changes must still supersede any older response.
+    let expiredCheck: Promise<void> | undefined
+    const check = () => { expiredCheck ??= refresh().finally(() => { expiredCheck = undefined }) }
     window.addEventListener(ACCESS_EXPIRED_EVENT, check)
     return () => { stop(); window.removeEventListener(ACCESS_EXPIRED_EVENT, check) }
   }, [refresh])
