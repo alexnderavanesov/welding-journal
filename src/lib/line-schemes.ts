@@ -58,12 +58,14 @@ export const SCHEME_ANNOTATION_PALETTE = [
 export const SCHEME_ANNOTATION_COLORS: readonly string[] = [...SCHEME_ANNOTATION_PALETTE.map(item => item.color), '#475569', '#0284c7', '#7c3aed', '#0f766e']
 export const SCHEME_DIMENSION_PALETTE = [{ color: '#64748b', name: 'исходный' }, ...SCHEME_ANNOTATION_PALETTE]
 export const SCHEME_DIMENSION_WIDTHS = [1, 1.5, 2, 3] as const
-export type SchemeAnnotation = { id: string; page: number; x: number; y: number; shape: 'dot' | 'triangle' | 'line'; label: string; note?: string; color: string; size: number; strokeWidth: number; rotation: number }
+export type SchemeAnnotation = { id: string; page: number; x: number; y: number; shape: 'dot' | 'triangle' | 'line' | 'text'; label: string; note?: string; color: string; size: number; strokeWidth: number; rotation: number; leaderX?: number | null; leaderY?: number | null; textWidth?: number | null; textHeight?: number | null }
+// Stored sizes are shared style choices; text uses compact font sizes at 100% PDF scale.
+export const schemeTextFontSize = (size: number) => size === 16 ? 9 : size === 32 ? 14 : 11
 export type SchemeAnchor = { key: string; id: string; kind: 'point' | 'annotation'; page: number; x: number; y: number; label: string }
 export const schemeDimensionEnds = (item: SchemeDimension): [string, string] => [item.fromPointId ? `p:${item.fromPointId}` : `a:${item.fromAnnotationId}`, item.toPointId ? `p:${item.toPointId}` : `a:${item.toAnnotationId}`]
 export function schemeAnchors(points: SchemePoint[], annotations: SchemeAnnotation[]): SchemeAnchor[] {
   return [...points.map(p => ({ key: `p:${p.id}`, id: p.id, kind: 'point' as const, page: p.page, x: p.x, y: p.y, label: p.joint.label })),
-    ...annotations.map(a => ({ key: `a:${a.id}`, id: a.id, kind: 'annotation' as const, page: a.page, x: a.x, y: a.y, label: a.label }))]
+    ...annotations.filter(a => a.shape !== 'text').map(a => ({ key: `a:${a.id}`, id: a.id, kind: 'annotation' as const, page: a.page, x: a.x, y: a.y, label: a.label }))]
 }
 export function schemeDimensionPair(a: string, b: string) {
   const [from, to] = [a, b].sort()
@@ -148,8 +150,12 @@ export function validateSchemeAnnotations(changes: NonNullable<SchemeChanges['an
     if (ids.has(a.id)) throw new Error('Обозначение указано повторно.')
     ids.add(a.id)
     if (!Number.isInteger(a.page) || a.page < 1 || a.page > pageCount || ![a.x, a.y].every(n => Number.isFinite(n) && n >= 0 && n <= 1)) throw new Error('Обозначение находится за границами листа.')
-    if (!['dot', 'triangle', 'line'].includes(a.shape)) throw new Error('Неизвестная форма обозначения.')
-    if (typeof a.label !== 'string' || !a.label.trim() || a.label.length > 120 || /[\x00-\x1f\x7f]/.test(a.label)) throw new Error('Название: от 1 до 120 символов, без переносов строк.')
+    if (!['dot', 'triangle', 'line', 'text'].includes(a.shape)) throw new Error('Неизвестная форма обозначения.')
+    if (a.shape === 'text') {
+      if (typeof a.label !== 'string' || !a.label.trim() || a.label.length > 1000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(a.label)) throw new Error('Текст: от 1 до 1000 символов.')
+    } else if (typeof a.label !== 'string' || !a.label.trim() || a.label.length > 120 || /[\x00-\x1f\x7f]/.test(a.label)) throw new Error('Название: от 1 до 120 символов, без переносов строк.')
+    if ((a.leaderX != null || a.leaderY != null) && (a.shape !== 'text' || ![a.leaderX, a.leaderY].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1))) throw new Error('Выноска должна указывать на место внутри листа текстового примечания.')
+    if ((a.textWidth != null || a.textHeight != null) && (a.shape !== 'text' || ![a.textWidth, a.textHeight].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 24 && n <= 10000))) throw new Error('Размеры текстового блока должны быть от 24 до 10000 и заданы вместе.')
     if (a.note !== undefined && (typeof a.note !== 'string' || a.note.length > 1000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(a.note))) throw new Error('Примечание: не более 1000 символов.')
     if (!(SCHEME_ANNOTATION_COLORS as readonly string[]).includes(a.color) || ![16, 24, 32].includes(a.size) || ![1, 2, 3].includes(a.strokeWidth) || !Number.isInteger(a.rotation) || a.rotation < 0 || a.rotation > 359) throw new Error('Недопустимое оформление обозначения.')
   }

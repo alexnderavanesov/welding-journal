@@ -4,6 +4,13 @@ import { DOCUMENT_GRID_ACTIONS_COLUMN, DOCUMENT_GRID_DEFAULT_APPEARANCE, normali
 
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 describe('document grid personal state', () => {
+  it('adds composition after the count to an old layout and preserves explicit hiding afterward', () => {
+    const old = [{ colId: 'date' }, { colId: 'rowCount' }, { colId: 'title' }]
+    const migrated = normalizeDocumentGridColumns(old, SYSTEM_DOCUMENT_HISTORY_COLUMNS)
+    expect(migrated.map(column => column.colId)).toEqual(['date', 'rowCount', 'jointComposition', 'title'])
+    const hidden = migrated.map(column => column.colId === 'jointComposition' ? { ...column, hide: true, sort: 'asc' as const, rowGroup: true, rowGroupIndex: 0 } : column)
+    expect(normalizeDocumentGridColumns(hidden, SYSTEM_DOCUMENT_HISTORY_COLUMNS)[2]).toMatchObject({ hide: true, sort: 'asc', rowGroup: true, rowGroupIndex: 0 })
+  })
   it('restores action-column layout while excluding actions from data sorting and grouping', () => {
     const available = [...SYSTEM_DOCUMENT_HISTORY_COLUMNS, DOCUMENT_GRID_ACTIONS_COLUMN]
     const columns = normalizeDocumentGridColumns([{ colId: '__actions', width: 310, pinned: 'left', hide: true, sort: 'asc', sortIndex: 0, rowGroup: true, rowGroupIndex: 0 }, { colId: 'title' }], available)

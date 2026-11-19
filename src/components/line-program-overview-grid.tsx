@@ -13,7 +13,9 @@ import type { ProgramScopeMenuEvent } from './line-program-scope-menu'
 type Program = LineProgramRecord & { overview?: LineProgramOverview }
 type Props = { family?: 'supports'; rows: Program[]; expanded: Map<number, Program>; onToggle: (line: Program) => void; onAssignments: (line: Program) => void; onEdit?: (line: Program) => void
   onSelect: (line: Program, selection: ProgramSelection) => void; onMenu: (event: ProgramScopeMenuEvent, line: Program) => void
-  renderDetail: (line: Program) => ReactNode; onReady?: (api: GridApi) => void }
+  renderDetail: (line: Program) => ReactNode; onReady?: (api: GridApi) => void
+  complete?: boolean; pagination?: { page: number; onChange: (page: number) => void; onNavigate: () => void }
+  onFilterRows?: (rows: Program[]) => void }
 const Context = createContext<Props>(null!)
 const Actions = createContext<Pick<Props, 'onSelect' | 'onAssignments' | 'onEdit' | 'onMenu'>>(null!)
 const Records = createContext<ReadonlyMap<number, Program>>(new Map())
@@ -63,7 +65,7 @@ const columns: ColDef<Program>[] = [
   ...(['stamps', 'joints', 'common', 'pvk', 'missing', 'excess', 'reduction', 'control'] as const).map<ColDef<Program>>(key => ({
     colId: key, headerName: { stamps: 'Клейм', joints: 'Соединений', common: 'РК/УЗК · зачтено / нужно', pvk: 'ПВК · зачтено / нужно', missing: 'К назначению', excess: 'Лишнее', reduction: 'Можно снять', control: 'Контроль' }[key],
     width: key === 'control' || key === 'missing' ? 140 : key === 'common' || key === 'pvk' ? 135 : 100, minWidth: key === 'control' || key === 'missing' ? 130 : key === 'common' || key === 'pvk' ? 125 : key === 'joints' ? 122 : 90, flex: 1, cellRenderer: LineMetric, autoHeight: key === 'missing' || key === 'control',
-    valueGetter: ({ data }) => { const o = data?.overview; if (!o) return ''; if (key === 'common' || key === 'pvk') return `${o[key]?.covered ?? 0} / ${o[key]?.actionableRequired ?? 0}`; if (key === 'control') return `Дополнительных стыков: ${o.additional}`; if (key === 'missing' || key === 'excess') return (o.common?.[key] ?? 0) + (o.pvk?.[key] ?? 0); return key === 'reduction' ? o.reducible : o[key] },
+    valueGetter: ({ data }) => { const o = data?.overview; if (!o?.common || !o.pvk || data?.configurationIssue) return ''; if (key === 'common' || key === 'pvk') return `${o[key]!.covered} / ${o[key]!.actionableRequired}`; if (key === 'control') return `Дополнительных стыков: ${o.additional}`; if (key === 'missing' || key === 'excess') return o.common[key] + o.pvk[key]; return key === 'reduction' ? o.reducible : o[key] },
   })),
   { colId: 'actions', headerName: 'Действия', width: 210, minWidth: 200, cellRenderer: LineActions, sortable: false, filter: false, enableRowGroup: false, lockVisible: true },
 ]
@@ -71,6 +73,8 @@ export function ProgramOverviewGrid(props: Props) {
   const records = useMemo(() => new Map(props.rows.map(line => [line.id, line])), [props.rows])
   const current = useRef(props); current.current = props
   const canEdit = !!props.onEdit
+  // Keep column identities while the full snapshot arrives, so an open filter
+  // stays open and any chosen sort also applies to the complete result.
   const familyColumns = useMemo(() => props.family === 'supports' ? columns.map(column => column.colId === 'common' ? { ...column, headerName: 'УЗК · зачтено / нужно' } : column) : columns, [props.family])
   // Disclosure changes only identities/details. Stable action context keeps
   // every metric cell from rendering again when another line is opened.
@@ -80,7 +84,7 @@ export function ProgramOverviewGrid(props: Props) {
     onAssignments: (line: Program) => current.current.onAssignments(line),
     onEdit: canEdit ? (line: Program) => current.current.onEdit?.(line) : undefined,
   }), [canEdit])
-  return <Records.Provider value={records}><Context.Provider value={props}><Actions.Provider value={actions}><ProgramGrid onReady={props.onReady} kind="lines" sessionKey="lines" label="Программа линий" contextLabel="Программа линий" rows={props.rows} columns={familyColumns} getId={line => String(line.id)}
+  return <Records.Provider value={records}><Context.Provider value={props}><Actions.Provider value={actions}><ProgramGrid filtersReady={props.complete} onReady={props.onReady} pagination={props.pagination} onFilterRows={props.onFilterRows} kind="lines" sessionKey="lines" label="Программа линий" contextLabel="Программа линий" rows={props.rows} columns={familyColumns} getId={line => String(line.id)}
     detailRenderer={LineDetail} isExpanded={line => props.expanded.has(line.id)} onRowClick={props.onToggle} onRowMenu={props.onMenu}
     getRowClass={({ data }) => data ? `${lineTone(data)} ${props.expanded.has(data.id) ? 'program-line-open' : ''}` : ''}
     rowAttributes={line => ({ 'data-testid': 'line-program-card', title: !line.configurationIssue && isLineProgramFinished(line.overview) ? 'Линия завершена: назначения достаточны, все учитываемые стыки годны' : undefined, 'data-line': line.line, 'data-program-finished': String(!line.configurationIssue && isLineProgramFinished(line.overview)) })} />

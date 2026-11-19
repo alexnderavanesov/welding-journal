@@ -3,7 +3,8 @@ import { PgDialect } from 'drizzle-orm/pg-core'
 import { describe, expect, it, vi } from 'vitest'
 import type { DocumentHistoryGridRequest } from '@/lib/document-history-grid'
 import { buildWeldColumnValueFilter } from '@/lib/weld-column-choice-filter'
-import { buildDocumentHistoryGridSql, normalizeDocumentHistoryGridRequest } from './document-history-grid'
+import { buildDocumentHistoryGridSql, normalizeDocumentHistoryGridRequest, withDocumentHistoryGridSearch } from './document-history-grid'
+import { documentJointCompositionSearch } from './document-joint-composition'
 import { buildIndexedSystemDocumentHistoryGridSql, SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS } from './system-document-index'
 import { assertOriginalSystemDocumentGridFingerprint, buildOriginalSystemDocumentGridQuery } from '../../e2e/deep-system-document-original'
 
@@ -16,6 +17,9 @@ const request = (value: Partial<DocumentHistoryGridRequest> = {}, columnFilters:
 })
 const compile = (value = request()) => new PgDialect().sqlToQuery(buildIndexedSystemDocumentHistoryGridSql(value))
 const normalizeSql = (text: string) => text.replace(/\s+/g, ' ').trim()
+// Composition is appended to bounded leaves and the existing journal revision
+// now protects joint renames. The original source/filter/group plan must stay.
+const sourcePlan = (text: string) => normalizeSql(text.slice(0, text.indexOf('"block_rows" as materialized')))
 const projectedColumns = (text: string) => text.match(/"filtered_documents" as materialized\s*\(\s*select ([\s\S]*?) from "document_history"/)![1]
 const page = (query: ReturnType<typeof compile>) => {
   const parameters = query.sql.match(/limit \$(\d+) offset \$(\d+)/)!
@@ -23,6 +27,27 @@ const page = (query: ReturnType<typeof compile>) => {
 }
 
 describe('compact indexed document grid projection', () => {
+  it('resolves composition only in leaf blocks when it is not searched, filtered, sorted or grouped', () => {
+    const leaf = compile()
+    expect(sourcePlan(leaf.sql)).not.toContain('generated_document_weld_joints')
+    expect(leaf.sql.slice(leaf.sql.indexOf('"block_rows" as materialized'))).toContain('generated_document_weld_joints membership')
+    expect(leaf.sql).toContain('membership.document_id = "display_source"."documentId"')
+    expect(leaf.sql).toContain('select source_revision::text from derived_calculation_state where id = 1')
+    expect(compile(request({ rowGroupCols: ['line'] })).sql).not.toContain('generated_document_weld_joints membership')
+    expect(compile(request({ cells: { columns: ['title'] } })).sql).not.toContain('generated_document_weld_joints membership')
+  })
+  it.each([
+    request({ sortModel: [{ colId: 'jointComposition', sort: 'asc' }] }),
+    request({ rowGroupCols: ['jointComposition'] }),
+    request({}, { jointComposition: 'F2' }),
+  ])('resolves composition before pagination when it affects membership or order', value => {
+    const query = compile(value)
+    expect(sourcePlan(query.sql)).toContain('as "filter_jointComposition"')
+    expect(sourcePlan(query.sql)).toContain('membership.document_id = "composition_source"."documentId"')
+    expect(query.sql).toContain('(select count(*)::integer from "filtered_documents") as "total"')
+    expect(page(query)).toEqual([100, 0])
+  })
+
   it('keeps the reconstructed original SQL and parameters equal to the captured pre-change fingerprint', () => {
     expect(() => assertOriginalSystemDocumentGridFingerprint()).not.toThrow()
   })
@@ -54,11 +79,11 @@ describe('compact indexed document grid projection', () => {
     expect(conditions.map(match => query.params[Number(match[1]) - 1])).toEqual([41, 41])
   })
 
-  it.each(['method', 'stage', 'project', 'subtitle', 'line'])('preserves the exact original query for active %s column filters', key => {
+  it.each(['method', 'stage', 'project', 'subtitle', 'line'])('preserves the original source plan for active %s column filters', key => {
     for (const filter of ['Фрагмент', buildWeldColumnValueFilter(['']), buildWeldColumnValueFilter(['A', 'B'])]) {
-      const value = request({ search: 'also search', rowGroupCols: ['project'], sortModel: [{ colId: 'date', sort: 'desc' }] }, { [key]: filter })
+      const value = request({ rowGroupCols: ['project'], sortModel: [{ colId: 'date', sort: 'desc' }] }, { [key]: filter })
       const current = compile(value), original = buildOriginalSystemDocumentGridQuery(value)
-      expect(normalizeSql(current.sql)).toBe(normalizeSql(original.text))
+      expect(sourcePlan(current.sql)).toBe(sourcePlan(original.text))
       expect(current.params).toEqual(original.values)
       expect(projectedColumns(current.sql)).toBe('*')
     }
@@ -73,13 +98,53 @@ describe('compact indexed document grid projection', () => {
     expect(query.sql).toContain('"block_ids" as materialized')
   })
 
-  it.each(['ТВМТ', 'Линия-0012', '000123', 'отсутствующая-метка'])('preserves the original global search query for %s', search => {
+  it.each(['ТВМТ', 'Линия-0012', '000123', 'отсутствующая-метка', 'F199999', 'F'])('searches individual members without aggregating the registry for token %s', search => {
     for (const partial of [{}, { rowGroupCols: ['line'] }, { sortModel: [{ colId: 'date', sort: 'asc' as const }] }]) {
       const value = request({ ...partial, search })
-      const current = compile(value), original = buildOriginalSystemDocumentGridQuery(value)
-      expect(normalizeSql(current.sql)).toBe(normalizeSql(original.text))
-      expect(current.params).toEqual(original.values)
+      const current = compile(value)
+      expect(sourcePlan(current.sql)).not.toContain('as "filter_jointComposition"')
+      expect(sourcePlan(current.sql)).not.toContain('string_agg(nullif(btrim(joint.joint)')
+      expect(sourcePlan(current.sql)).toContain('case when exists (')
+      expect(sourcePlan(current.sql)).toContain('select 1 from weld_joints search_joint')
+      expect(sourcePlan(current.sql)).toContain('membership.document_id = "document_history"."documentId"')
+      expect(sourcePlan(current.sql)).toMatch(/offset 0\s*\) else false end/)
+      expect(sourcePlan(current.sql)).not.toContain('select membership.document_id from weld_joints joint')
+      expect(current.params).toContain(search.toLocaleLowerCase('ru-RU'))
     }
+  })
+
+  it.each(['F1 F2', '1 F', 'F1  F2'])('keeps the complete ordered composition for phrase %s', search => {
+    const current = compile(request({ search }))
+    expect(sourcePlan(current.sql)).toContain('as "filter_jointComposition"')
+    expect(sourcePlan(current.sql)).toContain('unnest(coalesce("filter_jointComposition"')
+    expect(sourcePlan(current.sql)).not.toContain('select 1 from weld_joints search_joint')
+    expect(current.params).toContain(search.toLocaleLowerCase('ru-RU'))
+  })
+
+  it('keeps explicit composition filters, sorting and grouping when token search uses members', () => {
+    for (const partial of [{}, { rowGroupCols: ['jointComposition'] }, { sortModel: [{ colId: 'jointComposition', sort: 'asc' as const }] }]) {
+      const current = compile(request({ ...partial, search: 'F' }, { jointComposition: buildWeldColumnValueFilter(['']) }))
+      expect(sourcePlan(current.sql)).toContain('as "filter_jointComposition"')
+      expect(sourcePlan(current.sql)).toContain('membership.document_id = "document_history"."documentId"')
+      expect(current.params).toContain('f')
+    }
+  })
+
+  it('uses the same token predicate for complete Excel output without restricting its rows to a page', () => {
+    const query = new PgDialect().sqlToQuery(buildIndexedSystemDocumentHistoryGridSql(request({ search: 'F199999', cells: { columns: ['jointComposition'] } }), true))
+    expect(query.sql).toContain('membership.document_id = "document_history"."documentId"')
+    expect(query.sql).not.toContain('as "filter_jointComposition"')
+    expect(query.sql).toContain('as "jointComposition"')
+    expect(query.sql).not.toMatch(/limit \$\d+ offset/)
+  })
+
+  it.each(['id', 'documentId'] as const)('qualifies facet correlation with the outer %s instead of the joined joint id', idColumn => {
+    const query = new PgDialect().sqlToQuery(withDocumentHistoryGridSearch(sql`select * from summaries`, 'F', ['jointComposition'], {
+      jointComposition: value => documentJointCompositionSearch(value, idColumn, 'search_documents'),
+    }))
+    expect(query.sql).toContain(`membership.document_id = "search_documents"."${idColumn}"`)
+    expect(query.sql).toMatch(/offset 0\s*\) else false end/)
+    expect(query.params).toEqual(['f', 'f'])
   })
 
   it('retains every group/count-route field without hydrating group payloads', () => {
@@ -132,7 +197,7 @@ describe('compact indexed document grid projection', () => {
     for (const rowGroupCols of [[], ['project']]) {
       const value = request({ rowGroupCols, cells: { columns: ['title', 'rowCount'], summary: true } })
       const current = compile(value), original = buildOriginalSystemDocumentGridQuery(value)
-      expect(normalizeSql(current.sql)).toBe(normalizeSql(original.text))
+      expect(sourcePlan(current.sql)).toBe(sourcePlan(original.text))
       expect(current.params).toEqual(original.values)
       expect(current.sql).not.toContain('"block_ids"')
     }

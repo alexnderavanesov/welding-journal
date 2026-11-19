@@ -148,6 +148,11 @@ html[data-program-keyboard="true"] .program-ag-grid[data-program-grid="assignmen
 .program-grid-popup.ag-filter-menu { z-index: 160; width: 284px; min-width: 240px; max-width: calc(100vw - 24px); padding: 0; border: 1px solid #dce5ed; border-radius: 10px; background: #fff; color: #475569; font-size: 13px; box-shadow: 0 8px 28px #1e3a5f24; }
 .program-grid-popup[data-program-filter-label]::before { content: attr(data-program-filter-label); display: block; padding: 12px 12px 0; font-size: 12px; font-weight: 600; color: #536b80; }
 .program-grid-popup .ag-filter-body-wrapper { min-height: 0; padding: 0; }
+.program-filter-pending { display: none; padding: 12px; }
+.program-grid-popup-layer[data-filters-ready="false"] .program-filter-pending { display: block; }
+/* A fast page cannot supply full filter choices. Keep Reset available while
+   waiting so an explicit user cancellation always wins over restored state. */
+.program-grid-popup-layer[data-filters-ready="false"] :is(.ag-filter-body-wrapper, .ag-filter-apply-panel-apply-button) { display: none; }
 .program-grid-popup .ag-mini-filter { margin: 10px 12px 8px; }
 .program-grid-popup .ag-mini-filter input { height: 32px; min-height: 32px; padding: 5px 28px; border: 1px solid #dce5ed; border-radius: 6px; font-size: 13px; line-height: 20px; background: #fff; color: #475569; box-shadow: none; outline: none; }
 .program-grid-popup .ag-mini-filter input:focus { border-color: #7cbcdf; box-shadow: 0 0 0 2px #e0f2fe; outline: none; }

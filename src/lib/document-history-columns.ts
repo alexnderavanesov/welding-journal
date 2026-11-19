@@ -11,6 +11,7 @@ export type DocumentHistoryColumnKey =
   | 'stage'
   | 'date'
   | 'rowCount'
+  | 'jointComposition'
   | 'wdi'
   | 'specialistFirst'
   | 'specialistSecond'
@@ -22,6 +23,8 @@ export type DocumentHistoryColumnDefinition = {
   align?: 'end'
   dateGrouped?: boolean
   required?: boolean
+  sortable?: boolean
+  filterable?: boolean
 }
 
 export type DocumentHistoryColumnPreferences = Record<string, DocumentHistoryColumnKey[]>
@@ -52,6 +55,7 @@ export const LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistor
   { key: 'line', label: 'Линия', minWidth: 150 },
   { key: 'period', label: 'Дата заключения', minWidth: 150, dateGrouped: true },
   { key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' },
+  { key: 'jointComposition', label: 'Состав стыков', minWidth: 240 },
   { key: 'updatedAt', label: 'Обновлен', minWidth: 140, dateGrouped: true },
 ]
 
@@ -63,6 +67,7 @@ export const SYSTEM_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefi
   { key: 'subtitle', label: 'Шифр', minWidth: 120 },
   { key: 'line', label: 'Линия', minWidth: 150 },
   { key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' },
+  { key: 'jointComposition', label: 'Состав стыков', minWidth: 240 },
   { key: 'date', label: 'Дата', minWidth: 128, dateGrouped: true },
 ]
 
@@ -79,6 +84,7 @@ const DOCUMENT_HISTORY_COLUMN_KEY_SET = new Set<DocumentHistoryColumnKey>([
   'stage',
   'date',
   'rowCount',
+  'jointComposition',
   'wdi',
 ])
 
@@ -115,7 +121,7 @@ export function getVisibleDocumentHistoryColumns({
   if (!preferredKeys) return [...availableColumns]
 
   const preferredSet = new Set(preferredKeys)
-  return availableColumns.filter((column) => column.required || preferredSet.has(column.key))
+  return availableColumns.filter((column) => column.required || column.key === 'jointComposition' || preferredSet.has(column.key))
 }
 
 function isDocumentHistoryColumnKey(value: unknown): value is DocumentHistoryColumnKey {

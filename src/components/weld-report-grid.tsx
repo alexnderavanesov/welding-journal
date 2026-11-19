@@ -1,3 +1,4 @@
+import { isCopyShortcut } from '@/lib/copy-shortcut'
 import { useCustomDocumentNames } from '@/lib/custom-document-settings'
 import { useAccess } from '@/lib/security-context'
 import { formatSupportLengthDecimal } from '@/lib/support-length-value'
@@ -540,14 +541,14 @@ function ReportGrid(props: WeldReportGridProps) {
               return
             }
           }
-          if (event.target instanceof Element && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+          if (event.target instanceof Element && isCopyShortcut(event.nativeEvent)) {
             // A pointer range can start on our native checkbox and leave focus
             // there. Filter checkboxes (including portals) still own their keys.
             const selectionCheckbox = event.target.matches('.journal-server-checkbox input[type="checkbox"]')
               && event.target.closest('.ag-cell, .ag-header-cell')
             if ((!event.target.closest('input') || selectionCheckbox)
               && !event.target.closest('textarea, [contenteditable=true], .ag-menu, .ag-popup-child, .journal-filter')) {
-              event.preventDefault(); event.stopPropagation(); copyRange(); return
+              event.preventDefault(); event.stopPropagation(); if (!event.repeat) copyRange(); return
             }
           }
           // AG closes its popup at document level without consuming Escape. Handle

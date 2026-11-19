@@ -26,9 +26,9 @@ export async function saveSchemeDimensions(tx: SystemDocumentSequenceTransaction
   const points = pointIds.length ? await tx.select({ id: lineSchemePoints.id, revisionId: lineSchemePoints.revisionId, page: lineSchemePoints.page }).from(lineSchemePoints)
     .where(sql`${lineSchemePoints.id} = any(${sql.param(pointIds)}::text[])`) : []
   const annotationIds = [...new Set(checked.flatMap(item => [item.fromAnnotationId, item.toAnnotationId].filter((id): id is string => !!id)))]
-  const annotations = annotationIds.length ? await tx.select({ id: lineSchemeAnnotations.id, revisionId: lineSchemeAnnotations.revisionId, page: lineSchemeAnnotations.page }).from(lineSchemeAnnotations)
+  const annotations = annotationIds.length ? await tx.select({ id: lineSchemeAnnotations.id, revisionId: lineSchemeAnnotations.revisionId, page: lineSchemeAnnotations.page, shape: lineSchemeAnnotations.shape }).from(lineSchemeAnnotations)
     .where(sql`${lineSchemeAnnotations.id} = any(${sql.param(annotationIds)}::text[])`) : []
-  const endpoints = new Map<string, { id: string; revisionId: string; page: number }>([...points.map(point => [`p:${point.id}`, point] as const), ...annotations.map(a => [`a:${a.id}`, a] as const)])
+  const endpoints = new Map<string, { id: string; revisionId: string; page: number }>([...points.map(point => [`p:${point.id}`, point] as const), ...annotations.filter(a => a.shape !== 'text').map(a => [`a:${a.id}`, a] as const)])
   for (const item of checked) {
     const [from, to] = schemeDimensionEnds(item), a = endpoints.get(from), b = endpoints.get(to)
     if (!a || !b || a.revisionId !== revisionId || b.revisionId !== revisionId || a.page !== item.page || b.page !== item.page) throw new Error('Размер должен соединять две существующие точки одного листа этой редакции.')

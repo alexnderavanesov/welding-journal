@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ComponentProps, type ComponentType } from 'react'
 import type { ProgramGrid as RealProgramGrid } from '@/components/line-program-grid'
 import { isProgramRowClick } from '@/lib/line-program-workspace'
+import { ProgramPagination } from '@/components/line-program-primitives'
 
 /** Domain component tests exercise real cell actions. Native grid layout/state has browser coverage. */
 export function ProgramGrid<T>(props: ComponentProps<typeof RealProgramGrid<T>>) {
@@ -12,7 +13,9 @@ export function ProgramGrid<T>(props: ComponentProps<typeof RealProgramGrid<T>>)
     {props.toolbar}
     <div role="table" aria-label={props.label}>
       <div role="rowgroup" data-testid={props.kind === 'assignments' ? 'assignment-table-header' : undefined}><div role="row">{props.columns.filter(column => !column.hide).map(column => <div role="columnheader" key={column.colId}>{column.headerName}</div>)}</div></div>
-      {(props.virtual || props.kind === 'joints' ? props.rows.slice(0, 50) : props.rows).map((data, sourceRowIndex) => {
+      {/* Keep explicitly opened details available to domain tests; native page
+          navigation to their row is covered with the real grid in the browser. */}
+      {(props.pagination ? props.rows.filter((row, index) => index >= props.pagination!.page * 30 && index < (props.pagination!.page + 1) * 30 || props.isExpanded?.(row)) : props.virtual || props.kind === 'joints' ? props.rows.slice(0, 50) : props.rows).map((data, sourceRowIndex) => {
         const id = props.getId(data), expanded = props.isExpanded?.(data)
         if (expanded) visited.current.add(id)
         return <div key={id} {...props.rowAttributes?.(data)} className={typeof props.getRowClass === 'function' ? String(props.getRowClass({ data, node: { sourceRowIndex } } as any) ?? '') : undefined} onContextMenu={event => props.onRowMenu?.(event, data)} onClick={event => { if (isProgramRowClick(event.target)) { event.stopPropagation(); props.onRowClick?.(data) } }}>
@@ -24,5 +27,6 @@ export function ProgramGrid<T>(props: ComponentProps<typeof RealProgramGrid<T>>)
         </div>
       })}
     </div>
+    {props.pagination ? <ProgramPagination page={props.pagination.page} total={props.rows.length} pageSize={30} noun="линий" onChange={page => { props.pagination!.onChange(page); props.pagination!.onNavigate() }} /> : null}
   </div>
 }

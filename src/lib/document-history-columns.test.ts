@@ -23,7 +23,7 @@ describe('document history column preferences', () => {
       viewId: 'lnkConclusion',
       availableColumns: SYSTEM_DOCUMENT_HISTORY_COLUMNS,
       preferences,
-    }).map((column) => column.key)).toEqual(['title', 'stage', 'date'])
+    }).map((column) => column.key)).toEqual(['title', 'stage', 'jointComposition', 'date'])
   })
 
   it.each([
@@ -34,7 +34,14 @@ describe('document history column preferences', () => {
     expect(getVisibleDocumentHistoryColumns({ viewId, availableColumns, preferences: {} }))
       .toContainEqual({ key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' })
     expect(getVisibleDocumentHistoryColumns({ viewId, availableColumns, preferences: { [viewId]: ['title'] } })
-      .map(column => column.key)).toEqual(['title'])
+      .map(column => column.key)).toEqual(viewId === 'generated' ? ['title'] : ['title', 'jointComposition'])
+  })
+
+  it.each([{ columns: SYSTEM_DOCUMENT_HISTORY_COLUMNS }, { columns: LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS }])('places composition immediately after the count', ({ columns }) => {
+    const composition = columns[columns.findIndex(column => column.key === 'rowCount') + 1]
+    expect(composition?.key).toBe('jointComposition')
+    expect(composition?.sortable).not.toBe(false)
+    expect(composition?.filterable).not.toBe(false)
   })
 
 })

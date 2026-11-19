@@ -89,7 +89,7 @@ test('every document field preserves membership, contextual facets and multi-val
   for (const type of SYSTEM_DOCUMENT_TYPES) await loadSystemDocumentSummaries(type)
   const families: Family[] = [
     { name: 'generated', types: ['weldingJournal'], fields: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS, documents: [] },
-    { name: 'layered', types: ['layeredVikEdges', 'layeredVikLayers'], fields: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS, documents: [] },
+    { name: 'layered', types: ['layeredVikEdges', 'layeredVikLayers'], fields: [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS, 'jointComposition'], documents: [] },
     ...SYSTEM_DOCUMENT_TYPES.map(system => ({ name: system, system, fields: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS, documents: [] })),
   ]
   try {
@@ -150,6 +150,9 @@ test('every document field preserves membership, contextual facets and multi-val
         const second = index === 0 ? 'Борис' : index === 4 ? 'Олег' : ''
         const expected: Record<string, string[]> = { title: [title], specialistFirst: [first], specialistSecond: [second],
           project: projects[index], subtitle: subtitles[index], line: lines[index], rowCount: [String(links[index].length)] }
+        // One cell contains all member names, including members whose other
+        // factual fields are empty. No links means one empty cell value.
+        if (family.system || family.name === 'layered') expected.jointComposition = [links[index].map(position => prefix + position).join(' ')]
         let storage = family.types?.[family.name === 'layered' ? index % 2 : 0] ?? `system:${family.system}`
         let metadata: object | null = null
         if (family.system) {

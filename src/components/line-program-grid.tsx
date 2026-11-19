@@ -5,7 +5,7 @@ import { useJournalScrollPlaceholder } from '@/lib/use-journal-scroll-placeholde
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type MouseEvent, type KeyboardEvent } from 'react'
 import { AgGridProvider, AgGridReact, type AgGridReactProps } from 'ag-grid-react'
 import {
-  ClientSideRowModelModule, ClientSideRowModelApiModule, RowAutoHeightModule, ColumnApiModule, RowApiModule, CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule,
+  ClientSideRowModelModule, ClientSideRowModelApiModule, PaginationModule, RowAutoHeightModule, ColumnApiModule, RowApiModule, CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule,
   ColumnAutoSizeModule, CellStyleModule, RowStyleModule, TooltipModule, LocaleModule, GridStateModule,
   themeQuartz, themeAlpine, themeBalham,
   type ColDef, type GridApi, type GridState, type IRowNode, type ICellRendererParams, type SuppressMouseEventHandlingParams, type PostProcessPopupParams,
@@ -22,9 +22,10 @@ import { programGridColumns, readProgramGridSettings, writeProgramGridSettings, 
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { isProgramRowClick } from '@/lib/line-program-workspace'
 import { positionGridPopup } from './grid-popup-position'
+import { ProgramPagination } from './line-program-primitives'
 import './line-program-grid.css'
 
-const MODULES = [ClientSideRowModelModule, ClientSideRowModelApiModule, RowAutoHeightModule, ColumnApiModule, RowApiModule, CellApiModule, ScrollApiModule, RenderApiModule,
+const MODULES = [ClientSideRowModelModule, ClientSideRowModelApiModule, PaginationModule, RowAutoHeightModule, ColumnApiModule, RowApiModule, CellApiModule, ScrollApiModule, RenderApiModule,
   EventApiModule, ColumnAutoSizeModule, CellStyleModule, RowStyleModule, TooltipModule, LocaleModule, GridStateModule,
   ColumnMenuModule, SetFilterModule, MasterDetailModule, RowGroupingModule, ColumnsToolPanelModule]
 // Isolated program styling: changes here must never restyle the welding journal.
@@ -95,6 +96,8 @@ type Props<T> = {
   rowAttributes?: (row: T) => Record<string, string | undefined>
   getRowClass?: AgGridReactProps<T>['getRowClass']; onReady?: (api: GridApi<T>) => void
   onFilterRows?: (rows: T[]) => void; children?: ReactNode
+  filtersReady?: boolean
+  pagination?: { page: number; onChange: (page: number) => void; onNavigate: () => void }
 }
 
 /** Presentation adapter for the four program tables. All mutations remain in the existing workspace. */
@@ -104,23 +107,33 @@ export function ProgramGrid<T>(props: Props<T>) {
 
 function Grid<T>(props: Props<T>) {
   const { kind, sessionKey, label, rows, columns, virtual = false } = props
-  // Both levels occupy their complete page extent, with only a bounded AG
-  // viewport rendered. Cell/detail auto-height still measures wrapped content.
-  const pageScroll = kind === 'joints' || kind === 'stamps'
   const { appearance } = useProgramAppearance()
   const [api, setApi] = useState<GridApi<T> | null>(null)
   const [settings, setSettings] = useState(() => readProgramGridSettings(kind))
-  const [groups, setGroups] = useState<{ id: string; label: string }[]>([])
   const session = useProgramGridSession()
   const initialState = useRef<GridState | undefined>((() => {
     const state = session?.get(`grid:${sessionKey}`) as GridState | undefined
     return state && kind !== 'lines' ? { ...state, rowGroup: undefined, rowGroupExpansion: undefined } : state
   })())
+  const [groups, setGroups] = useState(() => (initialState.current?.rowGroup?.groupColIds ?? []).map(id => ({
+    id, label: columns.find(column => (column.colId ?? column.field) === id)?.headerName ?? id,
+  })))
+  // Native pagination counts top-level groups, so one group could otherwise
+  // mount thousands of auto-height rows. Keep groups whole using the existing
+  // bounded document viewport, including their nested line/stamp details.
+  const groupedOverview = kind === 'lines' && groups.length > 0
+  const pageScroll = kind === 'joints' || kind === 'stamps' || groupedOverview
+  const [pageState, setPageState] = useState({ page: 0, total: 0 })
+  const paginated = !!props.pagination && !groupedOverview
+  useEffect(() => {
+    if (api && !api.isDestroyed() && paginated) api.paginationGoToPage(props.pagination!.page)
+  }, [api, paginated, props.pagination?.page])
   const root = useRef<HTMLDivElement>(null)
   const resultMotion = useGridResultMotion(root, { opacity: .9 })
   const rendered = useRef(false)
   const previousRowIds = useRef<string[] | null>(null)
   const [popupParent] = useState(() => typeof document === 'undefined' ? undefined : document.createElement('div'))
+  useLayoutEffect(() => { if (popupParent) popupParent.dataset.filtersReady = String(props.filtersReady !== false) }, [popupParent, props.filtersReady])
   useLayoutEffect(() => {
     if (!popupParent) return
     // One scoped layer also covers native submenus and the column chooser;
@@ -207,6 +220,13 @@ function Grid<T>(props: Props<T>) {
   const postProcessPopup = useStableEventCallback((params: PostProcessPopupParams) => {
     popupColumn.current = params.column?.getColId() ?? null
     programPopup(params)
+    if (params.type === 'columnFilter' && !params.ePopup.querySelector('.program-filter-pending')) {
+      const pending = document.createElement('p')
+      pending.className = 'program-filter-pending'
+      pending.setAttribute('role', 'status')
+      pending.textContent = 'Рассчитываем значения по всем линиям…'
+      params.ePopup.prepend(pending)
+    }
   })
   useEffect(() => {
     if (!popupParent || !api) return
@@ -274,6 +294,12 @@ function Grid<T>(props: Props<T>) {
     {groups.length ? <div className="program-grid-groups" aria-label="Группировка таблицы"><Layers size={14} />{groups.map(group => <button key={group.id} type="button" aria-label={`Убрать группировку ${group.label}`} onClick={() => api?.removeRowGroupColumns([group.id])}>{group.label}<X size={12} /></button>)}</div> : null}
     <div className="program-grid-frame">
       <AgGridReact<T> theme={(kind === 'lines' ? OVERVIEW_THEMES : THEMES)[appearance.theme]} localeText={LOCALE} rowData={rows} columnDefs={columns} defaultColDef={kind === 'lines' ? DEFAULT_COLUMN : UNGROUPED_COLUMN}
+        pagination={paginated} paginationPageSize={30} paginationPageSizeSelector={false} suppressPaginationPanel
+        onPaginationChanged={({ api: grid }) => {
+          if (!current.current.pagination || !grid.getGridOption('pagination')) return
+          const page = grid.paginationGetCurrentPage(), total = grid.paginationGetRowCount()
+          setPageState(previous => previous.page === page && previous.total === total ? previous : { page, total })
+        }}
         groupDisplayType="groupRows" groupRowRendererParams={GROUP_ROW} isGroupOpenByDefault={initiallyOpenGroup}
         initialState={initialState.current} getRowId={rowId} domLayout={virtual || pageScroll ? 'normal' : 'autoHeight'}
         rowHeight={rowHeight} getRowHeight={kind === 'lines' || props.detailRenderer ? getRowHeight : undefined} headerHeight={36} rowBuffer={5} animateRows={false} suppressScrollOnNewData ensureDomOrder={false} suppressRowTransform
@@ -297,6 +323,11 @@ function Grid<T>(props: Props<T>) {
         }}
         onColumnRowGroupChanged={({ api: grid }) => {
           setGroups(grid.getRowGroupColumns().map(column => ({ id: column.getColId(), label: column.getColDef().headerName ?? column.getColId() })))
+          updateModel(grid)
+          if (!restoring.current && current.current.pagination) {
+            grid.paginationGoToFirstPage()
+            current.current.pagination.onChange(0)
+          }
           if (rendered.current && !restoring.current) resultMotion.reveal()
         }}
         onRowGroupOpened={({ node }) => { if (node.group && rendered.current) resultMotion.reveal() }}
@@ -306,12 +337,17 @@ function Grid<T>(props: Props<T>) {
         onColumnMoved={event => { if (event.finished) save(event.api) }}
         onFirstDataRendered={({ api: grid }) => { synchronizeExpansion(grid); updateRows(grid); rendered.current = true }}
         onRowDataUpdated={({ api: grid }) => { if (!grid.isDestroyed()) updateRows(grid) }}
-        onFilterChanged={({ api: grid }) => { updateModel(grid); if (rendered.current && !restoring.current) resultMotion.reveal() }}
-        onSortChanged={({ api: grid }) => { updateModel(grid); if (rendered.current && !restoring.current) resultMotion.reveal() }}
+        onFilterChanged={({ api: grid, afterDataChange }) => { updateModel(grid); if (current.current.pagination && !afterDataChange) { grid.paginationGoToFirstPage(); current.current.pagination.onChange(0) }; if (rendered.current && !restoring.current) resultMotion.reveal() }}
+        onSortChanged={({ api: grid }) => { updateModel(grid); if (current.current.pagination) { grid.paginationGoToFirstPage(); current.current.pagination.onChange(0) }; if (rendered.current && !restoring.current) resultMotion.reveal() }}
         onRowClicked={({ data, node, event }) => { if (data && !node.group && !node.detail && event && isProgramRowClick(event.target)) current.current.onRowClick?.(data) }}
         processRowPostCreate={({ node, eRow, api: grid }) => decorate(eRow, node, grid)}
       />
     </div>
+    {paginated ? <ProgramPagination page={pageState.page} total={pageState.total} pageSize={30} noun="линий" onChange={page => {
+      api?.paginationGoToPage(page)
+      props.pagination!.onChange(page)
+      props.pagination!.onNavigate()
+    }} /> : null}
     {detailMotion.portals}
   </div>
 }

@@ -1,0 +1,3 @@
+ALTER TABLE "line_scheme_annotations" ADD COLUMN "text_width" numeric(8, 3);--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD COLUMN "text_height" numeric(8, 3);--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD CONSTRAINT "line_scheme_annotations_text_box_check" CHECK (("line_scheme_annotations"."text_width" is null and "line_scheme_annotations"."text_height" is null) or ("line_scheme_annotations"."shape" = 'text' and "line_scheme_annotations"."text_width" is not null and "line_scheme_annotations"."text_height" is not null and "line_scheme_annotations"."text_width" between 24 and 10000 and "line_scheme_annotations"."text_height" between 24 and 10000));

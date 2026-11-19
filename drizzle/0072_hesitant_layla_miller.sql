@@ -1,0 +1,3 @@
+ALTER TABLE "line_scheme_annotations" ADD COLUMN "leader_x" numeric(12, 9);--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD COLUMN "leader_y" numeric(12, 9);--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD CONSTRAINT "line_scheme_annotations_leader_check" CHECK (("line_scheme_annotations"."leader_x" is null and "line_scheme_annotations"."leader_y" is null) or ("line_scheme_annotations"."shape" = 'text' and "line_scheme_annotations"."leader_x" is not null and "line_scheme_annotations"."leader_y" is not null and "line_scheme_annotations"."leader_x" between 0 and 1 and "line_scheme_annotations"."leader_y" between 0 and 1));

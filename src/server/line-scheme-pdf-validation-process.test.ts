@@ -12,7 +12,7 @@ vi.mock('./line-scheme-pdf-worker.mjs', () => ({ get pdfValidationWorkerUrl() { 
 // its unrelated memory probe independent of a test runner's ps permissions.
 vi.mock('node:child_process', async original => ({
   ...await original<typeof import('node:child_process')>(),
-  execFile: (_path: unknown, _args: unknown, _options: unknown, callback: (error: null, value: string) => void) => callback(null, '65536'),
+  execFile: (_path: unknown, _args: unknown, _options: unknown, callback: (error: null, value: string) => void) => callback(null, '65536 R\n'),
 }))
 vi.mock('node:fs/promises', async original => {
   const fs = await original<typeof import('node:fs/promises')>()

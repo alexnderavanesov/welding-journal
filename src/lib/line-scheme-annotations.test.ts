@@ -4,6 +4,25 @@ const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')
 const a: SchemeAnnotation = { id: id(1), page: 1, x: .2, y: .3, shape: 'triangle', label: 'Опора', color: '#475569', size: 24, strokeWidth: 2, rotation: 90 }
 const validate = (item: SchemeAnnotation) => validateSchemeChanges({ upsert: [], remove: [], annotations: { upsert: [item], remove: [] } }, 2)
 describe('scheme annotations', () => {
+  it('accepts multiline text without making it a dimension endpoint', () => {
+    const text: SchemeAnnotation = { ...a, shape: 'text', label: 'Проверить\nПосле монтажа <b>текст</b>' }
+    expect(() => validate(text)).not.toThrow()
+    expect(() => validate({ ...text, label: 'я'.repeat(1000) })).not.toThrow()
+    for (const label of ['', ' \n ', 'я'.repeat(1001), 'a\0b']) expect(() => validate({ ...text, label })).toThrow()
+    expect(schemeAnchors([], [text, { ...a, id: id(2) }]).map(anchor => anchor.id)).toEqual([id(2)])
+  })
+  it('accepts only complete, finite text leader coordinates on the same sheet', () => {
+    const text = { ...a, shape: 'text' as const }
+    for (const leader of [{}, { leaderX: null, leaderY: null }, { leaderX: 0, leaderY: 1 }, { leaderX: .2, leaderY: .4 }]) expect(() => validate({ ...text, ...leader })).not.toThrow()
+    for (const leader of [{ leaderX: .2 }, { leaderY: .4 }, { leaderX: NaN, leaderY: .4 }, { leaderX: .2, leaderY: Infinity }, { leaderX: -.01, leaderY: .4 }, { leaderX: .2, leaderY: 1.01 }, { leaderX: '0.2', leaderY: .4 }]) expect(() => validate({ ...text, ...leader } as SchemeAnnotation)).toThrow(/Выноска/)
+    expect(() => validate({ ...a, leaderX: .2, leaderY: .4 })).toThrow(/Выноска/)
+  })
+  it('validates paired dimensions only for text, retaining automatic sizing for old notes', () => {
+    const text = { ...a, shape: 'text' as const }
+    for (const box of [{}, { textWidth: null, textHeight: null }, { textWidth: 24, textHeight: 24 }, { textWidth: 10000, textHeight: 10000 }, { textWidth: 176.125, textHeight: 42.5 }]) expect(() => validate({ ...text, ...box })).not.toThrow()
+    for (const box of [{ textWidth: 120 }, { textHeight: 40 }, { textWidth: 23, textHeight: 40 }, { textWidth: 120, textHeight: 10001 }, { textWidth: NaN, textHeight: 40 }, { textWidth: 120, textHeight: Infinity }, { textWidth: '120', textHeight: 40 }]) expect(() => validate({ ...text, ...box } as SchemeAnnotation)).toThrow(/текстового блока/)
+    expect(() => validate({ ...a, textWidth: 120, textHeight: 40 })).toThrow(/текстового блока/)
+  })
   it('validates shape, label, position and bounded rendering styles', () => {
     expect(() => validate(a)).not.toThrow()
     for (const patch of [{ page: 3 }, { x: Infinity }, { y: -1 }, { label: '' }, { label: 'x'.repeat(121) }, { label: 'a\nb' }, { color: 'url(test)' }, { shape: 'polygon' }, { size: 10000 }, { rotation: NaN }, { rotation: 360 }, { strokeWidth: -1 }]) expect(() => validate({ ...a, ...patch } as SchemeAnnotation)).toThrow()

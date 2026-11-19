@@ -15,6 +15,7 @@ import type { DimensionEditing } from './line-scheme-dimension-input'
 import { LineSchemeDimensionPanel } from './line-scheme-dimension-panel'
 import { schemeError, type SchemeSession } from '@/lib/use-line-scheme-session'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
+import { SCHEME_TEXT_RESIZE_CANCEL } from '@/lib/use-line-scheme-text-resize'
 import { useAccess } from '@/lib/security-context'
 import { useContainedDialogFocus } from '@/lib/use-contained-dialog-focus'
 import { hasVisibleEscapePopup, isTopModalDialog } from '@/lib/modal-layer'
@@ -40,13 +41,15 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   const [dimensionDraft, setDimensionDraft] = useState<Map<string, SchemeDimension>>(new Map()), [removedDimensions, setRemovedDimensions] = useState<Set<string>>(new Set())
   const [measuring, setMeasuring] = useState(false), [measureFrom, setMeasureFrom] = useState<string | null>(null)
   const [dimensionEditor, setDimensionEditor] = useState<SchemeDimension | null>(null)
-  const [dimensionInputDirty, setDimensionInputDirty] = useState(false), [sideTab, setSideTab] = useState<'joints' | 'dimensions' | 'annotations'>('joints')
+  const [dimensionInputDirty, setDimensionInputDirty] = useState(false), [sideTab, setSideTab] = useState<'joints' | 'dimensions' | 'annotations' | 'text'>('joints')
   const [dimensionSurface, setDimensionSurface] = useState<'list' | 'drawing'>('list')
   const dimensionBuffer = useRef<{ id: string; value: string } | null>(null)
   const [annotationDraft, setAnnotationDraft] = useState<Map<string, SchemeAnnotation>>(new Map()), [removedAnnotations, setRemovedAnnotations] = useState<Set<string>>(new Set())
   const [selectedAnnotationIds, setSelectedAnnotationIds] = useState<Set<string>>(new Set()), [annotationEditor, setAnnotationEditor] = useState<SchemeAnnotation | null>(null)
   const [annotationInputDirty, setAnnotationInputDirty] = useState(false), [addingAnnotation, setAddingAnnotation] = useState(false)
   const [placingAnnotation, setPlacingAnnotation] = useState<SchemeAnnotation | null>(null), [annotationsVisible, setAnnotationsVisible] = useState(true)
+  const [textsVisible, setTextsVisible] = useState(true)
+  const [placingLeaderId, setPlacingLeaderId] = useState<string | null>(null)
   const [dimensionsVisible, setDimensionsVisible] = useState(true), [dimensionFocus, setDimensionFocus] = useState<{ id: string; sequence: number } | null>(null)
   const [selectedJoint, setSelectedJoint] = useState<SchemeJoint | null>(null), [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(new Set())
   const [focusPoint, setFocusPoint] = useState<{ rootId: number; physicalId: number | null; sequence: number } | null>(null)
@@ -61,7 +64,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   const alive = useRef(true), bundleRef = useRef(bundle); bundleRef.current = bundle
   const changeCount = draft.size + removed.size + dimensionDraft.size + removedDimensions.size + annotationDraft.size + removedAnnotations.size
   const inputDirty = dimensionInputDirty || annotationInputDirty
-  const dirty = changeCount > 0 || inputDirty, revision = bundle?.revisions.find(item => item.id === revisionId)
+  const dirty = changeCount > 0 || inputDirty || !!placingAnnotation, revision = bundle?.revisions.find(item => item.id === revisionId)
   const current = !!revision && revisionId === bundle?.activeRevisionId
   const editable = current && !bundle?.deleted && lease.owned && can('schemes.edit') && !busy && !retry
   const search = useDebouncedValue(text, 250)
@@ -98,6 +101,9 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
     for (const a of annotationDraft.values()) { result.delete(a.id); if (a.page === page) result.set(a.id, a) }
     return [...result.values()]
   }, [pointsQuery.data, annotationDraft, removedAnnotations, page])
+  const symbolAnnotations = useMemo(() => visibleAnnotations.filter(a => a.shape !== 'text'), [visibleAnnotations])
+  const textAnnotations = useMemo(() => visibleAnnotations.filter(a => a.shape === 'text'), [visibleAnnotations])
+  const drawingAnnotations = useMemo(() => visibleAnnotations.filter(a => a.shape === 'text' ? textsVisible : annotationsVisible), [visibleAnnotations, textsVisible, annotationsVisible])
   const anchors = useMemo(() => schemeAnchors(visiblePoints, visibleAnnotations), [visiblePoints, visibleAnnotations])
   const visibleDimensions = useMemo(() => {
     const result = new Map((pointsQuery.data?.dimensions ?? []).filter(item => !removedDimensions.has(item.id)).map(item => [item.id, item]))
@@ -109,7 +115,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   const selectedAnnotations = visibleAnnotations.filter(a => selectedAnnotationIds.has(a.id))
   const selectedPoints = visiblePoints.filter(point => selectedPointIds.has(point.id))
   const selectedAnchors = anchors.filter(a => a.kind === 'point' ? selectedPointIds.has(a.id) : selectedAnnotationIds.has(a.id))
-  const selectedCount = selectedAnchors.length
+  const selectedCount = selectedPoints.length + selectedAnnotations.length
   const selection = selectedPoints.length === 1 ? selectedPoints[0] : null
   function setSelectedPoint(point: SchemePoint | null) { setSelectedPointIds(new Set(point ? [point.id] : [])) }
   useEffect(() => {
@@ -190,14 +196,16 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   // Escape always asks, including a clean/view-only drawing. Nested layers
   // consume their own Escape before the drawing receives it.
   const focus = useContainedDialogFocus(() => {
+    const resizingText = focus.current?.querySelector('[data-scheme-text-resizing]')
+    if (resizingText) { resizingText.dispatchEvent(new Event(SCHEME_TEXT_RESIZE_CANCEL)); return }
     const searchPanel = document.activeElement?.closest('[data-scheme-panel-search="open"]')
     if (searchPanel) { searchPanel.dispatchEvent(new Event(SCHEME_SEARCH_CLOSE)); return }
-    if (annotationEditor || placingAnnotation) { cancelAnnotation(); return }
+    if (annotationEditor || placingAnnotation || placingLeaderId) { cancelAnnotation(); return }
     if (dimensionEditor) { cancelDimension(); return }
     if (measuring) { cancelDimension(); return }
     setClosePrompt(true)
   }, !!busy)
-  function clearSelection() { if (!annotationInputDirty) { setSelectedAnnotationIds(new Set()); setAnnotationEditor(null); setPlacingAnnotation(null) }; setSelectedJoint(null); setSelectedPoint(null); setFocusPoint(null); setMeasureFrom(null); setNotice(''); setPointMenu(null); setObjectMenu(null) }
+  function clearSelection() { setPlacingLeaderId(null); if (!annotationInputDirty) { setSelectedAnnotationIds(new Set()); setAnnotationEditor(null); setPlacingAnnotation(null) }; setSelectedJoint(null); setSelectedPoint(null); setFocusPoint(null); setMeasureFrom(null); setNotice(''); setPointMenu(null); setObjectMenu(null) }
   function cancelDimension() { dimensionBuffer.current = null; setDimensionEditor(null); setDimensionInputDirty(false); setMeasuring(false); clearSelection() }
   function discard() { setAnnotationDraft(new Map()); setRemovedAnnotations(new Set()); cancelAnnotation(); dimensionBuffer.current = null; setDimensionInputDirty(false); setDraft(new Map()); setRemoved(new Set()); setRemovedJoints(new Map()); setDimensionDraft(new Map()); setRemovedDimensions(new Set()); setMeasuring(false); setDimensionEditor(null); clearSelection(); setRetry(null); setError('') }
   function writeRequest() {
@@ -205,7 +213,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
     return { bundleId: bundle.id, token, version: bundle.version, operationId: crypto.randomUUID() }
   }
   async function save(closeAfter = false) {
-    if (!bundle || !revision || !dirty || !lease.owned || inputDirty) return
+    if (!bundle || !revision || !dirty || !lease.owned || inputDirty || placingAnnotation) return
     const data = { ...writeRequest(), revisionId: revision.id, revisionVersion: revision.version, changes: { upsert: [...draft.values()].map(item => item.change), remove: [...removed],
       ...(annotationDraft.size || removedAnnotations.size ? { annotations: { upsert: [...annotationDraft.values()], remove: [...removedAnnotations] } } : {}),
       ...(dimensionDraft.size || removedDimensions.size ? { dimensions: { upsert: [...dimensionDraft.values()], remove: [...removedDimensions] } } : {}) } }
@@ -273,8 +281,17 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
     setDraft(previous => { const next = new Map(previous), old = previous.get(point.id); next.set(point.id, { added: old?.added ?? false, point: { ...point, x, y }, change: { ...(old?.change ?? { id: point.id, page: point.page }), x, y } }); return next })
   }, [])
   const addPoint = (x: number, y: number, rotation: number) => {
+    if (placingLeaderId) {
+      if (!editable || pointsQuery.isFetching || pointsQuery.error) return
+      const item = visibleAnnotations.find(a => a.id === placingLeaderId && a.shape === 'text')
+      if (item) { const next = { ...item, leaderX: x, leaderY: y }; moveAnnotation(next); setAnnotationEditor(next); setNotice('Выноска добавлена. Нажмите «Сохранить».') }
+      setPlacingLeaderId(null); return
+    }
     if (placingAnnotation && editable && !pointsQuery.isFetching && !pointsQuery.error) {
-      const item = { ...placingAnnotation, x, y, page, rotation: (placingAnnotation.rotation - rotation + 360) % 360 }; setAnnotationDraft(previous => new Map(previous).set(item.id, item)); setPlacingAnnotation(null); setSelectedAnnotationIds(new Set([item.id])); setNotice('Обозначение добавлено. Нажмите «Сохранить».'); return
+      if (placingAnnotation.shape === 'text' && placingAnnotation.leaderX == null) {
+        setPlacingAnnotation({ ...placingAnnotation, leaderX: x, leaderY: y }); setNotice('Теперь укажите место текста на чертеже. Esc — отменить размещение.'); return
+      }
+      const item = { ...placingAnnotation, x, y, page, rotation: placingAnnotation.shape === 'text' ? placingAnnotation.rotation : (placingAnnotation.rotation - rotation + 360) % 360 }; setAnnotationDraft(previous => new Map(previous).set(item.id, item)); setPlacingAnnotation(null); setSelectedAnnotationIds(new Set([item.id])); setNotice(item.shape === 'text' ? 'Текст со стрелкой добавлен. Нажмите «Сохранить».' : 'Обозначение добавлено. Нажмите «Сохранить».'); return
     }
     if (!selectedJoint || !editable || !pointsQuery.data || pointsQuery.isFetching || pointsQuery.error) return
     const id = crypto.randomUUID(), joint = selectedJoint
@@ -295,6 +312,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
     setNotice(points.length === 1 ? 'Точка убрана со схемы. Нажмите «Сохранить».' : `Убрано точек: ${points.length}. Нажмите «Сохранить».`)
   }
   function jointClick(joint: SchemeJoint, additive = false) {
+    if (blockPendingPlacement()) return
     if (annotationInputDirty) { setNotice('Сначала примените или отмените оформление обозначения.'); return }
     cancelAnnotation(additive && !measuring);
     if (dimensionInputDirty && placement(joint).page && placement(joint).page !== page) { setNotice('Сначала примените или отмените введённый размер.'); return }
@@ -332,6 +350,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   }
   useEffect(() => { cancelAnnotation(); dimensionBuffer.current = null; setPointMenu(null); setObjectMenu(null); setMeasuring(false); setMeasureFrom(null); setDimensionEditor(null); setDimensionInputDirty(false); setDimensionFocus(null) }, [page, revisionId])
   function selectPoint(point: SchemePoint, additive = false) {
+    if (blockPendingPlacement()) return
     if (annotationInputDirty) { setNotice('Сначала примените или отмените оформление обозначения.'); return }
     cancelAnnotation(additive && !measuring)
     if (additive && !measuring) setSelectedPointIds(previous => { const next = new Set(previous); if (next.has(point.id)) next.delete(point.id); else next.add(point.id); return next })
@@ -353,14 +372,28 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
     if (!measureFrom) { setMeasureFrom(key); return }
     startDimension(measureFrom, key)
   }
-  function cancelAnnotation(keepSelection = false) { setAnnotationEditor(null); setAnnotationInputDirty(false); setPlacingAnnotation(null); setAddingAnnotation(false); if (keepSelection !== true) setSelectedAnnotationIds(new Set()) }
+  function cancelAnnotation(keepSelection = false) { setPlacingLeaderId(null); setNotice(''); setAnnotationEditor(null); setAnnotationInputDirty(false); setPlacingAnnotation(null); setAddingAnnotation(false); if (keepSelection !== true) setSelectedAnnotationIds(new Set()) }
+  function blockPendingPlacement() {
+    if (!placingAnnotation && !placingLeaderId) return false
+    setNotice('Завершите размещение или нажмите Esc.'); return true
+  }
   function selectAnnotation(item: SchemeAnnotation, additive = false) {
+    if (blockPendingPlacement()) return
+    if (measuring && item.shape === 'text') { setNotice('Текстовое примечание не является точкой размера.'); return }
     if (inputDirty) { setNotice('Сначала примените или отмените введённые изменения.'); return }
     setSelectedJoint(null); if (!additive || measuring) setSelectedPoint(null); setFocusPoint(null); setSelectedAnnotationIds(previous => selectSchemeItems(previous, item.id, additive && !measuring)); setNotice('')
     if (measuring) { selectMeasureAnchor(`a:${item.id}`); return }
-    setSideTab('annotations'); setAddingAnnotation(false); setPlacingAnnotation(null); setAnnotationEditor(additive ? null : item)
+    setPlacingLeaderId(null); setSideTab(item.shape === 'text' ? 'text' : 'annotations'); setAddingAnnotation(false); setPlacingAnnotation(null); setAnnotationEditor(additive ? null : item)
   }
   const moveAnnotation = useCallback((item: SchemeAnnotation) => { setAnnotationDraft(previous => new Map(previous).set(item.id, item)) }, [])
+  function placeLeader(item: SchemeAnnotation) {
+    if (!dimensionEditing.editable || item.shape !== 'text') return
+    const position = visibleAnnotations.find(a => a.id === item.id)
+    if (!position) return
+    moveAnnotation({ ...item, x: position.x, y: position.y, textWidth: position.textWidth, textHeight: position.textHeight })
+    cancelDimension(); cancelAnnotation(); setSelectedAnnotationIds(new Set([item.id])); setTextsVisible(true); setPlacingLeaderId(item.id)
+    setNotice('Укажите место, к которому относится примечание. Esc — отменить выбор места.')
+  }
   function removeAnnotations(items: SchemeAnnotation[]) {
     if (!editable || pointsQuery.isFetching || pointsQuery.error || !items.length) return
     const ids = new Set(items.map(a => a.id)), keys = new Set(items.map(a => `a:${a.id}`))
@@ -374,6 +407,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   }
   const moveDimension = useCallback((item: SchemeDimension) => { if (item.distanceMm <= 0) { setDimensionEditor(item); return }; setDimensionDraft(previous => new Map(previous).set(item.id, item)) }, [])
   function editDimension(item: SchemeDimension, surface: 'list' | 'drawing' = 'list') {
+    if (blockPendingPlacement()) return
     if (annotationInputDirty) { setNotice('Сначала примените или отмените оформление обозначения.'); return }
     if (dimensionInputDirty && dimensionEditor?.id !== item.id) { setNotice('Сначала примените или отмените введённый размер.'); return }
     clearSelection(); cancelAnnotation(); setMeasuring(false); setSideTab('dimensions'); setDimensionsVisible(true); setAnnotationsVisible(true); setDimensionSurface(surface)
@@ -392,11 +426,12 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   }
   const dimensionEditing: DimensionEditing = { item: dimensionEditor, surface: dimensionSurface, editable: editable && !pointsQuery.isFetching && !pointsQuery.error, buffer: dimensionBuffer, onApply: applyDimension, onCancel: cancelDimension, onDirty: setDimensionInputDirty }
   const openObjectMenu: SchemeObjectMenuHandler = (kind, id, event) => {
+    if (blockPendingPlacement()) return
     setPointMenu(null)
     if (!inputDirty) {
       setMeasuring(false); setMeasureFrom(null); setSelectedJoint(null); setFocusPoint(null)
       setAnnotationEditor(null); setPlacingAnnotation(null)
-      if (kind === 'annotation') { if (!selectedAnnotationIds.has(id)) { setSelectedAnnotationIds(new Set([id])); setSelectedPoint(null) }; setSideTab('annotations') }
+      if (kind === 'annotation') { if (!selectedAnnotationIds.has(id)) { setSelectedAnnotationIds(new Set([id])); setSelectedPoint(null) }; setSideTab(visibleAnnotations.find(a => a.id === id)?.shape === 'text' ? 'text' : 'annotations') }
       else { setSelectedAnnotationIds(new Set()); setSelectedPoint(null) }
     }
     const anchorElement = event.currentTarget, rect = anchorElement.getBoundingClientRect()
@@ -405,14 +440,14 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   const menuAnnotation = objectMenu?.kind === 'annotation' ? visibleAnnotations.find(a => a.id === objectMenu.id) : undefined
   const menuDimension = objectMenu?.kind === 'dimension' ? displayedDimensions.find(d => d.id === objectMenu.id) : undefined
   const menuAnnotations = menuAnnotation ? selectedAnnotationIds.has(menuAnnotation.id) ? selectedAnnotations : [menuAnnotation] : []
-  const objectWriteDisabled = !dimensionEditing.editable || inputDirty
+  const objectWriteDisabled = !dimensionEditing.editable || inputDirty || !!placingAnnotation || !!placingLeaderId
   function removeSelection() {
     if (objectWriteDisabled) return
     removePoints(selectedPoints); removeAnnotations(selectedAnnotations)
     setNotice(`Убрано объектов: ${selectedCount}, вместе со связанными размерами. Нажмите «Сохранить».`)
   }
   const groupMenuItems = [
-    ...(selectedCount === 2 ? [{ id: 'dimension', label: 'Задать размер', icon: Ruler, disabled: objectWriteDisabled, onSelect: () => startDimension(selectedAnchors[0].key, selectedAnchors[1].key) }] : []),
+    ...(selectedCount === 2 && selectedAnchors.length === 2 ? [{ id: 'dimension', label: 'Задать размер', icon: Ruler, disabled: objectWriteDisabled, onSelect: () => startDimension(selectedAnchors[0].key, selectedAnchors[1].key) }] : []),
     { id: 'remove-group', label: `Убрать выбранные объекты (${selectedCount})`, icon: Trash2, danger: true, disabled: objectWriteDisabled, onSelect: removeSelection },
   ]
   const objectMenuItems = menuAnnotation && selectedCount > 1 ? groupMenuItems : menuAnnotation ? [
@@ -432,7 +467,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   const accessText = opening ? 'Открываем схему…' : bundle?.deleted ? 'Линия удалена · только просмотр' : revision && !current ? 'Архив · только просмотр' : lease.owned && can('schemes.edit') ? 'Редактирование доступно' : !lease.owned && lease.name ? `Редактирует: ${lease.name} · только просмотр` : 'Только просмотр'
   const feedback = error || busy || notice || (measuring ? measureFrom ? 'Размер: выберите второй стык или обозначение' : 'Размер: выберите первый стык или обозначение' : selectedCount > 1 ? `Выбрано объектов: ${selectedCount} · Delete — убрать` : selectedJoint ? `Размещение: ${selectedJoint.label} · укажите место на чертеже` : selectedPoints.length > 1 ? `Выбрано точек: ${selectedPoints.length} · Delete — убрать со схемы` : selection ? `Выбран стык ${selection.joint.label}` : '')
   return <LargeDialogShell ariaLabel={`Схема линии ${line.line}`} maxWidthClassName="max-w-none" maxHeightClassName="max-h-none" panelClassName="line-scheme-shell" overlayClassName="z-[60] bg-slate-950/30">
-    <LineSchemeNavigationGuard dirty={dirty || !!placingAnnotation} busy={!!busy} uncertain={!!retry} onBlocked={setError} />
+    <LineSchemeNavigationGuard dirty={dirty || !!placingAnnotation || !!placingLeaderId} busy={!!busy} uncertain={!!retry} onBlocked={setError} />
     <div ref={focus} className="line-scheme-dialog" onKeyDownCapture={event => {
       if (!['Delete', 'Backspace'].includes(event.key) || event.defaultPrevented) return
       const target = event.target
@@ -460,7 +495,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
           <div className="line-scheme-action-buttons">
           <Button variant="ghost" size="icon" aria-label="Обновить состояния" title={pointsQuery.data?.updatedAt ? `Обновить состояния · Данные на ${new Date(pointsQuery.data.updatedAt).toLocaleTimeString('ru-RU')}` : 'Обновить состояния'} disabled={pointsQuery.isFetching || listQuery.isFetching || updatingDraft || !!busy} onClick={refreshStates}><RefreshCw size={16} /></Button>
           <Button variant="outline" size="sm" disabled={dirty || !!busy || !!retry} title={dirty ? 'Сначала сохраните или отмените изменения разметки' : undefined} onClick={onManageFiles}><Archive size={15} /> Файлы и архив{bundle?.revisions.length ? ` (${bundle.revisions.length})` : ''}</Button>
-          <Button variant="outline" size="sm" disabled={!dirty || !editable || inputDirty} title={inputDirty ? 'Сначала примените или отмените ввод' : undefined} onClick={() => void save()}><Save size={15} /> Сохранить{dirty ? ` (${changeCount + (inputDirty ? 1 : 0)})` : ''}</Button>
+          <Button variant="outline" size="sm" disabled={!dirty || !editable || inputDirty || !!placingAnnotation} title={placingAnnotation ? 'Завершите размещение или нажмите Esc' : inputDirty ? 'Сначала примените или отмените ввод' : undefined} onClick={() => void save()}><Save size={15} /> Сохранить{dirty ? ` (${changeCount + (inputDirty || placingAnnotation ? 1 : 0)})` : ''}</Button>
           <Button variant="ghost" size="icon" aria-label="Закрыть схему" disabled={!!busy} onClick={close}><X size={18} /></Button>
           </div>
           <div role={error ? 'alert' : 'status'} className={`line-scheme-feedback ${error ? 'is-error' : ''}`}>
@@ -473,19 +508,20 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
         </div>
       </header>
       <div className="line-scheme-workspace">
-        <div className="line-scheme-canvas">{revision ? <Suspense fallback={<div className="p-8 text-slate-500">Загружаем просмотрщик PDF…</div>}><Pdf key={revision.id} revision={revision} page={page} onPage={value => { if (inputDirty) { setNotice('Сначала примените или отмените введённый размер.'); return }; clearSelection(); setPage(value) }} controlsTarget={pdfControls} points={visiblePoints} editable={editable && !inputDirty && !pointsQuery.isFetching && !pointsQuery.error} placing={!!selectedJoint || !!placingAnnotation} focusPoint={focusPoint} selectedIds={selectedPointIds} onPlace={addPoint} onMove={movePoint} onMenu={(point, event) => {
+        <div className="line-scheme-canvas">{revision ? <Suspense fallback={<div className="p-8 text-slate-500">Загружаем просмотрщик PDF…</div>}><Pdf key={revision.id} revision={revision} page={page} onPage={value => { if (placingAnnotation || placingLeaderId) { setNotice('Завершите размещение или нажмите Esc.'); return }; if (inputDirty) { setNotice('Сначала примените или отмените введённый размер.'); return }; clearSelection(); setPage(value) }} controlsTarget={pdfControls} points={visiblePoints} editable={editable && !inputDirty && !pointsQuery.isFetching && !pointsQuery.error} placing={!!selectedJoint || !!placingAnnotation || !!placingLeaderId} placingLeader={!!placingLeaderId || placingAnnotation?.shape === 'text'} focusPoint={focusPoint} selectedIds={selectedPointIds} onPlace={addPoint} onMove={movePoint} onMenu={(point, event) => {
+          if (blockPendingPlacement()) return
           setObjectMenu(null); if (!inputDirty) cancelAnnotation(selectedPointIds.has(point.id)); setMeasuring(false); setMeasureFrom(null); setSelectedJoint(null); setFocusPoint(null)
           if (!inputDirty && !selectedPointIds.has(point.id)) setSelectedPoint(point)
           const anchor = event.currentTarget, rect = anchor.getBoundingClientRect()
           setPointMenu({ id: point.id, x: 'clientX' in event ? event.clientX : rect.left, y: 'clientY' in event ? event.clientY : rect.bottom, anchorElement: anchor })
         }} onSelect={selectPoint} onClear={clearSelection} onOpen={point => inspectJoint(point.joint)}
-          annotations={annotationsVisible ? visibleAnnotations : []} selectedAnnotationIds={selectedAnnotationIds} onObjectMenu={openObjectMenu} onSelectAnnotation={selectAnnotation} onMoveAnnotation={moveAnnotation} dimensionEditing={dimensionEditing}
+          annotations={drawingAnnotations} selectedAnnotationIds={selectedAnnotationIds} onObjectMenu={openObjectMenu} onSelectAnnotation={selectAnnotation} onMoveAnnotation={moveAnnotation} dimensionEditing={dimensionEditing}
           measuring={measuring} dimensions={dimensionsVisible ? displayedDimensions.filter(d => annotationsVisible || !d.fromAnnotationId && !d.toAnnotationId) : []} focusDimension={dimensionFocus} onEditDimension={item => editDimension(item, 'drawing')} onMoveDimension={moveDimension} /></Suspense> : <div className="m-auto max-w-md p-8 text-center text-slate-500">{opening ? 'Загружаем данные…' : can('schemes.edit') ? 'Откройте «Файлы и архив», чтобы загрузить чертёж или выбрать сохранённую редакцию.' : 'Для этой линии PDF ещё не загружен.'}</div>}
           {(pointsQuery.isFetching || pointsQuery.error || updatingDraft) && revision && <div className="line-scheme-load-note" role="status">{pointsQuery.error ? 'Не удалось загрузить точки. Нажмите «Обновить состояния».' : 'Загружаем состояния точек…'}</div>}
         </div>
         <aside className="line-scheme-joints">
-          <div className="flex gap-1 border-b p-2" role="tablist" aria-label="Разметка чертежа">
-            {(['joints', 'dimensions', 'annotations'] as const).map(tab => <button key={tab} id={`scheme-tab-${tab}`} role="tab" aria-selected={sideTab === tab} aria-controls={`scheme-panel-${tab}`} className={`min-w-0 flex-auto whitespace-nowrap rounded-lg px-1 py-2 text-xs font-medium ${sideTab === tab ? 'bg-sky-50 text-sky-800' : 'text-slate-500 hover:bg-slate-50'}`} onClick={() => setSideTab(tab)}>{tab === 'joints' ? 'Стыки' : tab === 'dimensions' ? 'Размеры' : 'Обозначения'} <span className="line-scheme-tab-count ml-1 text-[10px] opacity-60">{tab === 'joints' ? listQuery.data?.pages[0]?.total ?? 0 : tab === 'dimensions' ? visibleDimensions.length : visibleAnnotations.length}</span></button>)}
+          <div className="grid grid-cols-2 gap-1 border-b p-2" role="tablist" aria-label="Разметка чертежа">
+            {(['joints', 'dimensions', 'annotations', 'text'] as const).map(tab => <button key={tab} id={`scheme-tab-${tab}`} role="tab" aria-selected={sideTab === tab} aria-controls={`scheme-panel-${tab}`} className={`min-w-0 flex-auto whitespace-nowrap rounded-lg px-1 py-2 text-xs font-medium ${sideTab === tab ? 'bg-sky-50 text-sky-800' : 'text-slate-500 hover:bg-slate-50'}`} onClick={() => { if ((placingAnnotation || placingLeaderId) && sideTab !== tab) { setNotice('Завершите размещение или нажмите Esc.'); return }; if (inputDirty && sideTab !== tab) { setNotice('Сначала примените или отмените введённые изменения.'); return }; setSideTab(tab) }}>{tab === 'joints' ? 'Стыки' : tab === 'dimensions' ? 'Размеры' : tab === 'text' ? 'Текст' : 'Обозначения'} <span className="line-scheme-tab-count ml-1 text-[10px] opacity-60">{tab === 'joints' ? listQuery.data?.pages[0]?.total ?? 0 : tab === 'dimensions' ? visibleDimensions.length : tab === 'text' ? textAnnotations.length : symbolAnnotations.length}</span></button>)}
           </div>
           <div id="scheme-panel-joints" role="tabpanel" aria-labelledby="scheme-tab-joints" className="min-h-0 flex-1 flex-col" style={{ display: sideTab === 'joints' ? 'flex' : 'none' }}>
             <div className="space-y-3 border-b p-3"><LineSchemePanelSearch label="Поиск стыков схемы" placeholder="Номер стыка" value={text} onChange={setText} summary={`Лист ${page} · Стыков: ${listQuery.data?.pages[0]?.total ?? 0}`} /><label className="flex items-center gap-2 text-xs"><Checkbox checked={unplaced} onChange={event => setUnplaced(event.target.checked)} /> Только не размещённые</label><p className="text-[11px] text-slate-400">Ctrl / ⌘ + клик — выбрать несколько точек</p></div>
@@ -496,14 +532,17 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
               visible={dimensionsVisible} onVisible={value => { if (dimensionInputDirty) { setNotice('Сначала примените или отмените введённый размер.'); return }; setDimensionsVisible(value) }} editing={dimensionEditing}
               onEdit={editDimension} onAdd={() => { if (annotationInputDirty) { setNotice('Сначала примените или отмените оформление.'); return }; cancelAnnotation(); clearSelection(); setDimensionsVisible(true); setAnnotationsVisible(true); setMeasuring(value => !value) }} onCancel={cancelDimension} onRemove={removeDimension} onMenu={openObjectMenu} />
           </div>
-          <div id="scheme-panel-annotations" role="tabpanel" aria-labelledby="scheme-tab-annotations" data-scheme-annotation-panel className="min-h-0 flex-1 flex-col" style={{ display: sideTab === 'annotations' ? 'flex' : 'none' }}>
-            <LineSchemeAnnotationPanel items={visibleAnnotations} selected={selectedAnnotationIds} selectionCount={selectedCount} editor={annotationEditor} adding={addingAnnotation} placing={!!placingAnnotation} page={page} editable={dimensionEditing.editable}
-              visible={annotationsVisible} onVisible={value => { if (inputDirty) { setNotice('Сначала примените или отмените ввод.'); return }; setAnnotationsVisible(value) }} onCancel={cancelAnnotation} onDirty={setAnnotationInputDirty}
-              onSelect={selectAnnotation} onRemove={item => removeAnnotations([item])} onRemoveSelected={removeSelection} onMenu={openObjectMenu} onAdd={() => {
-                if (inputDirty) { setNotice('Сначала примените или отмените ввод.'); return }; cancelDimension(); clearSelection(); setAnnotationsVisible(true); setAddingAnnotation(true)
-                setAnnotationEditor({ id: crypto.randomUUID(), page, x: .5, y: .5, shape: 'triangle', label: '', color: '#111827', size: 24, strokeWidth: 2, rotation: 0 })
-              }} onApply={item => { if (!dimensionEditing.editable) return; setAnnotationInputDirty(false); setAnnotationEditor(null); if (addingAnnotation) { setPlacingAnnotation(item); setNotice('Укажите место обозначения на чертеже.'); } else { const position = visibleAnnotations.find(a => a.id === item.id); moveAnnotation({ ...item, ...(position ? { x: position.x, y: position.y } : {}) }); setNotice('Оформление изменено. Нажмите «Сохранить».'); } }} />
-          </div>
+          {(['annotations', 'text'] as const).map(tab => {
+            const text = tab === 'text'
+            return <div key={tab} id={`scheme-panel-${tab}`} role="tabpanel" aria-labelledby={`scheme-tab-${tab}`} data-scheme-annotation-panel className="min-h-0 flex-1 flex-col" style={{ display: sideTab === tab ? 'flex' : 'none' }}>
+              <LineSchemeAnnotationPanel kind={text ? 'text' : 'symbol'} items={text ? textAnnotations : symbolAnnotations} selected={selectedAnnotationIds} selectionCount={sideTab === tab ? selectedCount : 0} editor={annotationEditor && (annotationEditor.shape === 'text') === text ? annotationEditor : null} adding={addingAnnotation} placing={placingAnnotation && (placingAnnotation.shape === 'text') === text ? text ? placingAnnotation.leaderX == null ? '1. Укажите, куда направить стрелку.' : '2. Укажите место текста.' : 'Укажите место на чертеже.' : text && placingLeaderId ? 'Укажите, куда направить стрелку.' : null} page={page} editable={dimensionEditing.editable}
+                visible={text ? textsVisible : annotationsVisible} onVisible={value => { if (inputDirty) { setNotice('Сначала примените или отмените ввод.'); return }; if (!value && text) setPlacingLeaderId(null); (text ? setTextsVisible : setAnnotationsVisible)(value) }} onCancel={cancelAnnotation} onPlaceLeader={placeLeader} onDirty={setAnnotationInputDirty}
+                onSelect={selectAnnotation} onRemove={item => removeAnnotations([item])} onRemoveSelected={removeSelection} onMenu={openObjectMenu} onAdd={() => {
+                  if (inputDirty) { setNotice('Сначала примените или отмените ввод.'); return }; cancelDimension(); clearSelection(); (text ? setTextsVisible : setAnnotationsVisible)(true); setAddingAnnotation(true)
+                  setAnnotationEditor({ id: crypto.randomUUID(), page, x: .5, y: .5, shape: text ? 'text' : 'triangle', label: '', color: '#111827', size: 24, strokeWidth: 2, rotation: text ? 90 : 0 })
+                }} onApply={item => { if (!dimensionEditing.editable) return; setAnnotationInputDirty(false); setAnnotationEditor(null); if (addingAnnotation) { setPlacingAnnotation(item); setNotice(text ? 'Укажите, куда направить стрелку, затем — место текста. Esc — отменить размещение.' : 'Укажите место обозначения на чертеже.'); } else { const position = visibleAnnotations.find(a => a.id === item.id); moveAnnotation({ ...item, ...(position ? { x: position.x, y: position.y, textWidth: position.textWidth, textHeight: position.textHeight } : {}) }); setNotice('Оформление изменено. Нажмите «Сохранить».'); } }} />
+            </div>
+          })}
         </aside>
       </div>
       <footer className="line-scheme-footer"><div className="line-scheme-legend" aria-label="Легенда состояний">{Object.entries(SCHEME_LEGEND).map(([key, item]) => <span key={key} className="flex items-center gap-1.5 whitespace-nowrap" title={item.label}><span className="line-scheme-dot" style={{ background: item.fill, borderColor: item.stroke }}>{key === 'error' ? '!' : ''}</span>{{ planned: 'Не сварен', waiting: 'Ожидает завершения', good: 'Годен', rejected: 'Ожидает ремонта', repair: 'Ремонт · ожидает НК', inactive: 'Не действует', error: 'Проблема состояния' }[key]}</span>)}</div><div ref={setPdfControls} className="line-scheme-footer-tools" /></footer>
@@ -518,7 +557,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
         ],
       } : objectMenu && objectMenuItems.length ? { ...objectMenu, heading: menuAnnotation ? selectedCount > 1 ? `Выбрано объектов: ${selectedCount}` : menuAnnotation.label : 'Размер', items: objectMenuItems } : null} />
       {discardPrompt && <ConfirmActionDialog title="Отменить изменения разметки?" description="Несохранённые изменения точек, обозначений и размеров будут отменены. Сохранённая разметка останется." confirmLabel="Отменить изменения" tone="warning" onClose={() => setDiscardPrompt(false)} onConfirm={() => { setDiscardPrompt(false); discard(); void reopen(false, true).then(refreshStates).catch(reason => setError(errorMessage(reason))) }} />}
-      {closePrompt && <SchemeClosePrompt dirty={dirty} uncertain={!!retry} canSave={editable && !retry && !inputDirty} onSave={() => { setClosePrompt(false); void save(true) }} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
+      {closePrompt && <SchemeClosePrompt dirty={dirty} uncertain={!!retry} canSave={editable && !retry && !inputDirty && !placingAnnotation} onSave={() => { setClosePrompt(false); void save(true) }} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
     </div>
   </LargeDialogShell>
 }

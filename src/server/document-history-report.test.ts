@@ -12,14 +12,14 @@ import { normalizeDocumentHistoryReportRequest, readDocumentHistoryReport, creat
 const request = (): DocumentHistoryReportRequest => ({ source: { kind: 'generated', types: ['weldingJournal'], columnFilters: {} },
   title: 'Список документов', columns: [{ key: 'title', label: 'Документ' }, { key: 'rowCount', label: 'Стыков' }], search: '', rowGroupCols: [], sortModel: [] })
 const dialect = new PgDialect()
-function source(total: number) {
+function source(total: number, extra: Record<string, unknown> = {}) {
   let offset = 0
   const execute = vi.fn(async query => {
     const text = dialect.sqlToQuery(query).sql
     if (text.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] }
     if (text.startsWith('select transaction_timestamp')) return { rows: [{ time: '2026-11-12T09:00:00Z' }] }
     if (text.startsWith('fetch')) {
-      const rows = Array.from({ length: Math.max(0, Math.min(1000, total - offset)) }, (_, n) => ({ title: `00-${offset + n}`, rowCount: offset + n, __outputTotal: total }))
+      const rows = Array.from({ length: Math.max(0, Math.min(1000, total - offset)) }, (_, n) => ({ title: `00-${offset + n}`, rowCount: offset + n, ...extra, __outputTotal: total }))
       offset += rows.length
       return { rows }
     }
@@ -69,4 +69,34 @@ it('closes the cursor on cancelled output and refuses output without export perm
   const calls = execute.mock.calls.length
   await expect(readDocumentHistoryReport(request())).rejects.toThrow('access denied')
   expect(execute).toHaveBeenCalledTimes(calls)
+})
+
+it('explains an oversized composition and exports successfully when that column is hidden', async () => {
+  const input = request()
+  input.source = { kind: 'generated', types: ['layeredVikLayers'], columnFilters: {} }
+  input.columns.unshift({ key: 'jointComposition', label: 'Состав стыков' })
+  const composition = 'F'.repeat(32768)
+  const { execute } = source(1, { jointComposition: composition })
+  await expect(createDocumentHistoryExcelResponse(input, new AbortController().signal)).rejects.toThrow(
+    '«Состав стыков» одного из документов превышает лимит Excel: 32 767 символов в ячейке. Закройте предпросмотр, скройте этот столбец в реестре и снова нажмите «Показать», чтобы скачать список без состава.',
+  )
+  expect(dialect.sqlToQuery(execute.mock.calls.at(-1)![0]).sql).toBe('close document_history_output')
+  input.columns = input.columns.filter(column => column.key !== 'jointComposition')
+  source(1, { jointComposition: composition })
+  const response = await createDocumentHistoryExcelResponse(input, new AbortController().signal)
+  const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()))
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  expect(sheet['!ref']).toBe('A1:B2')
+  expect(sheet.A2.v).toBe('00-0')
+})
+
+it('preserves a composition at the Excel cell limit without truncation', async () => {
+  const input = request()
+  input.source = { kind: 'generated', types: ['layeredVikLayers'], columnFilters: {} }
+  input.columns.push({ key: 'jointComposition', label: 'Состав стыков' })
+  const composition = 'F'.repeat(32767)
+  source(1, { jointComposition: composition })
+  const response = await createDocumentHistoryExcelResponse(input, new AbortController().signal)
+  const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()))
+  expect(workbook.Sheets[workbook.SheetNames[0]].C2.v).toBe(composition)
 })

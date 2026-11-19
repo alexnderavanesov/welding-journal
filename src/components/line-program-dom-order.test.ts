@@ -36,6 +36,21 @@ describe('program DOM order without reordering React fibers', () => {
     // Hidden cached rows have no reading/tab order and can stay in place.
     expect(root.querySelector('.rows > .ag-row[row-index]')).toBe(row)
   })
+  it('reorders virtual siblings around a focused detail without moving or refocusing its subtree', () => {
+    const root = fixture(), parent = root.querySelector('.rows')!, input = root.querySelector('input')!
+    const detail = input.closest('.ag-row')!
+    parent.prepend(detail)
+    input.focus(); input.setSelectionRange(2, 5)
+    const focus = vi.spyOn(input, 'focus')
+    const move = vi.fn((node: Node, anchor: Node | null) => parent.insertBefore(node, anchor))
+    Object.defineProperty(parent, 'moveBefore', { configurable: true, value: move })
+    orderProgramGridDom(root)
+    expect([...root.querySelectorAll('.ag-row[row-index]')].map(row => row.getAttribute('row-index'))).toEqual(['0', '1', '2'])
+    expect(move.mock.calls.some(([node]) => node.contains(input))).toBe(false)
+    expect(focus).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    expect([input.selectionStart, input.selectionEnd, input.value]).toEqual([2, 5, 'Retained draft'])
+  })
   it('keeps header and cell reading order after column moves, separately for pinned sections', () => {
     const root = fixture()
     root.innerHTML = '<div class="header"><div class="ag-header-cell" aria-colindex="3"></div><div class="ag-header-cell" aria-colindex="2"></div></div><div class="left"><div class="ag-cell" aria-colindex="1"></div></div><div class="center"><div class="ag-cell" aria-colindex="3"></div><div class="ag-cell" aria-colindex="2"></div></div>'

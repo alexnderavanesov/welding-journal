@@ -74,7 +74,7 @@ export const checkSystemDocumentNameConflict = createServerFn({ method: 'POST' }
     return hasSystemDocumentNameConflict(data)
   })
 
-export const listSystemDocumentHistoryFilterOptions = createServerFn({ method: 'GET' })
+export const listSystemDocumentHistoryFilterOptions = createServerFn({ method: 'POST' })
   .validator(normalizeSystemDocumentHistoryFilterOptionsRequest)
   .handler(async ({ data }): Promise<SqlDocumentHistoryFilterOptionsResult> => {
     await assertSecurityScope('entry')

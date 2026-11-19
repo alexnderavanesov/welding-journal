@@ -1450,6 +1450,7 @@ function GeneratedDocumentsPanel({
       case 'line': return <DocumentDimensionCell values={documentRecord.lines} />
       case 'period': return <span className="text-xs text-slate-600">{singleDate ? formatDate(documentRecord.periodFrom ?? documentRecord.periodTo) : `${formatDate(documentRecord.periodFrom)} - ${formatDate(documentRecord.periodTo)}`}</span>
       case 'rowCount': return <span className="font-semibold tabular-nums">{documentRecord.rowCount}</span>
+      case 'jointComposition': return <span title={documentRecord.jointComposition}>{documentRecord.jointComposition || '—'}</span>
       case 'wdi': return <span className="font-semibold tabular-nums">{formatWdi(documentRecord.wdiTotal)}</span>
       case 'updatedAt': return <span className="text-xs text-slate-500">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
       case 'specialistFirst': case 'specialistSecond': return <DocumentSpecialistCell document={documentRecord} role={key === 'specialistFirst' ? 'first' : 'second'} onEdit={(document, role) => { setSpecialistRole(role); setSpecialistDocuments([document]) }} />
@@ -1715,6 +1716,7 @@ function SystemDocumentsPanel({
       case 'subtitle': return <DocumentDimensionCell values={documentRecord.subtitleCodes} />
       case 'line': return <DocumentDimensionCell values={documentRecord.lines} />
       case 'rowCount': return <span className="font-semibold tabular-nums">{documentRecord.rowCount}</span>
+      case 'jointComposition': return <span title={documentRecord.jointComposition}>{documentRecord.jointComposition || '—'}</span>
       case 'date': return <span className="text-xs text-slate-600">{formatDate(documentRecord.date) || '-'}</span>
       case 'specialistFirst': case 'specialistSecond': return <DocumentSpecialistCell document={documentRecord} role={key === 'specialistFirst' ? 'first' : 'second'} onEdit={(document, role) => { setSpecialistRole(role); setSpecialistDocuments([document]) }} />
       default: return null

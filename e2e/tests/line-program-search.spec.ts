@@ -41,6 +41,11 @@ test('early pages, independent search, literal legacy stamp and complete-line no
     await expect.poll(() => held).toBe(true)
     await expect(page.getByRole('status')).toContainText('Рассчитываем итоги всего отбора')
     await expect(page.getByLabel('Итоги раздела')).toHaveCount(0)
+    // A partial first page must not offer misleading page-only column values.
+    await page.locator('[data-program-grid="lines"] .ag-header-cell[col-id="missing"] .ag-header-cell-filter-button').click()
+    await expect(page.getByText('Рассчитываем значения по всем линиям…', { exact: true })).toBeVisible()
+    await expect(page.locator('.ag-filter').filter({ visible: true }).getByRole('checkbox').filter({ visible: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
     await expect(page.locator('header').getByRole('button', { name: 'Показать', exact: true })).toBeDisabled()
     await page.getByLabel('Поиск программы линий').fill('match_%')
     const card = page.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')

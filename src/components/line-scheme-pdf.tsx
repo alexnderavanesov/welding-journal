@@ -10,6 +10,7 @@ import { pdfTurn, type PdfCamera, type PdfView } from '@/lib/line-scheme-pdf-cam
 import { SCHEME_LEGEND, schemeAnchors, schemeDimensionEnds, type SchemeAnnotation, type SchemeDimension, type SchemePoint, type SchemeRevision } from '@/lib/line-schemes'
 import { schemeDimensionGeometry, SCHEME_POINT_PREVIEW } from '@/lib/line-scheme-dimensions'
 import { LineSchemeViewControls, SCHEME_VIEW_MENU } from './line-scheme-view-controls'
+import { LineSchemeTextLeaders } from './line-scheme-text-leaders'
 import { LineSchemeAnnotationMarker } from './line-scheme-annotation-marker'
 import type { SchemeObjectMenuHandler } from '@/lib/line-scheme-interaction'
 import type { DimensionEditing } from './line-scheme-dimension-input'
@@ -18,7 +19,7 @@ import { LineSchemePointTooltip, SCHEME_POINT_DETAILS_EVENT } from './line-schem
 
 type Props = {
   revision: SchemeRevision; page: number; onPage: (page: number) => void; points: SchemePoint[];
-  editable: boolean; placing: boolean; selectedIds: Set<string>;
+  editable: boolean; placing: boolean; placingLeader: boolean; selectedIds: Set<string>;
   controlsTarget: HTMLElement | null;
   focusPoint?: { rootId: number; physicalId: number | null; sequence: number } | null;
   onPlace: (x: number, y: number, rotation: number) => void; onMove: (point: SchemePoint, x: number, y: number) => void;
@@ -57,7 +58,7 @@ export const LineSchemePdf = memo(function LineSchemePdf(props: Props) {
     {error ? <PdfError onRetry={retry} /> : document
       ? <PdfSheet key={`${props.revision.id}:${props.page}:${attempt}`} {...props} document={document} view={view} onCamera={setCamera} onRetry={retry} />
       : <div className="p-8 text-sm text-slate-500" role="status">Открываем PDF…</div>}
-    {!props.measuring && <LineSchemePointTooltip frame={frame} points={props.points} />}
+    {!props.measuring && !props.placingLeader && <LineSchemePointTooltip frame={frame} points={props.points} />}
   </div>
 })
 function PdfError({ onRetry }: { onRetry: () => void }) {
@@ -128,6 +129,7 @@ function normalizedPoint(context: PdfCamera, event: { clientX: number; clientY: 
   return { x: Math.max(0, Math.min(1, point.x)), y: Math.max(0, Math.min(1, point.y)) }
 }
 const PointLayer = memo(function PointLayer(props: Props & { context: PdfCamera }) {
+  const suppressClick = useRef(false)
   const pending = useRef<{ x: number; y: number } | null>(null), focused = useRef<number | null>(null)
   useEffect(() => {
     const focus = props.focusPoint
@@ -145,10 +147,12 @@ const PointLayer = memo(function PointLayer(props: Props & { context: PdfCamera 
   }, [props.focusDimension, props.context])
   return <div style={{ position: 'absolute', inset: 0, pointerEvents: props.editable && props.placing ? 'auto' : 'none', cursor: props.placing ? 'crosshair' : undefined }}
     data-scheme-point-layer={props.page}
-    onPointerDownCapture={event => { if (event.target !== event.currentTarget || !props.editable || !props.placing) return; event.stopPropagation(); props.context.stop(); event.currentTarget.setPointerCapture(event.pointerId); pending.current = { x: event.clientX, y: event.clientY } }}
-    onPointerUpCapture={event => { if (!pending.current) return; event.stopPropagation(); const start = pending.current; pending.current = null; if (Math.hypot(start.x - event.clientX, start.y - event.clientY) < 5) { const p = normalizedPoint(props.context, event); props.onPlace(p.x, p.y, props.context.getSnapshot().rotation) } }}
-    onPointerCancelCapture={() => { pending.current = null }}>
+    onPointerDownCapture={event => { if (event.button !== 0 || (!props.placingLeader && event.target !== event.currentTarget) || !props.editable || !props.placing) return; event.stopPropagation(); props.context.stop(); event.currentTarget.setPointerCapture(event.pointerId); pending.current = { x: event.clientX, y: event.clientY } }}
+    onPointerUpCapture={event => { if (!pending.current) return; event.stopPropagation(); suppressClick.current = props.placingLeader; const start = pending.current; pending.current = null; if (Math.hypot(start.x - event.clientX, start.y - event.clientY) < 5) { const p = normalizedPoint(props.context, event); props.onPlace(p.x, p.y, props.context.getSnapshot().rotation) } }}
+    onPointerCancelCapture={() => { pending.current = null }}
+    onClickCapture={event => { if (suppressClick.current) { suppressClick.current = false; event.preventDefault(); event.stopPropagation() } }}>
     {!!props.dimensions.length && <LineSchemeDimensions dimensions={props.dimensions} anchors={schemeAnchors(props.points, props.annotations)} editing={props.dimensionEditing} onMenu={props.onObjectMenu} camera={props.context} editable={props.editable && !props.measuring} onEdit={props.onEditDimension} onMove={props.onMoveDimension} />}
+    {props.annotations.some(item => item.leaderX != null) && <LineSchemeTextLeaders items={props.annotations} camera={props.context} />}
     {props.annotations.map(item => <LineSchemeAnnotationMarker key={item.id} item={item} camera={props.context} selected={props.selectedAnnotationIds.has(item.id)} editable={props.editable} measuring={props.measuring} onSelect={props.onSelectAnnotation} onMove={props.onMoveAnnotation} onMenu={props.onObjectMenu} />)}
     {props.points.map(point => <PointMarker key={point.id} point={point} context={props.context} selected={props.selectedIds.has(point.id)} editable={props.editable} measuring={props.measuring} onSelect={props.onSelect} onOpen={props.onOpen} onMove={props.onMove} onMenu={props.onMenu} />)}
   </div>

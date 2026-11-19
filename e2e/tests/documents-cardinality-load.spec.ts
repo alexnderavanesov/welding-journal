@@ -13,6 +13,7 @@ import { requireDb } from '../../src/db'
 import { deleteWeldJoint as raw_deleteWeldJoint , deleteWeldJoints as raw_deleteWeldJoints } from '../../src/server/weld-mutations'
 import { deleteEmptyGeneratedDocuments, loadGeneratedDocumentIdsForWeldDeletion } from '../../src/server/generated-document-cleanup'
 import { SYSTEM_DOCUMENT_TYPES, type SystemDocumentType } from '../../src/lib/system-document-types'
+import { verifyDocumentCompositionCardinality } from '../document-composition-cardinality'
 import { verifyCompactDocumentCardinality } from '../deep-document-cardinality-projection'
 
 const project = 'E2E independent document cardinality'
@@ -95,7 +96,7 @@ async function seed() {
 
 test(`${process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1' ? 'PLAN DIAGNOSTIC ONLY: ' : ''}600k documents: independent registry cardinality, methods, stages, history and bounded browser blocks`, async ({ page }, info) => {
   test.skip(process.env.AUDIT_DOCUMENT_CARDINALITY !== '1', 'Requires a fresh owned disposable local database')
-  test.setTimeout(process.env.AUDIT_DOCUMENT_COMPACT === '1' ? 2_400_000 : 1_200_000)
+  test.setTimeout(process.env.AUDIT_DOCUMENT_COMPACT === '1' || process.env.AUDIT_DOCUMENT_COMPOSITION === '1' ? 2_400_000 : 1_200_000)
   await seed()
   const measurements: unknown[] = []
   const plans: Array<{type:string;text:string;values:unknown[]}> = []
@@ -174,6 +175,7 @@ test(`${process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1' ? 'PLAN DIAGNOSTIC ONLY: '
     await writeFile(info.outputPath('document-group-query-comparison.json'), JSON.stringify(comparison, null, 2))
   }
   if (process.env.AUDIT_DOCUMENT_COMPACT === '1') await verifyCompactDocumentCardinality(info)
+  if (process.env.AUDIT_DOCUMENT_COMPOSITION === '1') await verifyDocumentCompositionCardinality(info)
   if (plansOnly) return
   const stages = await loadIndexedSystemDocumentHistoryFilterOptions(normalizeSystemDocumentHistoryFilterOptionsRequest({ type: 'lnkRequest', fieldKey: 'stage', columnFilters }))
   expect(Object.fromEntries(stages.options.map(option => [option.value, option.count]))).toEqual({ 'Основной': 100000, 'До ТО': 20000, 'Цикл 1': 10000, 'Цикл 2': 5000, 'Цикл 3': 5000 })

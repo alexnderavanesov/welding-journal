@@ -30,6 +30,7 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     const body = frame?.querySelector<HTMLElement>('.ag-grid-scrolling-container')
     const horizontalScrollbar = frame?.querySelector<HTMLElement>('.ag-body-horizontal-scroll')
     if (!frame || !viewport || !header || !body) return
+    const controls = [...element.querySelectorAll<HTMLElement>(':scope > .program-grid-toolbar, :scope > .program-grid-groups')]
     const gridRoot = frame.querySelector('.ag-root-wrapper')
     const ownsEvent = (event: Event) => event.target instanceof Element && event.target.closest('.ag-root-wrapper') === gridRoot
 
@@ -125,7 +126,10 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       // older anchor would undo scrollIntoView even after the target was focused.
       if (!close(window.scrollY, observedPageTop)) pageMoved = true
       const contextHeight = stickyHeader?.offsetHeight ?? CONTEXT_HEIGHT
-      const top = element.getBoundingClientRect().top + window.scrollY
+      // Overview group chips precede the absolutely positioned frame. Nested
+      // stamp/joint tables have no controls and retain their existing geometry.
+      const controlsHeight = controls.reduce((height, control) => height + control.offsetHeight, 0)
+      const top = element.getBoundingClientRect().top + window.scrollY + controlsHeight
       const currentPageTop = clamp(window.scrollY, document.documentElement.scrollHeight - window.innerHeight)
       const headerHeight = header.offsetHeight
       const count = api.getDisplayedRowCount()
@@ -146,7 +150,7 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       // Grow/shrink the document before clamping its scroll position. Only the
       // table under the reading position may anchor the page; offscreen/hidden
       // sibling workspaces must never move the reader while refreshing.
-      style(element, 'height', height)
+      style(element, 'height', height + controlsHeight)
       style(frame, 'height', frameHeight)
       let pageTop = currentPageTop
       if (requestedGridTop != null) {
@@ -185,7 +189,7 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       const offset = clamp(layoutPageTop + contextHeight - top, maxOffset)
       // Native sticky positioning follows compositor scrolling immediately.
       // Only row virtualization waits for RAF; the header never chases scrollY.
-      style(frame, 'top', stickyFrame ? contextHeight : offset)
+      style(frame, 'top', stickyFrame ? contextHeight : offset + controlsHeight)
       expectedGridTop = offset
       if (!close(viewport.scrollTop, offset)) viewport.scrollTop = offset
       observedGridTop = viewport.scrollTop
@@ -276,6 +280,7 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     if (stickyHeader) onRootResize.observe(stickyHeader)
     const onContentResize = new ResizeObserver(entries => { if (heightChanged(entries)) onModelChanged() })
     onContentResize.observe(body); onContentResize.observe(header)
+    for (const control of controls) onContentResize.observe(control)
     if (horizontalScrollbar) onContentResize.observe(horizontalScrollbar)
     // AG Grid can update explicit model height before a box resize, particularly
     // after a filter. Only the body style is relevant, not every virtual cell.

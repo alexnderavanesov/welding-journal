@@ -41,6 +41,71 @@ test('separate ranges copy only values, including unloaded rows', async ({ page 
   await page.keyboard.press('ControlOrMeta+c')
   await expect.poll(() => copied(page)).toBe(Array.from({ length: 11 }, (_, i) => `C${String(i + 96).padStart(3, '0')}`).join('\n') + '\nCOPY\nCOPY')
 })
+test('Russian Windows Ctrl+C copies the complete unloaded range once', async ({ page, context }) => {
+  await select(page, [{ first: 95, last: 105, columns: ['joint'] }])
+  await page.evaluate(() => navigator.clipboard.writeText('UNCHANGED'))
+  const calls: string[] = []
+  page.on('request', request => { if (rpcName(request.url()).startsWith('copyJournalGridRange_')) calls.push(request.url()) })
+  const keyboard = await context.newCDPSession(page)
+  await keyboard.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67 })
+  await keyboard.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67, autoRepeat: true })
+  await keyboard.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67 })
+  await expect.poll(() => copied(page)).toBe(Array.from({ length: 11 }, (_, i) => `C${String(i + 96).padStart(3, '0')}`).join('\n'))
+  expect(calls).toHaveLength(1)
+  await keyboard.detach()
+})
+test('keyboard layout matrix and context menu copy the same range without pregranted write permission', async ({ page, context }) => {
+  await select(page, [{ first: 95, last: 105, columns: ['joint'] }])
+  const expected = Array.from({ length: 11 }, (_, i) => `C${String(i + 96).padStart(3, '0')}`).join('\n')
+  const requests: string[] = []
+  page.on('request', request => { if (rpcName(request.url()).startsWith('copyJournalGridRange_')) requests.push(request.url()) })
+  await page.evaluate(() => {
+    const original = navigator.clipboard.write.bind(navigator.clipboard)
+    ;(window as any).completedCopies = 0
+    navigator.clipboard.write = async items => { await original(items); (window as any).completedCopies++ }
+  })
+  const keyboard = await context.newCDPSession(page)
+  const keys = [
+    { key: 'c', code: 'KeyC', modifiers: 2 }, { key: 'C', code: 'KeyC', modifiers: 2 },
+    { key: 'с', code: 'KeyC', modifiers: 2 }, { key: 'С', code: 'KeyC', modifiers: 2 },
+    { key: 'c', code: 'KeyC', modifiers: 4 }, { key: 'с', code: 'KeyC', modifiers: 4 },
+    { key: 'с', code: '', modifiers: 2 }, { key: 'С', code: '', modifiers: 4 },
+  ]
+  for (const [index, key] of keys.entries()) {
+    await page.evaluate(() => navigator.clipboard.writeText('NOT-COPIED'))
+    await context.clearPermissions()
+    await keyboard.send('Input.dispatchKeyEvent', { type: 'keyDown', ...key, windowsVirtualKeyCode: 67 })
+    await keyboard.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key, windowsVirtualKeyCode: 67 })
+    // Observe the real OS write completing before granting read access to verify its contents.
+    await expect.poll(() => page.evaluate(() => (window as any).completedCopies)).toBe(index + 1)
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    expect(await copied(page)).toBe(expected)
+    expect(requests).toHaveLength(index + 1)
+  }
+  await keyboard.detach()
+  await page.locator('.ag-row[row-index="0"] .ag-cell[col-id="joint"]').click({ button: 'right' })
+  await page.evaluate(() => navigator.clipboard.writeText('NOT-COPIED'))
+  await context.clearPermissions()
+  await page.getByRole('button', { name: 'Копировать выделенные ячейки', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).completedCopies)).toBe(keys.length + 1)
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  expect(await copied(page)).toBe(expected)
+  expect(requests).toHaveLength(keys.length + 1)
+})
+test('copy keeps native text selection in filters and reports denied clipboard access', async ({ page }) => {
+  const search = page.getByRole('searchbox')
+  await search.focus(); await search.selectText()
+  await page.keyboard.press('ControlOrMeta+c')
+  await expect.poll(() => copied(page)).toBe(PROJECT)
+  await select(page, [{ first: 0, last: 1, columns: ['joint'] }])
+  await page.evaluate(() => {
+    navigator.clipboard.write = async () => { throw new DOMException('Clipboard permission denied', 'NotAllowedError') }
+  })
+  await page.keyboard.press('ControlOrMeta+c')
+  await expect(page.getByText(/Браузер не разрешил копирование/)).toBeVisible()
+  await expect(page.getByText('Копируем…', { exact: true })).toHaveCount(0)
+  expect(await copied(page)).toBe(PROJECT)
+})
 test('compatible overlapping ranges copy each row once in first-selection order', async ({ page }) => {
   await select(page, [{ first: 2, last: 3, columns: ['joint'] }, { first: 0, last: 4, columns: ['joint'] }])
   await expect(page.getByText('Количество: 5', { exact: true })).toBeVisible()

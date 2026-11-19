@@ -32,6 +32,7 @@ import { summarizeProgramSection, programSectionMetricSelection, type ProgramSec
 
 type Props = { onOpenReportRows?: ProgramReportNavigation; navigationRequest?: PercentageLineNavigationRequest | null; onNavigationHandled?: (id: number, outcome: PercentageLineNavigationOutcome) => void }
 type Program = LineProgramRecord & { overview?: LineProgramOverview }
+const EMPTY_PROGRAMS: Program[] = []
 type Filter = 'all' | 'common' | 'pvk' | 'missing' | 'reduction' | 'excess' | 'additional' | 'configuration'
 const filterNames: Record<Filter, string> = { all: 'Все линии', common: PROGRAM_DEMAND_LABELS.common, pvk: 'ПВК', missing: 'Есть НК к назначению', reduction: 'Есть возможное сокращение', excess: 'Есть лишний контроль', additional: 'Есть дополнительные стыки', configuration: 'Нужна настройка программы линии' }
 const programTab = (line: LineProgramRecord): LineProgramTab => line.family === 'supports' ? 'supports' : line.configurationIssue || line.weldControlPercent == null ? 'lines' : line.weldControlPercent === 100 ? 'full' : 'percentage'
@@ -63,6 +64,7 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const debouncedSearch = useDebouncedValue(search, 250)
   const [filter, setFilter] = useState<Filter>('all')
   const [page, setPage] = useState(0)
+  const [gridView, setGridView] = useState<{ source: Program[]; rows: Program[] } | null>(null)
   const [expanded, setExpanded] = useState(new Map<number, Program>())
   const [editing, setEditing] = useState<(LineProgramSaveRequest & Partial<Pick<LineProgramRecord, 'family' | 'inheritedWeldControlPercent' | 'inheritedPvkControlPercent'>>) | null>(null)
   const editingFilters = useRef<ReturnType<GridApi['getFilterModel']>>({})
@@ -105,10 +107,11 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const summaryReady = searchReady && hasCachedSection && !query.error
   const pageBehind = !!pageQuery.data && (pageQuery.data.revision ?? 0) < latestPageRevision
   const pageReady = searchReady && !!pageQuery.data && !pageBehind && !pageQuery.error
-  const lines = summaryReady ? query.data!.rows : []
+  const lines = summaryReady ? query.data!.rows : EMPTY_PROGRAMS
   const filtered = useMemo(() => lines.filter(line => matches(line, filter)), [lines, filter])
-  const actualPage = summaryReady ? Math.min(page, Math.max(0, Math.ceil(filtered.length / 30) - 1)) : pageQuery.data?.page ?? 0
-  const paged = useMemo(() => summaryReady ? filtered.slice(actualPage * 30, (actualPage + 1) * 30) : pageReady && filter === 'all' ? pageQuery.data!.rows : [], [summaryReady, filtered, actualPage, pageReady, filter, pageQuery.data])
+  const actualPage = pageQuery.data?.page ?? 0
+  // Native column filters/sorting must see every line before native pagination.
+  const candidates = useMemo(() => summaryReady ? filtered : pageReady && filter === 'all' ? pageQuery.data!.rows : EMPTY_PROGRAMS, [summaryReady, filtered, pageReady, filter, pageQuery.data])
   useEffect(() => {
     // A newer page is evidence of a concurrent edit. Refresh only this active
     // summary; a failed refresh remains an explicit retry, never a polling loop.
@@ -120,18 +123,18 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const outside = useMemo(() => {
     if (!searchReady) return []
     const section = new Map(lines.map(line => [line.id, line]))
-    const pageIds = new Set(paged.map(line => line.id))
-    // Keep expanded rows outside the current page/filter, but never keep a
+    const pageIds = new Set(candidates.map(line => line.id))
+    // Keep expanded rows outside the current filter, but never keep a
     // former member after the complete, fresh section confirms its removal.
     return [...expanded.values()].filter(open => !pageIds.has(open.id) && (!summaryReady || section.has(open.id)))
       .map(open => section.get(open.id) ?? open)
-  }, [searchReady, summaryReady, expanded, paged, lines])
+  }, [searchReady, summaryReady, expanded, candidates, lines])
   useEffect(() => {
     if (!summaryReady) return
     const ids = new Set(lines.map(line => line.id))
     setExpanded(current => [...current.keys()].every(id => ids.has(id)) ? current : new Map([...current].filter(([id]) => ids.has(id))))
   }, [summaryReady, lines])
-  const visible: Program[] = useMemo(() => outside.length ? [...outside, ...paged] : paged, [outside, paged])
+  const visible: Program[] = useMemo(() => outside.length ? [...outside, ...candidates] : candidates, [outside, candidates])
   useEffect(() => {
     if (!revealTarget || !overviewApi || overviewApi.isDestroyed()) return
     // SetFilter also emits filterChanged while validating refreshed values.
@@ -157,8 +160,7 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
     }
   }, [revealTarget, overviewApi])
   useEffect(() => {
-    if (!revealTarget || !overviewApi || overviewApi.isDestroyed() || !searchReady ||
-      !(summaryReady || pageReady && !pageQuery.isFetching)) return
+    if (!revealTarget || !overviewApi || overviewApi.isDestroyed() || !summaryReady) return
     let phase: 'ready' | 'restoring' | 'filtering' | 'done' = 'ready'
     let active = true
     const clearTarget = () => setRevealTarget(current => current === revealTarget ? null : current)
@@ -240,11 +242,14 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const sectionContext = `${tab === 'lines' ? 'Все линии' : tab === 'full' ? '100%-ные линии' : tab === 'supports' ? 'Опоры' : 'Процентные линии'}${debouncedSearch.trim() ? ` · поиск: ${debouncedSearch.trim()}` : ''}`
   const filterName = tab === 'supports' && filter === 'common' ? SUPPORT_PROGRAM_DEMAND_LABELS.common : filterNames[filter]
   const reportContext = `${sectionContext} · ${filterName}`
-  const reportDisabled = !summaryReady || query.isFetching
+  const reportDisabled = !summaryReady || query.isFetching || gridView?.source !== visible
   const filteredCount = summaryReady ? filtered.length : '…'
   const filteredCountLabel = summaryReady ? `Линий: ${filtered.length}` : 'Идёт подсчёт линий'
   const filteredDescription = `${filterName} · ${summaryReady ? `линий: ${filtered.length}` : 'идёт подсчёт'}`
-  const reportIds = filtered.map(line => line.id)
+  const reportIds = useMemo(() => {
+    const members = new Set(filtered.map(line => line.id))
+    return gridView?.source === visible ? gridView.rows.filter(line => members.has(line.id)).map(line => line.id) : []
+  }, [gridView, visible, filtered])
   const selectFilter = (next: Filter) => { setFilter(next); setPage(0); collapseAll() }
   const openSectionMenu = (event: ProgramScopeMenuEvent) => scopeMenu.openSection(event, {
     description: sectionContext, onSelect: selectFilter, onCalculation: summaryReady ? openSectionCalculation : undefined,
@@ -278,8 +283,8 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
     {searchReady && !summaryReady && (query.error || pageQuery.error) ? <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2"><ProgramError error={(query.error || pageQuery.error)!} /><Button variant="ghost" size="sm" onClick={() => { if (pageQuery.error) void pageQuery.refetch(); else void query.refetch() }}>Повторить загрузку</Button></div> : null}
     {(!summaryReady || query.isFetching) && !query.error && !pageQuery.error ? <p role="status" className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2 text-sm text-slate-500">{pageReady && filter === 'all' ? 'Линии доступны. Рассчитываем итоги всего отбора…' : pageReady ? 'Рассчитываем все подходящие линии для выбранного фильтра…' : 'Загружаем найденные линии…'}</p> : null}
     {editing ? <LineProgramEditor key={editing.id ?? 'new'} value={editing} onClose={() => setEditing(null)} onSaved={saved => { const line = tab === 'supports' ? asSupportLineProgram(saved) : saved; setEditing(null); setTab(current => current === 'lines' ? current : programTab(line)); setSearch(line.line); setPage(0); setFilter('all'); choose(line, undefined, true, editingFilters.current) }} /> : null}
-    {outside.length > 0 ? <p className="text-xs text-sky-700">Открытые линии вне текущей страницы показаны первыми.</p> : null}
-    <ProgramOverviewGrid family={tab === 'supports' ? 'supports' : undefined} onReady={setOverviewApi} rows={visible} expanded={expanded} onToggle={toggle} onAssignments={line => requestCommand(line, 'assignments')} onEdit={tab === 'lines' || tab === 'supports' ? line => edit(line) : undefined} onSelect={choose}
+    {outside.length > 0 ? <p className="text-xs text-sky-700">Открытые линии вне текущего отбора добавлены в список.</p> : null}
+    <ProgramOverviewGrid complete={summaryReady} pagination={summaryReady ? { page, onChange: setPage, onNavigate: collapseAll } : undefined} onFilterRows={rows => setGridView({ source: visible, rows })} family={tab === 'supports' ? 'supports' : undefined} onReady={setOverviewApi} rows={visible} expanded={expanded} onToggle={toggle} onAssignments={line => requestCommand(line, 'assignments')} onEdit={tab === 'lines' || tab === 'supports' ? line => edit(line) : undefined} onSelect={choose}
       onMenu={(event, line) => scopeMenu.open(event, {
       line, scope: { slice: 'all' }, expanded: expanded.has(line.id), onToggle: () => toggle(line),
       onAssignments: () => requestCommand(line, 'assignments'), onCalculation: (selection, explain) => requestCommand(line, 'calculation', selection, explain),
@@ -292,7 +297,7 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
     {deleting ? <LineProgramDeleteDialog line={deleting} onClose={() => setDeleting(null)} onDeleted={id => { setDeleting(null); setExpanded(previous => { const next = new Map(previous); next.delete(id); return next }); setTarget(current => current?.id === id ? null : current); setCommand(current => current?.lineId === id ? null : current); setPage(0) }} /> : null}
     {scopeMenu.menu}
     {(summaryReady || pageReady && filter === 'all') && !visible.length ? <p className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">Линии не найдены. Попробуйте изменить поиск или фильтр.</p> : null}
-    {summaryReady || pageReady && filter === 'all' ? <ProgramPagination page={actualPage} pageSize={30} total={summaryReady ? filtered.length : pageQuery.data!.total} noun="линий" onChange={next => { setPage(next); collapseAll() }} /> : null}
+    {!summaryReady && pageReady && filter === 'all' ? <ProgramPagination page={actualPage} pageSize={30} total={pageQuery.data!.total} noun="линий" onChange={next => { setPage(next); collapseAll() }} /> : null}
   </div>
 }
 

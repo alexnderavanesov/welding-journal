@@ -1,4 +1,5 @@
 import { auditSql, auditInsertedSql } from './audit-functions'
+import { DOCUMENT_JOINTS_REVISION, documentJointCompositionColumn, documentJointCompositionSearch, needsDocumentJointCompositionFilter, withDocumentJointCompositionFilter } from './document-joint-composition'
 import { createServerFn } from '@tanstack/react-start'
 import { and, asc, count, eq, inArray, max, min, sql } from 'drizzle-orm'
 
@@ -57,6 +58,7 @@ import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocument
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
 export type RemoteGeneratedDocument = {
+  jointComposition?: string
   documentVersion?: string
   specialists?: import('@/lib/document-specialists').DocumentSpecialists | null
   specialistsRevision?: number
@@ -130,7 +132,7 @@ export type SaveGeneratedDocumentInput = {
   wdiTotal?: number
 }
 
-export const listRemoteGeneratedDocumentHistoryFilterOptions = createServerFn({ method: 'GET' })
+export const listRemoteGeneratedDocumentHistoryFilterOptions = createServerFn({ method: 'POST' })
   .validator(normalizeGeneratedDocumentHistoryFilterOptionsRequest)
   .handler(async ({ data }): Promise<SqlDocumentHistoryFilterOptionsResult> => {
     await assertSecurityScope('entry')
@@ -151,10 +153,16 @@ export const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
   'updatedAt',
 ] as const
 
-export type GeneratedDocumentHistoryFilterKey = typeof GENERATED_DOCUMENT_HISTORY_FILTER_KEYS[number]
+const LAYERED_DOCUMENT_HISTORY_FILTER_KEYS = [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS, 'jointComposition'] as const
+
+function generatedDocumentHistoryFilterKeys(types: readonly GeneratedDocumentType[]) {
+  return types.some(isLayeredControlDocumentType) ? LAYERED_DOCUMENT_HISTORY_FILTER_KEYS : GENERATED_DOCUMENT_HISTORY_FILTER_KEYS
+}
+
+export type GeneratedDocumentHistoryFilterKey = typeof LAYERED_DOCUMENT_HISTORY_FILTER_KEYS[number]
 
 export function isGeneratedDocumentHistoryFilterKey(value: unknown): value is GeneratedDocumentHistoryFilterKey {
-  return GENERATED_DOCUMENT_HISTORY_FILTER_KEYS.includes(value as GeneratedDocumentHistoryFilterKey)
+  return LAYERED_DOCUMENT_HISTORY_FILTER_KEYS.includes(value as GeneratedDocumentHistoryFilterKey)
 }
 
 export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
@@ -162,11 +170,15 @@ export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
 ): Promise<SqlDocumentHistoryFilterOptionsResult> {
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
-  const baseQuery = withDocumentHistoryGridSearch(buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings), data.gridSearch, GENERATED_DOCUMENT_HISTORY_FILTER_KEYS)
+  const filterKeys = generatedDocumentHistoryFilterKeys(data.types)
+  const baseQuery = withDocumentHistoryGridSearch(withDocumentJointCompositionFilter(
+    buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings), 'id',
+    data.types.some(isLayeredControlDocumentType) && needsDocumentJointCompositionFilter({ ...data, search: data.gridSearch })), data.gridSearch, filterKeys,
+    { jointComposition: query => documentJointCompositionSearch(query, 'id', 'search_documents') })
   const result = await db.execute(buildDocumentHistoryFilterOptionsSqlQuery({
     baseQuery,
     columnFilters: data.columnFilters,
-    filterKeys: [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS],
+    filterKeys: [...filterKeys],
     key: data.fieldKey,
     search: data.search,
     limit: DOCUMENT_HISTORY_FILTER_OPTION_LIMIT,
@@ -179,7 +191,7 @@ export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
 
 export function normalizeGeneratedDocumentHistoryGridRequest(data: RemoteGeneratedDocumentHistoryGridRequest | undefined) {
   const { limit: _limit, ...history } = normalizeGeneratedDocumentHistoryRequest(data)
-  return { ...history, ...normalizeDocumentHistoryGridRequest(data, GENERATED_DOCUMENT_HISTORY_FILTER_KEYS, 'generated') }
+  return { ...history, ...normalizeDocumentHistoryGridRequest(data, generatedDocumentHistoryFilterKeys(history.types), 'generated') }
 }
 
 export async function loadRemoteGeneratedDocumentHistoryGrid(
@@ -193,15 +205,21 @@ export async function loadRemoteGeneratedDocumentHistoryGrid(
 }
 
 function buildGeneratedDocumentHistoryGridSql(data: ReturnType<typeof normalizeGeneratedDocumentHistoryGridRequest>, otherSettings: OtherSettings, output = false) {
-  const sortExpressions = Object.fromEntries(GENERATED_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
+  const filterKeys = generatedDocumentHistoryFilterKeys(data.types)
+  const sortExpressions = Object.fromEntries(filterKeys.map(key => [key, documentHistoryTextSort(key)]))
   Object.assign(sortExpressions, {
     rowCount: sql`"rowCount"`, wdi: sql`"wdiTotal"`, updatedAt: sql`"updatedAt"`,
     period: sql`"periodFrom"`,
   })
   return buildDocumentHistoryGridSql({
-    baseQuery: buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings),
-    columnFilters: data.columnFilters, filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
+    baseQuery: withDocumentJointCompositionFilter(buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings), 'id',
+      data.types.some(isLayeredControlDocumentType) && needsDocumentJointCompositionFilter(data)),
+    columnFilters: data.columnFilters, filterKeys,
+    searchExpressions: { jointComposition: query => documentJointCompositionSearch(query, 'id', 'document_history') },
     output, request: data, idKind: 'generated', sortExpressions,
+    displayColumns: (data.types?.some(isLayeredControlDocumentType) && !data.cells || data.cells?.columns.includes('jointComposition'))
+      ? alias => documentJointCompositionColumn(alias, 'id') : undefined,
+    revisionSalt: data.types?.some(isLayeredControlDocumentType) ? DOCUMENT_JOINTS_REVISION : undefined,
     // Cover every original derived value, including related welds. filter_*
     // arrays are deterministic copies/formatting of these values; serializing
     // them again (and every JSON object key) doubles work for the full registry.
@@ -210,7 +228,7 @@ function buildGeneratedDocumentHistoryGridSql(data: ReturnType<typeof normalizeG
     defaultOrder: sql`"updatedAt" desc, "id" desc`,
     // Ordinary registries show a period separator even without dates; layered
     // registries show one date and leave the cell empty when none is available.
-    populatedExpressions: { period: sql`case when "type" = any(${sql.param([...LAYERED_CONTROL_DOCUMENT_TYPES])}::text[])
+    populatedExpressions: { jointComposition: sql`nullif("jointComposition", '')`, period: sql`case when "type" = any(${sql.param([...LAYERED_CONTROL_DOCUMENT_TYPES])}::text[])
       then coalesce("periodFrom", "periodTo")::text else '-' end` },
   })
 }
@@ -231,18 +249,20 @@ export async function loadRemoteGeneratedDocumentHistory(
 ): Promise<RemoteGeneratedDocumentHistoryResult> {
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
-  const baseQuery = buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings)
+  const filterKeys = generatedDocumentHistoryFilterKeys(data.types)
+  const baseQuery = withDocumentJointCompositionFilter(buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings), 'id',
+    data.types.some(isLayeredControlDocumentType) && needsDocumentJointCompositionFilter(data))
   const result = await db.execute(buildDocumentHistorySqlQuery({
     baseQuery,
     columnFilters: data.columnFilters,
-    filterKeys: [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS],
+    filterKeys: [...filterKeys],
     optionKeys: [],
     limit: data.limit,
     orderBy: sql`"updatedAt" desc, "id" desc`,
   }))
   return normalizeSqlDocumentHistoryResult(
     result.rows[0],
-    [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS],
+    [...filterKeys],
     toRemoteGeneratedDocumentHistoryRow,
   )
 }
@@ -376,10 +396,10 @@ export function normalizeGeneratedDocumentHistoryRequest(
 export function normalizeGeneratedDocumentHistoryFilterOptionsRequest(
   data: RemoteGeneratedDocumentHistoryFilterOptionsRequest | undefined,
 ) {
-  if (!isGeneratedDocumentHistoryFilterKey(data?.fieldKey)) {
+  const types = normalizeGeneratedDocumentHistoryTypes(data)
+  if (!isGeneratedDocumentHistoryFilterKey(data?.fieldKey) || !generatedDocumentHistoryFilterKeys(types).some(key => key === data.fieldKey)) {
     throw new Error('Неизвестный столбец фильтра истории документов.')
   }
-  const types = normalizeGeneratedDocumentHistoryTypes(data)
   const documentId = normalizeDocumentHistoryDocumentId(data?.documentId)
   return {
     type: types[0],
@@ -949,6 +969,7 @@ function toRemoteGeneratedDocumentHistoryRow(
     ...(periodFrom ? { periodFrom } : {}),
     ...(periodTo ? { periodTo } : {}),
     rowCount: Math.max(0, Number(record.rowCount) || 0),
+    ...(typeof record.jointComposition === 'string' ? { jointComposition: record.jointComposition } : {}),
     wdiTotal: Number(record.wdiTotal) || 0,
     ...(Number.isInteger(documentNumber) && documentNumber > 0 ? { documentNumber } : {}),
     ...(isLayeredControlDocumentType(record.type)

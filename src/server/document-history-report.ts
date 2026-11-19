@@ -76,9 +76,11 @@ export async function readDocumentHistoryReport(input: DocumentHistoryReportRequ
       numericColumns: input.columns.flatMap((column, index) => ['rowCount', 'wdi'].includes(column.key) ? [index] : []) }] : [] }
 }
 
-export function documentHistoryWorksheetRow(values: Array<string | number>, index: number) {
+export function documentHistoryWorksheetRow(values: Array<string | number>, index: number, columns?: DocumentHistoryReportRequest['columns']) {
   const cells = values.map((value, column) => {
-    if (String(value).length > 32767) throw new Error('Текст ячейки превышает допустимый размер Excel. Уточните фильтры списка документов.')
+    if (String(value).length > 32767) throw new Error(columns?.[column]?.key === 'jointComposition'
+      ? '«Состав стыков» одного из документов превышает лимит Excel: 32 767 символов в ячейке. Закройте предпросмотр, скройте этот столбец в реестре и снова нажмите «Показать», чтобы скачать список без состава.'
+      : 'Текст ячейки превышает допустимый размер Excel. Уточните фильтры списка документов.')
     if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Некорректное число в списке документов.')
     let letter = '', position = column + 1
     while (position) { letter = String.fromCharCode(65 + (position - 1) % 26) + letter; position = Math.floor((position - 1) / 26) }
@@ -91,7 +93,8 @@ export function documentHistoryWorksheetRow(values: Array<string | number>, inde
 
 export async function createDocumentHistoryExcelResponse(input: DocumentHistoryReportRequest, signal: AbortSignal) {
   normalizeDocumentHistoryReportRequest(input)
-  return createTabularExcelResponse({ sheetName: 'Реестр документов', filename: 'documents.xlsx', row: documentHistoryWorksheetRow,
+  return createTabularExcelResponse({ sheetName: 'Реестр документов', filename: 'documents.xlsx',
+    row: (values: Array<string | number>, index) => documentHistoryWorksheetRow(values, index, input.columns),
     columns: input.columns.length,
     header: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>'
       + input.columns.map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${column.key === 'title' ? 48 : 24}" customWidth="1"/>`).join('')

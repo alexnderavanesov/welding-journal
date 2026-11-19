@@ -21,7 +21,10 @@ export function orderProgramGridDom(root: HTMLElement) {
     let anchor = elements.at(-1)!.nextElementSibling
     for (let i = ordered.length - 1; i >= 0; i--) {
       const element = ordered[i]
-      if (element.nextElementSibling !== anchor) {
+      // Reorder siblings around the focused subtree. Moving a retained detail
+      // with moveBefore can make Chrome scroll it back into view after the
+      // document viewport has moved away; keeping it in place also preserves IME.
+      if (element.nextElementSibling !== anchor && !element.contains(focus)) {
         // moveBefore also preserves focus/selection in supporting browsers.
         if ('moveBefore' in parent) (parent as HTMLElement & { moveBefore(node: Node, child: Node | null): void }).moveBefore(element, anchor)
         else parent.insertBefore(element, anchor)

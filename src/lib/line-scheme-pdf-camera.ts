@@ -1,4 +1,5 @@
 export type PdfPoint = { x: number; y: number }
+type PdfMarkerPoint = PdfPoint & { textRotation?: number }
 export type PdfSize = { width: number; height: number }
 export type PdfFit = 'fit-page' | 'fit-width' | 'custom'
 export type PdfView = { scale: number; mode: PdfFit; rotation: number }
@@ -28,9 +29,9 @@ export function createPdfCamera(stage: HTMLDivElement, space: HTMLDivElement, sh
   let wheelMotion: { target: number; point: PdfPoint; client: PdfPoint } | null = null
   let panMotion: PdfPoint | null = null, translation: PdfPoint = { x: 0, y: 0 }
   const listeners = new Set<() => void>()
-  const markers = new Map<HTMLElement, PdfPoint>()
-  const markerTransform = (point: PdfPoint) => `translate(calc(${size.width * scale * point.x}px - 50%), calc(${size.height * scale * point.y}px - 50%)) rotate(${-rotation}deg)`
-  const paintMarker = (element: HTMLElement, point: PdfPoint) => { element.style.transform = markerTransform(point) }
+  const markers = new Map<HTMLElement, PdfMarkerPoint>()
+  const markerTransform = (point: PdfMarkerPoint) => `translate(calc(${size.width * scale * point.x}px - 50%), calc(${size.height * scale * point.y}px - 50%)) ${point.textRotation === undefined ? `rotate(${-rotation}deg)` : `rotate(${point.textRotation}deg) scale(${scale})`}`
+  const paintMarker = (element: HTMLElement, point: PdfMarkerPoint) => { element.style.transform = markerTransform(point) }
   let snapshot: PdfView = { scale, rotation, mode }
   const center = () => { const box = stage.getBoundingClientRect(); return { x: box.left + stage.clientWidth / 2, y: box.top + stage.clientHeight / 2 } }
   const toPoint = (clientX: number, clientY: number) => {
@@ -67,7 +68,7 @@ export function createPdfCamera(stage: HTMLDivElement, space: HTMLDivElement, sh
     sheet.style.setProperty('--scheme-point-rotation', `${-rotation}deg`)
     // Updating inherited page-size variables invalidated every descendant's
     // computed style. Position only the registered markers, before the single
-    // geometry read used to anchor the sheet; no React state or text scaling.
+    // geometry read used to anchor the sheet, without updating React state.
     for (const [element, point] of markers) paintMarker(element, point)
     if (anchor) position(anchor.point, anchor.client)
     else position({ x: .5, y: .5 }, center())
@@ -133,10 +134,11 @@ export function createPdfCamera(stage: HTMLDivElement, space: HTMLDivElement, sh
   return {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     getSnapshot: () => snapshot,
+    pageSize: size,
     toPoint,
     markerTransform,
-    trackMarker: (element: HTMLElement, point: PdfPoint) => { markers.set(element, point); paintMarker(element, point); return () => { markers.delete(element) } },
-    moveMarker: (element: HTMLElement, point: PdfPoint) => { if (markers.has(element)) markers.set(element, point); paintMarker(element, point) },
+    trackMarker: (element: HTMLElement, point: PdfMarkerPoint) => { markers.set(element, point); paintMarker(element, point); return () => { markers.delete(element) } },
+    moveMarker: (element: HTMLElement, point: PdfMarkerPoint) => { if (markers.has(element)) markers.set(element, point); paintMarker(element, point) },
     zoom,
     stop,
     fit: (next: PdfFit) => { stop(); mode = next; layout() },

@@ -1,3 +1,4 @@
+import { isCopyShortcut } from '@/lib/copy-shortcut'
 import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
 import './grid-keyboard.css'
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -384,7 +385,8 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       colId: column.key, headerName: column.label, initialWidth: Math.max(column.minWidth, column.key === 'title' ? 320 : 130), minWidth: column.key === 'title' ? 180 : column.key === 'rowCount' ? column.minWidth : 90, maxWidth: 1600,
       lockVisible: Boolean(column.required),
       initialHide: !column.required && !props.initialVisibleColumnKeys.includes(column.key), initialPinned: column.key === 'title' ? 'left' as const : undefined,
-      enableRowGroup: DOCUMENT_GRID_GROUP_FIELDS.has(column.key), filter: DOCUMENT_HISTORY_SERVER_FILTER,
+      sortable: column.sortable !== false,
+      enableRowGroup: DOCUMENT_GRID_GROUP_FIELDS.has(column.key), filter: column.filterable === false ? false : DOCUMENT_HISTORY_SERVER_FILTER,
       headerComponentParams: { innerHeaderComponent: JournalColumnHeading },
       valueGetter: params => {
         if (!params.data) return ''
@@ -679,10 +681,10 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         if (event.key === ' ' && group && node && !event.target.closest('button, input, a, textarea, [contenteditable=true]')) {
           event.preventDefault(); event.stopPropagation(); if (!event.repeat) void fullQuery.toggle(node); return
         }
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c'
+        if (isCopyShortcut(event.nativeEvent)
           && !event.target.closest('input:not([type=checkbox]), textarea, [contenteditable=true]')
           && (cell || group || header)) {
-          event.preventDefault(); event.stopPropagation(); copyCells(); return
+          event.preventDefault(); event.stopPropagation(); if (!event.repeat) copyCells(); return
         }
         if (header && (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) {
           const column = header.getAttribute('col-id')

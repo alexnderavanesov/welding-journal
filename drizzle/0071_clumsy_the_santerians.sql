@@ -1,0 +1,4 @@
+ALTER TABLE "line_scheme_annotations" DROP CONSTRAINT "line_scheme_annotations_shape_check";--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" DROP CONSTRAINT "line_scheme_annotations_label_check";--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD CONSTRAINT "line_scheme_annotations_shape_check" CHECK ("line_scheme_annotations"."shape" in ('dot', 'triangle', 'line', 'text'));--> statement-breakpoint
+ALTER TABLE "line_scheme_annotations" ADD CONSTRAINT "line_scheme_annotations_label_check" CHECK (length(btrim("line_scheme_annotations"."label")) between 1 and case when "line_scheme_annotations"."shape" = 'text' then 1000 else 120 end);

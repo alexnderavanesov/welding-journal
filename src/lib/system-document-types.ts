@@ -70,6 +70,7 @@ export type SystemDocumentSummary = SystemDocumentReference & {
   fileName: string
   methodCodes: string[]
   rowCount: number
+  jointComposition?: string
   positionCount: number
   projects: string[]
   subtitleCodes: string[]

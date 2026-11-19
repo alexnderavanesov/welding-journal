@@ -1436,7 +1436,12 @@ test('document grid parity: clipboard copies complete ranges from leaf, header a
     // A sentinel makes a missing shortcut handler fail even after a previous
     // successful copy of the same range.
     await page.evaluate(() => navigator.clipboard.writeText('not copied'))
-    await page.keyboard.press('ControlOrMeta+c')
+    if (browserName === 'chromium') {
+      const keyboard = await context.newCDPSession(page)
+      await keyboard.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67 })
+      await keyboard.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67 })
+      await keyboard.detach()
+    } else await page.keyboard.press('ControlOrMeta+c')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text)
   }
   await page.waitForLoadState('networkidle')

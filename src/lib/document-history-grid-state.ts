@@ -26,7 +26,7 @@ export const DOCUMENT_GRID_DEFAULT_APPEARANCE: DocumentGridAppearance = {
 export function documentGridRowHeight(appearance: Pick<DocumentGridAppearance, 'density' | 'wrapText'>) {
   return appearance.density === 'compact' ? (appearance.wrapText ? 46 : 36) : appearance.density === 'spacious' ? 70 : 56
 }
-export const DOCUMENT_GRID_GROUP_FIELDS = new Set(['project', 'subtitle', 'line', 'method', 'stage', 'specialistFirst', 'specialistSecond'])
+export const DOCUMENT_GRID_GROUP_FIELDS = new Set(['jointComposition', 'project', 'subtitle', 'line', 'method', 'stage', 'specialistFirst', 'specialistSecond'])
 const prefix = 'welding-journal:documents:grid:v1:'
 
 export function normalizeDocumentGridColumns(value: unknown, available: readonly DocumentGridColumnDefinition[]): ColumnState[] {
@@ -41,12 +41,18 @@ export function normalizeDocumentGridColumns(value: unknown, available: readonly
       hide: allowed.get(item.colId)?.required ? false : item.hide === true,
       width: Number.isFinite(item.width) ? Math.max(80, Math.min(1600, item.width)) : undefined,
       pinned: item.pinned === 'left' || item.pinned === 'right' ? item.pinned : null,
-      sort: item.colId !== '__actions' && (item.sort === 'asc' || item.sort === 'desc') ? item.sort : null,
-      sortIndex: item.colId !== '__actions' && Number.isInteger(item.sortIndex) && item.sortIndex >= 0 ? item.sortIndex : null,
+      sort: item.colId !== '__actions' && allowed.get(item.colId)?.sortable !== false && (item.sort === 'asc' || item.sort === 'desc') ? item.sort : null,
+      sortIndex: item.colId !== '__actions' && allowed.get(item.colId)?.sortable !== false && Number.isInteger(item.sortIndex) && item.sortIndex >= 0 ? item.sortIndex : null,
       rowGroup: DOCUMENT_GRID_GROUP_FIELDS.has(item.colId) && item.rowGroup === true,
       rowGroupIndex: DOCUMENT_GRID_GROUP_FIELDS.has(item.colId) && Number.isInteger(item.rowGroupIndex) && item.rowGroupIndex >= 0 ? item.rowGroupIndex : null,
     } satisfies ColumnState]
   })
+  // Existing personal layouts acquire the new column next to the count. Once
+  // saved, its explicit position/visibility is respected like other columns.
+  const countIndex = columns.findIndex(column => column.colId === 'rowCount')
+  if (countIndex >= 0 && allowed.has('jointComposition') && !seen.has('jointComposition')) {
+    columns.splice(countIndex + 1, 0, { colId: 'jointComposition', hide: false, width: 240, pinned: null, sort: null, sortIndex: null, rowGroup: false, rowGroupIndex: null })
+  }
   // Earlier views omitted the fixed action column. Preserve its former default.
   if (allowed.has('__actions') && !seen.has('__actions')) columns.push({ colId: '__actions', hide: false, width: 205, pinned: 'right', sort: null, sortIndex: null, rowGroup: false, rowGroupIndex: null })
   return columns

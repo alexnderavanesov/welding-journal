@@ -22,6 +22,22 @@ export function revealProgramLine(api: GridApi<LineProgramRecord>, target: Pick<
   const ancestors = []
   for (let parent = node.parent; parent; parent = parent.parent) if (parent.group && parent.level >= 0) ancestors.unshift(parent)
   for (const parent of ancestors) if (!parent.expanded) parent.setExpanded(true, undefined, true)
+  if (api.getGridOption('pagination')) {
+    // Pagination counts top-level groups (or lines without grouping), not
+    // detail rows. Explicit navigation must also reveal a later page.
+    const top = ancestors[0] ?? node
+    let index = 0, targetIndex = 0
+    api.forEachNodeAfterFilterAndSort(candidate => {
+      if (candidate.level !== 0) return
+      if (candidate === top) targetIndex = index
+      index++
+    })
+    api.paginationGoToPage(Math.floor(targetIndex / api.paginationGetPageSize()))
+  } else {
+    // Grouped overviews use the bounded document viewport. Expanding parents
+    // alone does not mount a distant target or bring its detail into view.
+    api.ensureNodeVisible(node, 'top')
+  }
   return true
 }
 

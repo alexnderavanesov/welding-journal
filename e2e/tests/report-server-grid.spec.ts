@@ -112,6 +112,24 @@ test('server report scopes keep membership, counts, stages, ranges and facets in
   await info.attach('report-grid-scope-measurements',{body:JSON.stringify(measurements),contentType:'application/json'})
 })
 
+for (const [report, route, count] of [['lnk', '/lnk', total], ['heatTreatment', '/psto', total / 2]] as const)
+test(`${report} Russian Ctrl+C uses the report clipboard`, async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Windows keyboard events use Chrome DevTools Protocol.')
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto(route); await page.getByRole('searchbox').fill(PROJECT)
+  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
+  const grid = page.locator(`[data-weld-report-grid="${report}"]`)
+  const cell = grid.locator('.ag-row[row-index="0"] .ag-cell[col-id="joint"]')
+  const expected = (await cell.innerText()).trim()
+  await cell.click({ position: { x: 3, y: 3 } })
+  await page.evaluate(() => navigator.clipboard.writeText('UNCHANGED'))
+  const keyboard = await context.newCDPSession(page)
+  await keyboard.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67 })
+  await keyboard.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'с', code: 'KeyC', modifiers: 2, windowsVirtualKeyCode: 67 })
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected)
+  await keyboard.detach()
+})
+
 for (const [report, route, count] of [['lnk','/lnk',total],['heatTreatment','/psto',total/2]] as const)
 test(`${report} selects the full filtered report and keeps actions for hidden selections`, async ({ page }) => {
   test.setTimeout(300000)

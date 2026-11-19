@@ -13,6 +13,7 @@ export function normalizeDocumentHistoryGridRequest(
   value: DocumentHistoryGridRequest | undefined,
   allowedKeys: readonly string[],
   idKind: 'generated' | 'system',
+  cellKeys: readonly string[] = allowedKeys,
 ): DocumentHistoryGridRequest {
   const startRow = value?.startRow ?? 0
   const endRow = value?.endRow ?? startRow + 100
@@ -42,7 +43,7 @@ export function normalizeDocumentHistoryGridRequest(
   if (value?.idsOnly !== undefined && typeof value.idsOnly !== 'boolean'
     || value?.revision !== undefined && !/^[a-f0-9]{32}$/.test(value.revision)
     || value?.cells && (!Array.isArray(value.cells.columns) || !value.cells.columns.length
-      || value.cells.columns.some(key => !allowedKeys.includes(key)) || new Set(value.cells.columns).size !== value.cells.columns.length
+      || value.cells.columns.some(key => !cellKeys.includes(key)) || new Set(value.cells.columns).size !== value.cells.columns.length
       || value.cells.summary !== undefined && typeof value.cells.summary !== 'boolean')
     || value?.idsOnly && (value.selectionOnly || value.cells)) throw new Error('Некорректная операция реестра документов.')
   if (value?.countRoutes && (!Array.isArray(value.countRoutes) || value.countRoutes.length > 256
@@ -82,20 +83,21 @@ function field(key: string) {
   return sql.identifier(`filter_${key}`)
 }
 
-/** Shared with facet options: global search covers registry metadata, never document composition. */
-export function buildDocumentHistoryGridSearch(search: string | undefined, filterKeys: readonly string[]) {
+/** Shared with facet options: global search covers the searchable columns of this registry. */
+type DocumentHistorySearchExpressions = Record<string, (query: string) => SQL | undefined>
+export function buildDocumentHistoryGridSearch(search: string | undefined, filterKeys: readonly string[], expressions?: DocumentHistorySearchExpressions) {
   const query = String(search ?? '').trim().slice(0, 200).toLocaleLowerCase('ru-RU')
   return query && filterKeys.length
-    ? sql`(${sql.join(filterKeys.map(key => sql`exists (
+    ? sql`(${sql.join(filterKeys.map(key => expressions?.[key]?.(query) ?? sql`exists (
       select 1 from unnest(coalesce(${field(key)}, array['']::text[])) as "search_value"
       where position(${query} in lower("search_value")) > 0
     )`), sql` or `)})`
     : sql`true`
 }
 
-export function withDocumentHistoryGridSearch(baseQuery: SQL, search: string | undefined, filterKeys: readonly string[]) {
+export function withDocumentHistoryGridSearch(baseQuery: SQL, search: string | undefined, filterKeys: readonly string[], expressions?: DocumentHistorySearchExpressions) {
   return search?.trim()
-    ? sql`select * from (${baseQuery}) as "search_documents" where ${buildDocumentHistoryGridSearch(search, filterKeys)}`
+    ? sql`select * from (${baseQuery}) as "search_documents" where ${buildDocumentHistoryGridSearch(search, filterKeys, expressions)}`
     : baseQuery
 }
 
@@ -119,12 +121,16 @@ const MULTIPLE_LABELS: Record<string, string> = {
 }
 
 export function buildDocumentHistoryGridSql({
-  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue, compact, output = false,
+  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue, compact, output = false, displayColumns, revisionSalt, searchExpressions,
 }: {
   output?: boolean
+  /** Display-only values are resolved after filtering and limiting the block. */
+  displayColumns?: (alias: string) => SQL
+  revisionSalt?: SQL
   baseQuery: SQL
   columnFilters: Record<string, string>
   filterKeys: readonly string[]
+  searchExpressions?: DocumentHistorySearchExpressions
   request: DocumentHistoryGridRequest
   idKind: 'generated' | 'system'
   sortExpressions: Record<string, SQL>
@@ -170,9 +176,9 @@ export function buildDocumentHistoryGridSql({
       return [sql`${sortExpressions[key]} ${sql.raw(direction)} nulls last`, sql`${groupKeyExpression(key)}::text ${sql.raw(direction)}`]
     })
     return sql`with "document_history" as not materialized (${baseQuery})
-      select *, count(*) over()::integer as "__outputTotal" from "document_history"
+      select *, ${displayColumns ? sql`${displayColumns('document_history')},` : sql``} count(*) over()::integer as "__outputTotal" from "document_history"
       where ${buildDocumentHistoryWhere(columnFilters, [...filterKeys])}
-        and ${buildDocumentHistoryGridSearch(request.search, filterKeys)}
+        and ${buildDocumentHistoryGridSearch(request.search, filterKeys, searchExpressions)}
       order by ${groupOrder.length ? sql`${sql.join(groupOrder, sql`, `)},` : sql``} ${leafOrder}`
   }
   const direction = request.sortModel.find(item => item.colId === groupColumn)?.sort ?? 'asc'
@@ -204,16 +210,19 @@ export function buildDocumentHistoryGridSql({
       select * from "level_rows" order by ${order}
       limit ${request.idsOnly ? 0 : request.selectionOnly ? 10_000 : request.endRow - request.startRow} offset ${request.selectionOnly ? 0 : request.startRow}
     `
-  const blockRows = projection && !groupColumn && !request.idsOnly ? sql`
-    "block_ids" as materialized (${blockQuery}),
-    "block_rows" as materialized (${projection.hydrate(sql`select ${idColumn} from "block_ids"`)})
-  ` : sql`"block_rows" as materialized (${blockQuery})`
+  const hydrateBlock = projection && !groupColumn && !request.idsOnly
+  const blockSource = hydrateBlock ? projection.hydrate(sql`select ${idColumn} from "block_ids"`) : blockQuery
+  const blockRows = sql`
+    ${hydrateBlock ? sql`"block_ids" as materialized (${blockQuery}),` : sql``}
+    "block_rows" as materialized (${displayColumns && !groupColumn && !request.idsOnly
+      ? sql`select "display_source".*, ${displayColumns('display_source')} from (${blockSource}) as "display_source"`
+      : blockSource})`
   return sql`
     with "document_history" as not materialized (${baseQuery}),
     "filtered_documents" as materialized (
       select ${projection ? sql.join(projection.columns.map(column => sql.identifier(column)), sql`, `) : sql`*`} from "document_history"
       where ${request.selectionOnly ? sql`true` : buildDocumentHistoryWhere(columnFilters, [...filterKeys])}
-        and ${request.selectionOnly ? sql`true` : buildDocumentHistoryGridSearch(request.search, filterKeys)}
+        and ${request.selectionOnly ? sql`true` : buildDocumentHistoryGridSearch(request.search, filterKeys, searchExpressions)}
     ),
     "scoped_documents" as not materialized (select * from "filtered_documents" where ${routeWhere}),
     "level_rows" as not materialized (${levelQuery}),
@@ -224,7 +233,7 @@ export function buildDocumentHistoryGridSql({
       ${matchingSelection} as "matchingSelectedIds",
       (select count(*)::integer from "scoped_documents" where ${selectedWhere}) as "selectedCount",
       ${request.idsOnly ? sql`(select coalesce(jsonb_agg(${idColumn} order by ${idColumn}), '[]'::jsonb) from "scoped_documents")` : sql`null::jsonb`} as "ids",
-      (select md5(coalesce(string_agg(md5(${revisionValue ?? sql`to_jsonb("filtered_documents")::text`}), '' order by ${idColumn}), '')) from "filtered_documents") as "revision",
+      (select md5(coalesce(string_agg(md5(${revisionValue ?? sql`to_jsonb("filtered_documents")::text`}), '' order by ${idColumn}), '')${revisionSalt ? sql` || ':' || ${revisionSalt}` : sql``}) from "filtered_documents") as "revision",
       ${counts} as "counts",
       ${request.cells?.summary ? groupColumn ? sql`jsonb_build_object('count', 0, 'numericCount', 0, 'sum', 0)` : sql`(
         select jsonb_build_object('count', ${populatedCount},

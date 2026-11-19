@@ -7,16 +7,28 @@ const target = { id: 7, version: '2026-10-19T00:00:01.000Z' }
 function grid(version: string | null, matches = false) {
   const node = version ? { data: { ...target, version }, parent: null as unknown } : undefined
   const api = {
-    isDestroyed: () => false, getRowNode: vi.fn(() => node), setFilterModel: vi.fn(),
+    isDestroyed: () => false, getGridOption: vi.fn(() => false), getRowNode: vi.fn(() => node), setFilterModel: vi.fn(), ensureNodeVisible: vi.fn(),
     forEachNodeAfterFilter: vi.fn(callback => { if (matches) callback(node) }),
   }
   return { node, calls: api, api: api as unknown as GridApi<LineProgramRecord> }
 }
 describe('explicit program target', () => {
+  it('opens the page of the target top-level line without counting its details', () => {
+    const state = grid(target.version, true)
+    const nodes = Array.from({ length: 65 }, (_, index) => index === 64 ? Object.assign(state.node!, { level: 0 }) : { level: 0 })
+    const paginationGoToPage = vi.fn()
+    Object.assign(state.api, {
+      getGridOption: () => true, paginationGetPageSize: () => 30, paginationGoToPage,
+      forEachNodeAfterFilterAndSort: (callback: (node: unknown) => void) => nodes.forEach(node => { callback(node); callback({ level: 1 }) }),
+    })
+    expect(revealProgramLine(state.api, target)).toBe(true)
+    expect(paginationGoToPage).toHaveBeenCalledExactlyOnceWith(2)
+  })
   it.each([null, '2026-10-19T00:00:00.000Z'])('waits for a missing or stale row (%s)', version => {
     const state = grid(version)
     expect(revealProgramLine(state.api, target)).toBe(false)
     expect(state.calls.setFilterModel).not.toHaveBeenCalled()
+    expect(state.calls.ensureNodeVisible).not.toHaveBeenCalled()
   })
   it.each([target.version, '2026-10-19T00:00:02.000Z'])('reveals the saved or concurrently newer row (%s)', version => {
     const state = grid(version)
@@ -33,6 +45,8 @@ describe('explicit program target', () => {
     expect(opened).toEqual([0, 1])
     expect(root.setExpanded).not.toHaveBeenCalled()
     expect(state.calls.setFilterModel).not.toHaveBeenCalled()
+    expect(state.calls.ensureNodeVisible).toHaveBeenCalledExactlyOnceWith(state.node, 'top')
+    expect(state.calls.ensureNodeVisible.mock.invocationCallOrder[0]).toBeGreaterThan(state.calls.getRowNode.mock.invocationCallOrder[0]!)
   })
 })
 

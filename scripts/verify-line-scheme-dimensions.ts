@@ -68,6 +68,29 @@ try {
     const changed = { ...dim, distanceMm: 40.25, offsetY: -.2 }
     await saveSchemePoints(await saveRequest({ upsert: [], remove: [], dimensions: { upsert: [changed], remove: [] } }))
     assert.deepEqual((await read()).dimensions, [changed]); checks++
+    // Text shares the same transactional/versioned annotation save, never dimension endpoints.
+    const text: SchemeAnnotation = { id: randomUUID(), page: 1, x: .6, y: .7, shape: 'text', label: 'Проверить\nПосле монтажа', leaderX: .2, leaderY: .4, textWidth: 176.125, textHeight: 42.5, color: '#111827', size: 24, strokeWidth: 2, rotation: 0 }
+    const textRequest = await saveRequest({ upsert: [], remove: [], annotations: { upsert: [text], remove: [] } })
+    const textSaved = await saveSchemePoints(textRequest)
+    assert.deepEqual(await saveSchemePoints(textRequest), textSaved)
+    assert.equal((await read()).annotations.find(a => a.id === text.id)?.label, text.label)
+    assert.equal((await read()).annotations.find(a => a.id === text.id)?.leaderX, .2)
+    assert.equal((await read()).annotations.find(a => a.id === text.id)?.leaderY, .4)
+    assert.equal((await read()).annotations.find(a => a.id === text.id)?.textWidth, 176.125)
+    assert.equal((await read()).annotations.find(a => a.id === text.id)?.textHeight, 42.5)
+    const textState = await read()
+    await assert.rejects(async () => saveSchemePoints(await saveRequest({ upsert: [], remove: [], annotations: { upsert: [{ ...text, textWidth: -1 }], remove: [] } })), /текстового блока/)
+    assert.deepEqual(await read(), textState)
+    await assert.rejects(async () => saveSchemePoints(await saveRequest({ upsert: [], remove: [], annotations: { upsert: [{ ...text, leaderY: null }], remove: [] } })), /Выноска/)
+    assert.deepEqual(await read(), textState)
+    await assert.rejects(() => saveSchemePoints({ ...textRequest, operationId: randomUUID() }), /изменил|изменен|изменён|устарел/)
+    await assert.rejects(async () => saveSchemePoints({ ...textRequest, ...await request(), revisionVersion: textState.version,
+      changes: { upsert: [], remove: [], annotations: { upsert: [{ ...text, shape: 'dot', label: 'Короткое', leaderX: null, leaderY: null, textWidth: null, textHeight: null }], remove: [] } } }), /преобразовать|Название/)
+    const textDimension: SchemeDimension = { ...dim, id: randomUUID(), ...schemeDimensionPair(`p:${points[0].id}`, `a:${text.id}`) }
+    await assert.rejects(async () => saveSchemePoints({ ...await saveRequest({ upsert: [], remove: [], annotations: { upsert: [{ ...text, label: 'Не сохранять' }], remove: [] }, dimensions: { upsert: [textDimension], remove: [] } }) }), /существующие точки/)
+    assert.deepEqual(await read(), textState)
+    await saveSchemePoints(await saveRequest({ upsert: [], remove: [], annotations: { upsert: [], remove: [text.id] } }))
+    checks++
     // Metadata is independent of the file, points and their version.
     const originalRevision = (await db.select().from(lineSchemeRevisions).where(eq(lineSchemeRevisions.id, revisionId)))[0]
     const numberRequest = { ...await request(), revisionId, changeNumber: ' 02.1 ' }
@@ -78,7 +101,7 @@ try {
     assert.deepEqual(numbered, { ...originalRevision, changeNumber: '02.1' }); checks++
     const next = await upload()
     assert.deepEqual((await read()).dimensions, [changed])
-    const archivedWrite = await saveRequest({ upsert: [], remove: [], dimensions: { upsert: [{ ...changed, distanceMm: 999 }], remove: [] } })
+    const archivedWrite = await saveRequest({ upsert: [], remove: [], annotations: { upsert: [text], remove: [] }, dimensions: { upsert: [{ ...changed, distanceMm: 999 }], remove: [] } })
     await assert.rejects(() => saveSchemePoints(archivedWrite), /основной редакции/)
     await updateSchemeRevisionNumber({ ...await request(), revisionId, changeNumber: null })
     assert.equal((await readSchemeBundle(db, bundleId)).revisions.find(item => item.id === revisionId)!.changeNumber, null); checks++
@@ -131,7 +154,7 @@ try {
     checks++
     const [viewer] = await fixture(() => db.insert(authUsers).values({ id: randomUUID(), email: `${randomUUID()}@e2e.test`, name: 'Dimension viewer', status: 'active', emailVerified: true, permissions: ['schemes.view'] }).returning())
     accountIds.push(viewer.id)
-    const guarded = await saveRequest({ upsert: [], remove: [], dimensions: { upsert: [], remove: [dim.id] } })
+    const guarded = await saveRequest({ upsert: [], remove: [], annotations: { upsert: [text], remove: [] }, dimensions: { upsert: [], remove: [dim.id] } })
     const metadata = { ...await request(), revisionId, changeNumber: '9' }
     await runWithAccess(toAccessIdentity(viewer), 'view-only', [], async () => {
       await assert.rejects(() => saveSchemePoints(guarded), /Недостаточно прав/)

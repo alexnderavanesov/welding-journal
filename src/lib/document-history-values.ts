@@ -49,6 +49,7 @@ export function generatedDocumentGridValue(key: string, record: RemoteGeneratedD
     case 'line': return record.lines.join(', ') || '-'
     case 'period': return singleDate ? formatDocumentDate(record.periodFrom ?? record.periodTo) : `${formatDocumentDate(record.periodFrom)} - ${formatDocumentDate(record.periodTo)}`
     case 'rowCount': return record.rowCount
+    case 'jointComposition': return record.jointComposition ?? ''
     case 'wdi': return formatDocumentWdi(record.wdiTotal)
     case 'updatedAt': return formatDocumentUpdatedAt(record.updatedAt)
     case 'specialistFirst': case 'specialistSecond': return record.specialists?.[key === 'specialistFirst' ? 'first' : 'second']?.name || 'Не назначен'
@@ -64,6 +65,7 @@ export function systemDocumentGridValue(key: string, record: SystemDocumentSumma
     case 'subtitle': return record.subtitleCodes.join(', ') || '-'
     case 'line': return record.lines.join(', ') || '-'
     case 'rowCount': return record.rowCount
+    case 'jointComposition': return record.jointComposition ?? ''
     case 'date': return formatDocumentDate(record.date) || '-'
     case 'specialistFirst': case 'specialistSecond': return record.specialists?.[key === 'specialistFirst' ? 'first' : 'second']?.name || 'Не назначен'
     default: return ''

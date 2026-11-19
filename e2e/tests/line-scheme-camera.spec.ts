@@ -9,6 +9,44 @@ const cameraScript = ts.transpileModule(readFileSync(process.env.E2E_PDF_CAMERA_
 }).outputText
 const css = readFileSync('src/components/line-schemes.css', 'utf8')
 
+for (const text of [false, true]) test(`PDF: 500 markers retain geometry during zoom, text ${text}`, async ({ page }, info) => {
+  test.skip(text && !!process.env.E2E_PDF_CAMERA_SOURCE, 'The previous camera has no text markers.')
+  // A bounded DOM model of 50 leaders. Real component interaction is covered in line-scheme-text.
+  const leadersMarkup = text ? `<svg width="100%" height="100%" viewBox="0 0 842 595"><defs><marker id="benchmark-tip" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M 0 0 L 6 3 L 0 6 Z" fill="#111827" /></marker></defs>${Array.from({ length: 50 }, (_, n) => `<path d="M ${(0.1 + (n % 25) / 32) * 842} ${(0.1 + Math.floor(n / 25) / 26) * 595} L ${.8 * 842} ${.9 * 595}" fill="none" stroke="#111827" stroke-width="1" marker-end="url(#benchmark-tip)" />`).join('')}</svg>` : ''
+  await page.setContent(`<style>${css}</style><div class="line-scheme-pdf" style="width:1000px;height:680px"><div class="line-scheme-pdf-stage"><div class="line-scheme-pdf-space"><div class="line-scheme-pdf-sheet"></div></div></div></div>`)
+  await page.addScriptTag({ content: `(() => { const exports = {}; ${cameraScript}
+    const stage = document.querySelector('.line-scheme-pdf-stage'), space = document.querySelector('.line-scheme-pdf-space'), sheet = document.querySelector('.line-scheme-pdf-sheet');
+    window.pdfCamera = exports.createPdfCamera(stage, space, sheet, {width:842,height:595}, 0, () => {});
+    for (let n = 0; n < 500; n++) {
+      const element = document.createElement('button'); element.className = 'line-scheme-annotation';
+      const point = {x: .1 + (n % 25) / 32, y: .1 + Math.floor(n / 25) / 26};
+      if (${text} && n < 50) { element.classList.add('line-scheme-text'); element.style.fontSize = '11px'; element.textContent = 'Примечание ' + n + '\\nПосле монтажа'; point.textRotation = 0; }
+      else { element.textContent = 'S' + n; element.style.width = '24px'; element.style.height = '24px'; }
+      sheet.append(element); window.pdfCamera.trackMarker(element, point);
+    }
+    sheet.insertAdjacentHTML('beforeend', ${JSON.stringify(leadersMarkup)});
+    const leaders = sheet.querySelector('svg'); if (leaders) Object.assign(leaders.style, {position: 'absolute', inset: '0', pointerEvents: 'none', overflow: 'visible'});
+  })()` })
+  const measured = await page.evaluate(async () => {
+    const camera = (window as any).pdfCamera, first = document.querySelector<HTMLButtonElement>('.line-scheme-annotation')!
+    const before = first.getBoundingClientRect(), scale = camera.getSnapshot().scale
+    const frames: number[] = [], operations: number[] = []
+    let previous = performance.now()
+    for (let n = 0; n < 60; n++) {
+      await new Promise<void>(resolve => requestAnimationFrame(now => { frames.push(now - previous); previous = now; resolve() }))
+      const start = performance.now(); camera.zoom(n < 30 ? 1.01 : 1 / 1.01); operations.push(performance.now() - start)
+    }
+    camera.zoom(1.2)
+    const after = first.getBoundingClientRect()
+    const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length * .95)]
+    return { p95Frame: p95(frames.slice(1)), p95Layout: p95(operations), widthRatio: after.width / before.width, scaleRatio: camera.getSnapshot().scale / scale }
+  })
+  expect(measured.scaleRatio).toBeCloseTo(1.2, 5)
+  expect(measured.widthRatio).toBeCloseTo(text ? 1.2 : 1, 2)
+  console.log(JSON.stringify({ markerMotion: { text, ...measured } }))
+  await info.attach('marker-motion', { body: JSON.stringify(measured), contentType: 'application/json' })
+})
+
 test('PDF: Chrome touchpad pinch changes the drawing without zooming the application', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'Native CDP pinch is Chrome-specific.')
   await page.setContent(`<style>${css}</style><div class="line-scheme-pdf" style="width:1000px;height:680px"><div class="line-scheme-pdf-stage"><div class="line-scheme-pdf-space"><div class="line-scheme-pdf-sheet"></div></div></div></div>`)

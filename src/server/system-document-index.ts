@@ -60,6 +60,7 @@ import { syncProgramChainStates } from './line-program-chain-state'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
 import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocumentHistoryGridResult, withDocumentHistoryGridSearch } from './document-history-grid'
 import { systemDocumentGridValue } from '@/lib/document-history-values'
+import { DOCUMENT_JOINTS_REVISION, documentJointCompositionColumn, documentJointCompositionSearch, needsDocumentJointCompositionFilter, withDocumentJointCompositionFilter } from './document-joint-composition'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -178,6 +179,7 @@ export const SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS = [
   'subtitle',
   'line',
   'rowCount',
+  'jointComposition',
   'date',
 ] as const
 
@@ -231,10 +233,18 @@ export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemD
   // paths; preserve their original query. Selection restoration ignores both.
   const keepFullProjection = !request.selectionOnly && (Boolean(request.search?.trim()) ||
     ['method', 'stage', 'project', 'subtitle', 'line'].some(key => Boolean(request.columnFilters[key]?.trim())))
+  const compositionFilter = needsDocumentJointCompositionFilter(request)
+  const baseQuery = (ids?: SQL) => withDocumentJointCompositionFilter(
+    buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true, ids), 'documentId', compositionFilter)
   return buildDocumentHistoryGridSql({
-    baseQuery: buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true),
+    baseQuery: baseQuery(),
     columnFilters: request.columnFilters, filterKeys: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
+    searchExpressions: { jointComposition: query => documentJointCompositionSearch(query, 'documentId', 'document_history') },
     output, request, idKind: 'system', sortExpressions,
+    displayColumns: !request.cells || request.cells.columns.includes('jointComposition')
+      ? alias => documentJointCompositionColumn(alias, 'documentId') : undefined,
+    populatedExpressions: { jointComposition: sql`nullif("jointComposition", '')` },
+    revisionSalt: DOCUMENT_JOINTS_REVISION,
     defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
     // This indexed row reads only generated_documents. Its existing xmin
     // token changes with metadata, specialists and membership touches too.
@@ -242,7 +252,7 @@ export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemD
     compact: keepFullProjection ? undefined : {
       columns: ['documentId', 'documentVersion', 'date', 'title', ...(fields.includes('rowCount') ? ['rowCount'] : []),
         ...fields.map(key => `filter_${key}`)],
-      hydrate: ids => buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true, ids),
+      hydrate: ids => baseQuery(ids),
     },
   })
 }
@@ -269,7 +279,8 @@ export async function queryIndexedSystemDocumentHistory(
     }
   }
 
-  const baseQuery = buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId)
+  const baseQuery = withDocumentJointCompositionFilter(buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId),
+    'documentId', needsDocumentJointCompositionFilter({ columnFilters }))
   const queryResult = await tx.execute(buildDocumentHistorySqlQuery({
     baseQuery,
     columnFilters,
@@ -308,7 +319,10 @@ export async function loadIndexedSystemDocumentHistoryFilterOptions({
     const storageTypes = getSystemDocumentStorageTypes(type)
     if (storageTypes.length === 0) return { options: [], hasMore: false }
 
-    const baseQuery = withDocumentHistoryGridSearch(buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId), gridSearch, SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS)
+    const baseQuery = withDocumentHistoryGridSearch(withDocumentJointCompositionFilter(
+      buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId), 'documentId',
+      needsDocumentJointCompositionFilter({ columnFilters, fieldKey, search: gridSearch })), gridSearch, SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
+      { jointComposition: query => documentJointCompositionSearch(query, 'documentId', 'search_documents') })
     const result = await tx.execute(buildDocumentHistoryFilterOptionsSqlQuery({
       baseQuery,
       columnFilters,
@@ -2183,6 +2197,7 @@ function toIndexedSystemDocumentHistorySummary(
     fileName: String(record.fileName ?? ''),
     methodCodes: metadata?.methodCodes ?? [],
     rowCount,
+    ...(typeof record.jointComposition === 'string' ? { jointComposition: record.jointComposition } : {}),
     positionCount: metadata?.positionCount ?? rowCount,
     projects: metadata?.projects ?? [],
     subtitleCodes: metadata?.subtitleCodes ?? [],
