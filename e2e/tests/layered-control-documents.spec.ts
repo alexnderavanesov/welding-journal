@@ -127,7 +127,8 @@ test('создает комплект только по явному назна�
     await assignment.getByRole('button', { name: 'Применить', exact: true }).click()
     await expect(assignment).toBeHidden()
     for (const doc of await layeredSnapshots()) {
-      if (doc.type.startsWith('layeredVik')) expect(doc.specialists).toEqual({ first: { id: specialistId, name: 'E2E послойный специалист', certificate: 'ПОСЛ-123' }, second: { id: specialistId, name: 'E2E послойный специалист', certificate: 'ПОСЛ-123' } })
+      // An explicit new assignment records the document date even for a legacy undated card.
+      if (doc.type.startsWith('layeredVik')) expect(doc.specialists).toEqual({ first: { id: specialistId, name: 'E2E послойный специалист', certificate: 'ПОСЛ-123', certificateDate: '2026-08-15' }, second: { id: specialistId, name: 'E2E послойный специалист', certificate: 'ПОСЛ-123', certificateDate: '2026-08-15' } })
       else expect(doc.specialists).toBeNull()
     }
   } finally { await withE2eDatabase(db => db.query('delete from specialists where id=$1', [specialistId])) }
@@ -254,19 +255,18 @@ test('послойное назначение вместе с результат
   })
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
-  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК', exact: true }) })
+  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК', exact: true }) })
   await manager.getByLabel('Вид контроля в реестре').selectOption('pvkRequest')
   await manager.getByRole('button', { name: /E2E-LAYER-L1 · F218/ }).click()
+  await manager.getByRole('button', { name: 'Редактировать', exact: true }).click()
   const removeLayered = manager.getByRole('button', { name: 'Убрать послойный контроль', exact: true })
   await expect(removeLayered).toBeEnabled()
   await expect(manager.getByText(/обычный ПВК сохранится/)).toBeVisible()
   await page.waitForLoadState('networkidle')
   const workflowReadsBefore = requests.filter((name) => name.startsWith('listLnkWorkflowRows_')).length
-  const conclusionName = manager.getByPlaceholder('Наименование заключения для этого стыка')
-  await conclusionName.fill('Несохранённое имя')
-  await expect(removeLayered).toBeDisabled()
-  await conclusionName.fill(saved.pvk_conclusion)
-  await expect(removeLayered).toBeEnabled()
+  // This conclusion has one joint: only the whole-document editor is shown.
+  await expect(manager.getByRole('button', { name: 'К документу', exact: true })).toBeEnabled()
+  await expect(manager.getByText('Изменить заключение только этого стыка', { exact: true })).toHaveCount(0)
   await manager.screenshot({ path: 'outputs/lnk-manager-layered-removal-20260927.png' })
   await removeLayered.click()
   const removeConfirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Убрать послойный контроль?', exact: true }) })
@@ -281,7 +281,7 @@ test('послойное назначение вместе с результат
   await expect(removeLayered).toHaveCount(0)
   await expect(manager.getByRole('status')).toContainText('Обычный результат ПВК, его заявка и заключение сохранены')
   await expect(manager.getByRole('heading', { name: 'E2E-LAYER-L1 · F218', exact: true })).toBeVisible()
-  await expect(conclusionName).toHaveValue(saved.pvk_conclusion)
+  await expect(manager.getByRole('button', { name: 'К документу', exact: true }).locator('..')).toContainText(saved.pvk_conclusion)
   await page.waitForLoadState('networkidle')
   expect(requests.filter((name) => name.startsWith('changeLayeredControl_'))).toHaveLength(1)
   expect(requests.filter((name) => name.startsWith('listLnkWorkflowRows_'))).toHaveLength(workflowReadsBefore)

@@ -18,10 +18,8 @@ export function usePstoModalState() {
   const [isPstoRequestManagerOpen, setIsPstoRequestManagerOpen] = useState(false)
   const [managedPstoRequestName, setManagedPstoRequestName] = useState('')
   const [managedPstoRequestDate, setManagedPstoRequestDate] = useState('')
-  const [managedPstoRequestNameDraft, setManagedPstoRequestNameDraft] = useState('')
   const [isPstoResultModalOpen, setIsPstoResultModalOpen] = useState(false)
   const [isPstoResultManagerOpen, setIsPstoResultManagerOpen] = useState(false)
-  const [managedPstoDiagramDrafts, setManagedPstoDiagramDrafts] = useState<Record<number, string>>({})
   const [pstoResultDraft, setPstoResultDraft] = useState<PstoResultDraftState>(() => createDefaultPstoResultDraft())
 
   return {
@@ -33,10 +31,8 @@ export function usePstoModalState() {
     isPstoRequestManagerOpen,
     managedPstoRequestName,
     managedPstoRequestDate,
-    managedPstoRequestNameDraft,
     isPstoResultModalOpen,
     isPstoResultManagerOpen,
-    managedPstoDiagramDrafts,
     pstoResultDraft,
     setPstoRequestNaming,
     setPstoRequestDate,
@@ -46,10 +42,8 @@ export function usePstoModalState() {
     setIsPstoRequestManagerOpen,
     setManagedPstoRequestName,
     setManagedPstoRequestDate,
-    setManagedPstoRequestNameDraft,
     setIsPstoResultModalOpen,
     setIsPstoResultManagerOpen,
-    setManagedPstoDiagramDrafts,
     setPstoResultDraft,
   }
 }

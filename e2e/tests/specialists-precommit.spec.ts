@@ -124,7 +124,7 @@ for (const createdStage of ['primary', 'beforeHeatTreatment'] as const) {
     await createConclusion(existingStage, existingWeld!, title, { first: existingPerson.id, second: existingPerson.id })
     const before = await conclusions()
     expect(before).toHaveLength(1)
-    expect(before[0]!.specialists).toEqual({ first: existingPerson, second: existingPerson })
+    expect(before[0]!.specialists).toEqual({ first: { ...existingPerson, certificateDate: date }, second: { ...existingPerson, certificateDate: date } })
 
     // Prior lookup selected both stages and rolled back this real transaction.
     await createConclusion(createdStage, createdWeld!, title, { first: createdPerson.id, second: null })
@@ -231,7 +231,7 @@ test('bulk assignment rejects stale membership after actual weld deletion withou
   const companionBefore = before.find(document => document.id !== sharedBefore.id)!
   expect(sharedBefore.row_ids).toEqual([removedWeld, retainedWeld].sort((a, b) => a! - b!))
   expect(sharedBefore.row_count).toBe(2)
-  for (const document of before) expect(document.specialists).toEqual({ first: original, second: original })
+  for (const document of before) expect(document.specialists).toEqual({ first: { ...original, certificateDate: date }, second: { ...original, certificateDate: date } })
   // Both documents are selected: rejecting the stale one must reject the whole
   // batch, including an otherwise unchanged and eligible companion document.
   const staleRequest = {
@@ -294,7 +294,7 @@ test('bulk assignment rejects stale membership after actual weld deletion withou
   expect(attempts.filter(attempt => attempt.status === 'rejected')).toHaveLength(1)
   const lost = attempts.find(attempt => attempt.status === 'rejected') as PromiseRejectedResult
   expect(String(lost.reason)).toContain('Документы изменились')
-  const winningFirst = attempts[0].status === 'fulfilled' ? original : null
+  const winningFirst = attempts[0].status === 'fulfilled' ? { ...original, certificateDate: date } : null
   const final = await conclusions()
   for (const document of final) {
     expect(document.specialists).toEqual({ first: winningFirst, second: null })
@@ -313,8 +313,8 @@ for (const removal of ['layered removal', 'duplicate pruning', 'weld deletion'] 
     const documentId = await withE2eDatabase(async db => {
       await db.query('update weld_joints set layered_control_assigned=true where project_title=$1', [project])
       const { rows: [document] } = await db.query<{ id: number }>(`insert into generated_documents
-        (type,title,file_name,mime_type,row_count,source_metadata)
-        values('layeredVikEdges',$1,'legacy.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',2,$2) returning id`,
+        (type,title,file_name,mime_type,row_count,source_metadata,period_from,period_to)
+        values('layeredVikEdges',$1,'legacy.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',2,$2,'2026-10-01','2026-10-01') returning id`,
       [`${project} legacy shared`, JSON.stringify({ kind: 'layeredControl', version: 1 })])
       await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) select $1,unnest($2::integer[])', [document!.id, [removedWeld, retainedWeld]])
       return document!.id

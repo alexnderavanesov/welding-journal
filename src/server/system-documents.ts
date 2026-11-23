@@ -28,6 +28,7 @@ import type { SqlDocumentHistoryFilterOptionsResult } from '@/server/document-hi
 import { assertSecurityScope } from '@/server/security-functions'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
 import { normalizeDocumentHistoryGridRequest } from './document-history-grid'
+import { requireWorkflowDocumentArea, workflowDocumentStorageTypes, type WorkflowDocumentArea } from '@/lib/workflow-document-area'
 
 export type RemoteSystemDocumentHistoryRequest = {
   type: SystemDocumentType
@@ -53,6 +54,24 @@ export const listSystemDocumentHistoryGrid = createServerFn({ method: 'POST' })
     await assertSecurityScope('entry')
     return loadIndexedSystemDocumentHistoryGrid(data)
   })
+
+export type RemoteWorkflowDocumentHistoryGridRequest = RemoteSystemDocumentHistoryGridRequest & {
+  workflowArea: WorkflowDocumentArea
+}
+
+export const listWorkflowDocumentHistoryGrid = createServerFn({ method: 'POST' })
+  .validator(normalizeWorkflowDocumentHistoryGridRequest)
+  .handler(async ({ data }): Promise<DocumentHistoryGridResult<SystemDocumentSummary>> => {
+    await assertSecurityScope('entry')
+    return loadIndexedSystemDocumentHistoryGrid(data)
+  })
+
+export function normalizeWorkflowDocumentHistoryGridRequest(data: RemoteWorkflowDocumentHistoryGridRequest | undefined) {
+  const workflowArea = requireWorkflowDocumentArea(data?.workflowArea)
+  const request = normalizeSystemDocumentHistoryGridRequest(data)
+  workflowDocumentStorageTypes(request.type, workflowArea)
+  return { ...request, workflowArea }
+}
 
 export function normalizeSystemDocumentHistoryGridRequest(data: RemoteSystemDocumentHistoryGridRequest | undefined) {
   const { limit: _limit, ...history } = normalizeSystemDocumentHistoryRequest(data)
@@ -157,7 +176,7 @@ export function normalizeSystemDocumentReference(data: SystemDocumentReference):
   const type = requireSystemDocumentType(data?.type)
   const title = String(data?.title ?? '').trim()
   const date = String(data?.date ?? '').trim().slice(0, 10)
-  const methodCode = String(data?.methodCode ?? '').trim()
+  const methodCode = String(data?.methodCode ?? '').trim().toLocaleUpperCase('ru-RU')
   const rawSourceKind = String(data?.sourceKind ?? '').trim()
   if (rawSourceKind && !isSystemDocumentSourceKind(rawSourceKind)) {
     throw new Error('Неизвестный этап системного документа.')

@@ -94,6 +94,8 @@ export function scheduleWeldDataRefresh(
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
+  void queryClient.invalidateQueries({ queryKey: ['system-document-date-context'] })
+  void queryClient.invalidateQueries({ queryKey: ['workflow-document-registry'] })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'none' })
   void invalidateWeldPageQueries(queryClient)
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })

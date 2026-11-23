@@ -8,7 +8,7 @@ vi.mock('@/db', () => ({ requireDb: mocked.database }))
 const now = new Date('2026-10-12T00:00:00.000Z')
 const card = { name: 'Иванов', kind: 'inspector' as const, certificate: '123', methods: ['ВИК' as const] }
 function setup(count: number) {
-  const documents = Array.from({ length: count }, (_, index) => ({ id: index + 1, type: 'system:lnkConclusionVik', specialists: null, specialistsRevision: 0, updatedAt: now, documentVersion: '101' }))
+  const documents = Array.from({ length: count }, (_, index) => ({ id: index + 1, type: 'system:lnkConclusionVik', periodFrom: '2026-10-12', specialists: null, specialistsRevision: 0, updatedAt: now, documentVersion: '101' }))
   const records = [{ ...card, id: 1, revision: 1 }]
   const tx = { select: vi.fn((fields?: unknown) => ({ from(table: unknown) { const chain = { where: vi.fn(() => chain), orderBy: vi.fn(() => chain), for: vi.fn(async () => table === generatedDocuments ? documents : records) }; return chain } })), execute: vi.fn(async () => ({ rows: [] })) }
   mocked.database.mockReturnValue({ transaction: (callback: (tx: unknown) => unknown) => callback(tx) })

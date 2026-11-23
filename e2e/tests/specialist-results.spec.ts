@@ -195,33 +195,28 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: isPre ? 'Все результаты ЛНК' : 'История ПСТО и ТВМТ', exact: true }).click()
   if (isPre) await page.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
-  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Редактирование результатов ЛНК до ТО' : 'История ПСТО и ТВМТ', exact: true }) })
+  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Все результаты ЛНК до ТО' : 'История ПСТО и ТВМТ', exact: true }) })
   // Both fixture rows are already visible. Do not start a second asynchronous
   // registry search while testing the correction/confirmation workflow.
   await manager.getByRole('button', { name: /SPEC-L1 · F99001/ }).click()
   const card = isPre ? manager : manager.getByRole('heading', { name: 'Результат ПСТО', exact: true }).locator('xpath=ancestor::article')
-  const nameInput = card.getByRole('textbox', { name: isPre ? 'Наименование заключения' : 'Наименование диаграммы', exact: true })
+  await card.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  if (isPre) await card.getByText('Изменить заключение только этого стыка', { exact: true }).click()
+  const nameInput = card.getByRole('textbox', { name: isPre ? 'Заключение только этого стыка' : 'Наименование диаграммы только этого стыка', exact: true })
   await nameInput.fill('Spec corrected historical document')
-  await card.getByRole('button', { name: isPre ? 'Сохранить реквизиты' : 'Сохранить', exact: true }).click()
+  await card.getByRole('button', { name: isPre ? 'Изменить заключение этого стыка' : 'Сохранить изменения', exact: true }).click()
+  await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Изменить документ только этой позиции', exact: true }) })
+    .getByRole('button', { name: 'Изменить документ этой позиции', exact: true }).click()
   await expect.poll(async () => (await stored()).length).toBe(2)
-  await expect(page.getByText(isPre ? 'Результат НК до ТО обновлен.' : 'Этап цикла ПСТО/ТВМТ обновлен.', { exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: isPre ? 'Сохранить реквизиты' : 'Сохранить', exact: true })).toBeDisabled()
   expect((await stored()).every(document => JSON.stringify(document.specialists) === JSON.stringify(historical))).toBe(true)
-  // Merge back by editing the name. A conflicting certificate must require
-  // confirmation; cancellation leaves both original documents intact.
-  const documents = await stored()
-  const target = documents.find(document => document.title !== 'Spec corrected historical document')!
+  // A one-joint document now uses only the whole-document editor; there is no
+  // per-position reassignment. General merge still requires explicit consent
+  // before clearing conflicting historical certificates.
+  await expect(nameInput).toHaveCount(0)
+  const target = (await stored()).find(document => document.title !== 'Spec corrected historical document')!
   await withE2eDatabase(db => db.query('update generated_documents set specialists=null,specialists_revision=specialists_revision+1 where id=$1', [target.id]))
-  await nameInput.fill(target.title)
-  await card.getByRole('button', { name: isPre ? 'Сохранить реквизиты' : 'Сохранить', exact: true }).click()
-  const warning = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Очистить специалистов при объединении?', exact: true }) })
-  await expect(warning).toBeVisible()
-  await warning.getByRole('button', { name: 'Отмена', exact: true }).click()
-  expect(await stored()).toHaveLength(2)
-  expect((await stored()).find(document => document.title === 'Spec corrected historical document')!.specialists).toEqual(historical)
-  await nameInput.fill(target.title)
-  await card.getByRole('button', { name: isPre ? 'Сохранить реквизиты' : 'Сохранить', exact: true }).click()
-  await warning.getByRole('button', { name: 'Сохранить и очистить роли', exact: true }).click()
-  await expect.poll(async () => (await stored()).length).toBe(1)
+  expect((await operation('merge', true, 'none')).groups[0].specialistsCleared).toBe(true)
+  expect(await stored()).toHaveLength(1)
   expect((await stored())[0].specialists).toEqual({ first: null, second: null })
+
 })

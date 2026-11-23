@@ -41,8 +41,8 @@ async function seed(stage: Stage) {
     const program = (await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'STAGED',$2,'II','A',10,0) returning id`, [project, line])).rows[0]
     const rows = (await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,
-      connection_type,material_group,welding_method,officiality,revision_actuality,d1,d2,t1,t2,wdi,has_vik,psto_required,final_status)
-      select $1,$2,'STAGED',$3,'F98'||n,'2026-09-01','С17','M01','РД','действующий','актуальная',108,108,4,4,0.42,'да',$4,
+      connection_type,material_group,welding_method,officiality,revision_actuality,d1,d2,t1,t2,wdi,has_vik,psto_required,pre_heat_treatment_required,final_status)
+      select $1,$2,'STAGED',$3,'F98'||n,'2026-09-01','С17','M01','РД','действующий','актуальная',108,108,4,4,0.42,'да',$4,$4::text='да',
         case when n=1 then 'не годен' when $4::text='да' then 'ожидает заявку' else 'годен' end
       from generate_series(1,3) n returning id`, [program.id, project, line, stage === 'primary' ? null : 'да'])).rows
     const ids = rows.map(row => row.id as number)
@@ -86,12 +86,15 @@ async function openManager(page: Page, stage: Stage) {
     await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
   }
   const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
-    name: stage === 'primary' ? 'Редактирование результатов ЛНК' : 'Редактирование результатов ЛНК до ТО', exact: true,
+    name: stage === 'primary' ? 'Все результаты ЛНК' : 'Все результаты ЛНК до ТО', exact: true,
   }) })
   await manager.getByLabel('Вид контроля в реестре').selectOption(stage === 'primary' ? 'vikRequest' : 'ВИК')
   // Other scenarios may leave newer records above this fixture. Use the
   // operator's search instead of assuming its rows are in the virtual window.
+  const loaded = page.waitForResponse(response => response.url().includes('/_serverFn/') &&
+    rpcName(response.url()).startsWith('listLnkWorkflowRows') && Boolean(response.request().postData()?.includes(line)))
   await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill(line)
+  await loaded
   return manager
 }
 
@@ -99,6 +102,9 @@ async function choose(manager: Locator, joint: string) {
   const entry = manager.getByRole('button').filter({ hasText: `${line} · ${joint}` })
   await expect(entry).toHaveCount(1)
   await entry.click()
+  await expect(manager.getByRole('heading', { name: `${line} · ${joint}`, exact: true })).toBeVisible()
+  const edit = manager.getByRole('button', { name: 'Редактировать', exact: true })
+  if (await edit.isVisible()) await edit.click()
   return entry
 }
 
@@ -162,7 +168,7 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
     await manager.getByRole('button', { name: 'Закрыть', exact: true }).click()
     expect(await facts(stage)).toEqual(original)
     manager = await openManager(page, stage)
-    await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeDisabled()
+    await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toHaveCount(0)
     await prepare(manager)
     await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
     await confirmLnkResultChanges(page)
@@ -269,10 +275,10 @@ test('удаление заявки не захватывает стык, доб
   await page.goto('/lnk')
   await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
   await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
-  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true }) })
+  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все заявки ЛНК', exact: true }) })
   await manager.getByPlaceholder('Название, дата, стык или линия').fill('STAGED-REQUEST')
   await manager.getByRole('button').filter({ hasText: 'STAGED-REQUEST' }).click()
-  await manager.getByRole('button', { name: 'Дополнительные действия с заявкой', exact: true }).click()
+  await manager.getByRole('button', { name: 'Редактировать', exact: true }).click()
   await manager.getByRole('button', { name: 'Удалить выбранную заявку', exact: true }).click()
   const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Удалить заявку ЛНК', exact: true }) })
   await expect(confirmation).toBeVisible()
@@ -286,3 +292,121 @@ test('удаление заявки не захватывает стык, доб
 })
 
 const updateWeldJoints = asE2eOwner(raw_updateWeldJoints, 'welding.edit')
+
+for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
+  test(`${stage}: общий документ и отдельная позиция редактируются раздельно`, async ({ page }, info) => {
+    await seed(stage)
+    // Official joints use null in storage (the UI displays «официальный»).
+    await withE2eDatabase(db => db.query("update weld_joints set officiality=null where project_title=$1", [project]))
+    const initial = await facts(stage)
+    const before = await withE2eDatabase(async db => (await db.query('select id,specialists from generated_documents where title=$1', [title])).rows[0])
+    const manager = await openManager(page, stage)
+    await expect(manager.getByRole('button', { name: 'Редактировать', exact: true })).toBeVisible()
+    await expect(manager.getByRole('button', { name: 'Сохранить изменения документа', exact: true })).toHaveCount(0)
+    await choose(manager, 'F982')
+    const commonName = `${title}-RENAMED`
+    await manager.getByRole('button', { name: 'К документу', exact: true }).click()
+    const common = manager.getByRole('tabpanel', { name: 'Документы', exact: true }).getByLabel('Название документа', { exact: true })
+    await expect(common).toBeEnabled()
+    await common.fill(commonName)
+    await expect(manager.getByRole('button', { name: 'Сохранить изменения документа', exact: true })).toBeEnabled()
+    await manager.getByRole('tab', { name: 'Стыки', exact: true }).click()
+    await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeDisabled()
+    await manager.getByRole('tab', { name: 'Документы', exact: true }).click()
+    await expect(common).toHaveValue(commonName)
+    await expect(manager.getByRole('region', { name: 'Полный состав документа' })).toContainText('F983')
+    await manager.getByRole('button', { name: 'Свернуть редактирование', exact: true }).click()
+    await manager.getByRole('button', { name: 'Редактировать', exact: true }).click()
+    await expect(common).toHaveValue(commonName)
+    await manager.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).click()
+    const renameConfirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Сохранить изменения документа', exact: true }) })
+    await expect(renameConfirm).toContainText('3 поз. в 3 ст.')
+    await expect(renameConfirm).toContainText('Стыки не выделяются')
+    await renameConfirm.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+    await expect.poll(() => facts(stage)).toEqual(initial.map(row => ({ ...row, conclusion: commonName })))
+    const renamed = await withE2eDatabase(async db => (await db.query('select id,specialists,row_count from generated_documents where title=$1', [commonName])).rows[0])
+    expect(renamed).toEqual({ ...before, row_count: 3 })
+    const reopened = await openManager(page, stage)
+    await choose(reopened, 'F982')
+    await reopened.getByText('Изменить заключение только этого стыка', { exact: true }).click()
+    const separate = stage === 'primary' ? reopened.getByPlaceholder('Заключение только этого стыка') : reopened.getByLabel('Заключение только этого стыка', { exact: true })
+    await expect(separate).toBeVisible()
+    const separateName = `${title}-F982`
+    await separate.fill(separateName)
+    await reopened.getByRole('button', { name: 'Изменить заключение этого стыка', exact: true }).click()
+    const moveConfirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Изменить документ только этой позиции', exact: true }) })
+    await expect(moveConfirm).toContainText(`${commonName}» → «${separateName}`)
+    await expect(moveConfirm).toContainText('Остальные позиции останутся')
+    await moveConfirm.getByRole('button', { name: 'Отмена', exact: true }).click()
+    expect(await facts(stage)).toEqual(initial.map(row => ({ ...row, conclusion: commonName })))
+    await reopened.getByRole('button', { name: 'Изменить заключение этого стыка', exact: true }).click()
+    await moveConfirm.getByRole('button', { name: 'Изменить документ этой позиции', exact: true }).click()
+    await expect.poll(() => facts(stage)).toEqual(initial.map(row => ({ ...row, conclusion: row.joint === 'F982' ? separateName : commonName })))
+    const single = await openManager(page, stage)
+    await choose(single, 'F982')
+    await expect(single.getByRole('button', { name: 'К документу', exact: true })).toBeEnabled()
+    await expect(single.getByText('Изменить заключение только этого стыка', { exact: true })).toHaveCount(0)
+    await expect(single.getByRole('button', { name: 'Изменить заключение этого стыка', exact: true })).toHaveCount(0)
+    await single.screenshot({ path: info.outputPath('single-document-editing.png') })
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await choose(single, 'F981')
+    await single.getByRole('group', { name: 'Результат выбранного стыка', exact: true }).scrollIntoViewIfNeeded()
+    await single.screenshot({ path: info.outputPath('shared-document-editing.png') })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await single.getByRole('group', { name: 'Результат выбранного стыка', exact: true }).scrollIntoViewIfNeeded()
+    expect(await single.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+    await single.screenshot({ path: info.outputPath('shared-document-editing-mobile.png') })
+  })
+}
+
+for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
+  test(`${stage}: request document tab checks all three joints and saves date and name atomically`, async ({ page }) => {
+    await seed(stage)
+    // The complete registry must offer the before-TO stage even when its
+    // currently selected primary request belongs to an unrelated ordinary weld.
+    if (stage === 'beforeHeatTreatment') await withE2eDatabase(db => db.query(`insert into weld_joints(
+      project_title,subtitle_code,line,joint,weld_date,revision_actuality,has_vik,
+      vik_request,vik_request_date,vik_result)
+      values ($1,'STAGED',$2,'F984','2026-09-01','актуальная','да',
+        'STAGED-PRIMARY-ONLY','2026-09-02','ожидает НК')`, [project, line]))
+    await withE2eDatabase(db => db.query("update weld_joints set weld_date='2026-09-02' where project_title=$1 and joint='F983'", [project]))
+    const before = await facts(stage)
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto('/lnk')
+    await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
+    await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
+    if (stage === 'beforeHeatTreatment') await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' })
+      .getByRole('button', { name: 'До ТО', exact: true }).click()
+    const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
+      name: stage === 'primary' ? 'Все заявки ЛНК' : 'Все заявки ЛНК до ТО', exact: true,
+    }) })
+    await manager.getByRole('tab', { name: 'Документы', exact: true }).click()
+    const pane = manager.getByRole('tabpanel', { name: 'Документы', exact: true })
+    await pane.getByPlaceholder('Поиск документов').fill('STAGED-REQUEST')
+    await pane.getByRole('complementary').getByRole('button').filter({ hasText: 'STAGED-REQUEST' }).click()
+    await pane.getByRole('button', { name: 'Редактировать', exact: true }).click()
+    const date = pane.getByLabel('Дата документа', { exact: true })
+    const name = pane.getByLabel('Название документа', { exact: true })
+    const save = pane.getByRole('button', { name: 'Сохранить изменения документа', exact: true })
+    await expect(date).toBeEnabled()
+    await date.fill('2026-09-01')
+    await expect(save).toBeDisabled()
+    await expect(pane.getByText(/Сохранение заблокировано:/)).toBeVisible()
+    expect(await facts(stage)).toEqual(before)
+    await date.fill('2026-09-03')
+    await name.fill('STAGED-REQUEST-EDITED')
+    await expect(pane.getByRole('region', { name: 'Полный состав документа' })).toContainText('F983')
+    await save.click()
+    const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Сохранить изменения документа', exact: true }) })
+    await expect(confirm).toContainText('3 поз. в 3 ст.')
+    await confirm.getByRole('button', { name: 'Отмена', exact: true }).click()
+    expect(await facts(stage)).toEqual(before)
+    await expect(name).toHaveValue('STAGED-REQUEST-EDITED')
+    await save.click()
+    await confirm.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+    await expect.poll(() => facts(stage)).toEqual(before.map(row => ({ ...row, request: 'STAGED-REQUEST-EDITED', request_date: '2026-09-03' })))
+    await expect(pane.getByRole('heading', { name: 'STAGED-REQUEST-EDITED', exact: true })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+}

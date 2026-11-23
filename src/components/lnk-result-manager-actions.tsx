@@ -10,6 +10,8 @@ import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
 import { useAccess } from '@/lib/security-context'
+import { Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -41,10 +43,10 @@ export function LnkResultManagerActions({
     : getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
   const officialityReason = getUnofficialLnkGoodResultReason(row, 'годен', currentResult, method.code)
   return (
-    <div className="flex content-start flex-col items-end gap-1.5">
-      <div className="flex flex-wrap justify-end gap-1.5">
+    <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 lg:grid-cols-2">
+      <div className="min-w-0 space-y-2">
         <WorkflowResultOptionPicker
-          label="Изменить на:"
+          label="Результат выбранного стыка"
           compact
           value={pendingResult || currentResult}
           options={LNK_RESULT_OPTIONS}
@@ -59,22 +61,28 @@ export function LnkResultManagerActions({
           ].filter(Boolean).join('\n') || undefined}
           onChange={(option) => onReplaceResult(row, method.requestKey, option)}
         />
-        <button
+        {officialityReason ? <p className="text-xs leading-5 text-amber-700">{officialityReason}</p> : null}
+        <p className="text-xs leading-5 text-slate-500">Выберите новый результат и нажмите «Сохранить изменения» в этом блоке.</p>
+      </div>
+      <div className="min-w-0 space-y-2 border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => {
             if (!removalBlockReason) onClearResult(row, method.requestKey)
           }}
           disabled={pendingResult === null || !currentResult || Boolean(removalBlockReason) || isResultReplacementPending}
           title={removalBlockReason || 'Подготовить удаление; оно будет применено только после сохранения и подтверждения.'}
-          className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="gap-2 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
         >
+          <Trash2 className="h-3.5 w-3.5" />
           {pendingResult === null ? 'Будет удалён' : 'Удалить результат'}
-        </button>
+        </Button>
+        <p className={`text-xs leading-5 ${removalBlockReason ? 'text-amber-700' : 'text-slate-500'}`}>
+          {removalBlockReason || 'После сохранения и подтверждения у этой позиции очистятся результат, дата контроля и заключение.'}
+        </p>
       </div>
-      {officialityReason && !removalBlockReason ? <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{officialityReason}</p> : null}
-      {removalBlockReason ? (
-        <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{removalBlockReason}</p>
-      ) : null}
     </div>
   )
 }

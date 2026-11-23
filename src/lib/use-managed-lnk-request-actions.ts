@@ -15,13 +15,11 @@ export function useManagedLnkRequestActions({
   lnkRequestManagerOptions,
   managedLnkRequestName,
   managedLnkRequestDate,
-  managedLnkRequestNameDraft,
   lnkRequestCorrectionMutation,
   lnkRequestManagerMutation,
   setIsLnkRequestManagerOpen,
   setManagedLnkRequestName,
   setManagedLnkRequestDate,
-  setManagedLnkRequestNameDraft,
 }: UseManagedLnkRequestActionsOptions) {
   const confirmAction = useConfirmAction()
 
@@ -38,7 +36,6 @@ export function useManagedLnkRequestActions({
     )
     setManagedLnkRequestName(request?.name ?? '')
     setManagedLnkRequestDate(request?.date ?? '')
-    setManagedLnkRequestNameDraft(request?.name ?? '')
     setIsLnkRequestManagerOpen(true)
   }
 
@@ -49,16 +46,6 @@ export function useManagedLnkRequestActions({
   function changeManagedLnkRequest(request: RequestDocumentIdentity) {
     setManagedLnkRequestName(request.name)
     setManagedLnkRequestDate(request.date)
-    setManagedLnkRequestNameDraft(request.name)
-  }
-
-  function renameManagedLnkRequest() {
-    lnkRequestManagerMutation.mutate({
-      action: 'rename',
-      requestName: managedLnkRequestName,
-      requestDate: managedLnkRequestDate,
-      nextRequestName: managedLnkRequestNameDraft,
-    })
   }
 
   async function deleteManagedLnkRequest(requestOverride?: RequestDocumentIdentity) {
@@ -103,6 +90,5 @@ export function useManagedLnkRequestActions({
     closeLnkRequestManager,
     deleteManagedLnkRequest,
     openLnkRequestManager,
-    renameManagedLnkRequest,
   }
 }

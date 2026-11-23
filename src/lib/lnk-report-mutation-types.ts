@@ -33,7 +33,6 @@ export type UseLnkReportMutationsOptions = {
   setLnkRequestNaming: (value: RequestNamingState) => void
   setIsLnkRequestModalOpen: (value: boolean) => void
   setManagedLnkRequestName: (value: string) => void
-  setManagedLnkRequestNameDraft: (value: string) => void
   setIsLnkRequestManagerOpen: (value: boolean) => void
   setIsLnkResultModalOpen: (value: boolean) => void
   setLnkResultDraft: Dispatch<SetStateAction<LnkResultDraftState>>

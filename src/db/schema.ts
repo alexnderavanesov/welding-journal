@@ -1,7 +1,7 @@
 import type { AuditFieldChange } from '@/lib/audit-value'
 import { sql } from 'drizzle-orm'
 import { boolean, check, date, index, integer, jsonb, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
-import type { DocumentSpecialists, SpecialistKind, SpecialistMethod } from '@/lib/document-specialists'
+import type { DocumentSpecialists, SpecialistKind, SpecialistMethod, SpecialistCertificate } from '@/lib/document-specialists'
 import { DISPATCHER_SCOPE_WHITESPACE_SQL } from '@/lib/dispatcher-scope-normalization'
 import { indexedJointName, naturalJointOrder } from './journal-order'
 import type { AccountRole, Permission } from '@/lib/access-permissions'
@@ -84,6 +84,7 @@ export const specialists = pgTable('specialists', {
   name: text('name').notNull(),
   kind: text('kind').$type<SpecialistKind>().notNull(),
   certificate: text('certificate').notNull(),
+  certificates: jsonb('certificates').$type<SpecialistCertificate[]>(),
   stamp: text('stamp').default('').notNull(),
   methods: text('methods').array().$type<SpecialistMethod[]>().notNull(),
   revision: integer('revision').default(1).notNull(),

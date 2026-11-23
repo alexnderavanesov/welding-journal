@@ -36,7 +36,7 @@ test('до ТО: страницы, поиск за первой странице
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
-  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК до ТО', exact: true }) })
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК до ТО', exact: true }) })
   const search = dialog.getByPlaceholder('Стык, линия, заявка или заключение')
   const fillSearch = async (value: string) => {
     const loaded = page.waitForResponse(response => response.url().includes('/_serverFn/') &&

@@ -96,14 +96,18 @@ export function ResultFilters({
 export function BufferedFilterInput({
   value,
   onValueChange,
+  onPendingChange,
   ...inputProps
 }: Omit<ComponentProps<typeof Input>, 'onChange' | 'value'> & {
   value: string
   onValueChange: (value: string) => void
+  onPendingChange?: (pending: boolean) => void
 }) {
   const [draft, setDraft] = useState(value)
   const onValueChangeRef = useRef(onValueChange)
   const lastEmittedValueRef = useRef(value)
+
+  useEffect(() => { onPendingChange?.(draft !== value) }, [draft, value, onPendingChange])
 
   useEffect(() => {
     onValueChangeRef.current = onValueChange

@@ -69,24 +69,25 @@ test('точное исправление ZV возвращает чернови
   const previousTitle = initialRows[0]!.vik_request
 
   await openHeaderMenuItem(page, 'Заявка', 'Все заявки ЛНК')
-  await expect(page.getByRole('heading', { name: 'Редактирование заявок ЛНК' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Все заявки ЛНК' })).toBeVisible()
   const requestCard = page.getByText(previousTitle, { exact: true }).first().locator('xpath=ancestor::button')
   await expect(requestCard).toBeVisible()
   await requestCard.click()
   await requestCard.click({ button: 'right' })
-  await page.getByRole('button', { name: 'Изменить дату заявки', exact: true }).click()
+  await page.getByRole('button', { name: 'Внести изменения', exact: true }).click()
 
-  const documentDate = page.getByLabel('Дата заявки ЛНК', { exact: true })
+  await page.getByRole('button', { name: 'К документу', exact: true }).click()
+  const documentDate = page.getByLabel('Дата документа', { exact: true })
   await expect(documentDate).toHaveValue('2026-08-09')
   await documentDate.fill('2026-08-31')
   await expect(page.getByText(/Будет изменено позиций: 2; стыков: 2/)).toBeVisible()
-  await page.getByRole('button', { name: 'Изменить дату', exact: true }).click()
+  await page.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).click()
 
   const confirmation = page.getByRole('dialog').filter({
-    has: page.getByRole('heading', { name: 'Изменить дату документа' }),
+    has: page.getByRole('heading', { name: 'Сохранить изменения документа' }),
   })
   await expect(confirmation).toBeVisible()
-  await confirmation.getByRole('button', { name: 'Изменить дату', exact: true }).click()
+  await confirmation.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
 
   await expect.poll(loadVikRequests).toEqual([
     expect.objectContaining({ joint: SOURCE_JOINT, vik_request_date: '2026-08-31' }),
@@ -95,15 +96,15 @@ test('точное исправление ZV возвращает чернови
   const savedRows = await loadVikRequests()
   expect(new Set(savedRows.map((row) => row.vik_request)).size).toBe(1)
   expect(savedRows[0]!.vik_request).toBe(previousTitle)
-  await expect(page.getByPlaceholder('Новое наименование заявки', { exact: true })).toBeDisabled()
+  await expect(page.getByLabel('Название документа', { exact: true })).toBeDisabled()
 
   // A concurrent change of one position must prevent changes to every position.
   await documentDate.fill('2026-09-01')
   await withE2eDatabase(async (client) => {
     await client.query("update weld_joints set updated_at = updated_at + interval '1 second' where project_title = 'E2E точное исправление' and joint = $1", [SECOND_JOINT])
   })
-  await page.getByRole('button', { name: 'Изменить дату', exact: true }).click()
-  await confirmation.getByRole('button', { name: 'Изменить дату', exact: true }).click()
+  await page.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).click()
+  await confirmation.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
   await expect(page.getByText(/уже изменен другим пользователем/).first()).toBeVisible()
   expect(await loadVikRequests()).toEqual(savedRows)
 })

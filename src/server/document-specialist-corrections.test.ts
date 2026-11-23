@@ -16,6 +16,12 @@ it('preserves snapshots when ordinary correction recreates or splits a document,
 it('treats a pre-existing empty destination pair as a conflict too', () => {
   expect(planCorrectedDocumentSpecialists([doc], [{ ...doc, id: 2, total: 2, snapshot: null }])[0]).toMatchObject({ conflict: true, snapshot: { first: null, second: null } })
 })
+it('keeps the new date-check marker when a correction joins equal legacy printed details', () => {
+  const checked = { ...doc, snapshot: { ...snapshot, first: { ...snapshot.first, certificateDate: doc.date } } }
+  const target = { ...doc, id: 2, total: 2 }
+  expect(planCorrectedDocumentSpecialists([checked], [target])[0]).toMatchObject({ conflict: false, snapshot: checked.snapshot })
+  expect(planCorrectedDocumentSpecialists([checked], [{ ...target, date: '2026-10-02' }])).toHaveLength(1)
+})
 it.each([1, 10000])('uses one capture and one restoration query for %i positions', async count => {
   const before = Array.from({ length: count }, (_, index) => ({ ...doc, id: index + 1, positions: [`vik:${index}:pre:1`] }))
   const after = before.map(document => ({ ...document, id: document.id + count, snapshot: null }))

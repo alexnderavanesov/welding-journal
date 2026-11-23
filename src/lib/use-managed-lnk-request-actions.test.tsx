@@ -9,7 +9,6 @@ describe('useManagedLnkRequestActions', () => {
   it('keeps an explicitly requested identity instead of falling back to the first request', () => {
     const setManagedLnkRequestName = vi.fn()
     const setManagedLnkRequestDate = vi.fn()
-    const setManagedLnkRequestNameDraft = vi.fn()
     const setIsLnkRequestManagerOpen = vi.fn()
     const mutation = { isPending: false, mutate: vi.fn() }
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -25,20 +24,17 @@ describe('useManagedLnkRequestActions', () => {
       }],
       managedLnkRequestName: '',
       managedLnkRequestDate: '',
-      managedLnkRequestNameDraft: '',
       lnkRequestCorrectionMutation: mutation,
       lnkRequestManagerMutation: mutation,
       setIsLnkRequestManagerOpen,
       setManagedLnkRequestName,
       setManagedLnkRequestDate,
-      setManagedLnkRequestNameDraft,
     }), { wrapper })
 
     act(() => result.current.openLnkRequestManager('Точная', '2026-08-14'))
 
     expect(setManagedLnkRequestName).toHaveBeenCalledWith('Точная')
     expect(setManagedLnkRequestDate).toHaveBeenCalledWith('2026-08-14')
-    expect(setManagedLnkRequestNameDraft).toHaveBeenCalledWith('Точная')
     expect(setIsLnkRequestManagerOpen).toHaveBeenCalledWith(true)
   })
 })

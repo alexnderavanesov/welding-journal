@@ -337,3 +337,148 @@ const updateWeldJoint = asE2eOwner(raw_updateWeldJoint, 'welding.edit')
 const previewOperation = asE2eOwner(rawPreviewOperation, 'documents.view')
 const applyOperation = asE2eOwner(rawApplyOperation, 'documents.edit')
 const getOperationResult = asE2eOwner(rawGetOperationResult, 'documents.view')
+
+test('whole-document rename preserves mixed primary/repeat cycles, document IDs and unrelated fields', async () => {
+  const fixture = await seed(true)
+  const { changeSystemDocumentDate: rawChange } = await import('@/server/system-document-date-workflow')
+  const change = asE2eOwner(rawChange, 'documents.edit')
+  const initial = await snapshot()
+  for (const [index, definition] of definitions.entries()) {
+    const doc = fixture.documents[index]
+    const versions = await withE2eDatabase(async db => (await db.query('select id,xmin::text as version from weld_joints where id=any($1::int[]) order by id', [fixture.ids])).rows)
+    const nextTitle = `${doc.title} renamed`
+    await change({ data: {
+      reference: { documentId: doc.id, type: definition.type, methodCode: definition.methodCode,
+        title: doc.title, date: definition.date, sourceKind: 'pstoCycle', cycleSequences: [1, 2] },
+      nextDate: definition.date, nextTitle, expectedVersions: versions,
+    } })
+    const current = await snapshot()
+    expect(current.documents.find(row => row.id === doc.id)).toMatchObject({ title: nextTitle, row_count: 2 })
+    expect(current.rows.find(row => row.id === fixture.ids[1])![definition.field]).toBe(nextTitle)
+    expect(current.cycles[0][definition.field]).toBe(nextTitle)
+    expect(current.rows.find(row => row.id === fixture.ids[0])![definition.field]).toBe(initial.rows.find(row => row.id === fixture.ids[0])![definition.field])
+  }
+  const after = await snapshot()
+  const omit = (row: Record<string, unknown>, keys: string[]) => Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)))
+  const changed = [...definitions.map(d => d.field), 'updated_at', 'psto_updated_at']
+  expect(after.rows.map(row => omit(row, changed))).toEqual(initial.rows.map(row => omit(row, changed)))
+  expect(after.cycles.map(row => omit(row, changed))).toEqual(initial.cycles.map(row => omit(row, changed)))
+  expect(after.documents.map(row => omit(row, ['title', 'file_name', 'updated_at']))).toEqual(initial.documents.map(row => omit(row, ['title', 'file_name', 'updated_at'])))
+})
+
+test('whole-document rename preserves the system-request restriction through cycle history', async () => {
+  const fixture = await seed()
+  const { changeSystemDocumentDate: rawChange } = await import('@/server/system-document-date-workflow')
+  const change = asE2eOwner(rawChange, 'documents.edit')
+  const doc = fixture.documents[0], definition = definitions[0]
+  const versions = await withE2eDatabase(async db => (await db.query('select id,xmin::text as version from weld_joints where id=any($1::int[]) order by id', [fixture.ids])).rows)
+  const before = await snapshot()
+  await expect(change({ data: {
+    reference: { documentId: doc.id, type: definition.type, title: doc.title, date: definition.date, sourceKind: 'pstoCycle', cycleSequences: [1, 2] },
+    nextDate: definition.date, nextTitle: 'Changed system request', expectedVersions: versions,
+  } })).rejects.toThrow('Системную заявку нельзя переименовать')
+  expect(await snapshot()).toEqual(before)
+})
+
+test('history uses explicit editing for all four PSTO/TVMT stages and keeps the mobile dialog within the viewport', async ({ page }, info) => {
+  await seed(true)
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'История ПСТО и ТВМТ', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'История ПСТО и ТВМТ', exact: true }) })
+  await dialog.getByPlaceholder('Стык, линия или документ').fill('CYCLE-L1')
+  await expect(dialog.getByRole('tab', { name: 'Повтор #2', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByRole('button', { name: 'Редактировать', exact: true })).toHaveCount(4)
+  await expect(dialog.getByLabel('Название всего документа', { exact: true })).toHaveCount(0)
+  for (const label of ['Заявка ПСТО', 'Результат ПСТО', 'Заявка ТВМТ', 'Заключение ТВМТ']) {
+    const card = dialog.locator('article').filter({ has: page.getByRole('heading', { name: label, exact: true }) })
+    await card.click({ button: 'right' })
+    await page.getByRole('button', { name: 'Внести изменения', exact: true }).click()
+    await expect(card.getByRole('button', { name: 'К документу', exact: true })).toBeEnabled()
+    await expect(card.getByText(/только этого стыка$/, { exact: false })).toBeVisible()
+    await card.getByRole('button', { name: 'Свернуть редактирование', exact: true }).click()
+    await expect(card.getByRole('button', { name: 'К документу', exact: true })).not.toBeVisible()
+    await expect(card.getByRole('button', { name: 'Редактировать', exact: true })).toBeVisible()
+  }
+  const diagram = dialog.locator('article').filter({ has: page.getByRole('heading', { name: 'Результат ПСТО', exact: true }) })
+  await diagram.scrollIntoViewIfNeeded()
+  await diagram.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await diagram.getByRole('button', { name: 'К документу', exact: true }).click()
+  const documentPane = dialog.getByRole('tabpanel', { name: 'Документы', exact: true })
+  await documentPane.getByLabel('Название документа', { exact: true }).fill('Общая исправленная диаграмма')
+  await documentPane.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).click()
+  const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Сохранить изменения документа', exact: true }) })
+  await expect(confirm).toContainText('2 поз. в 2 ст.')
+  await confirm.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+  await expect(documentPane.getByRole('heading', { name: 'Общая исправленная диаграмма', exact: true })).toBeVisible()
+  await expect(documentPane.getByRole('button', { name: 'Сохранить изменения документа', exact: true })).toHaveCount(0)
+  await documentPane.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await dialog.screenshot({ path: info.outputPath('psto-editing-desktop.png') })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(() => dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 2)).toBe(true)
+  const asideBox = await documentPane.getByRole('complementary').boundingBox()
+  const mainBox = await documentPane.getByRole('main').boundingBox()
+  expect(asideBox!.y + asideBox!.height).toBeLessThanOrEqual(mainBox!.y + 1)
+  await documentPane.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).scrollIntoViewIfNeeded()
+  await dialog.screenshot({ path: info.outputPath('psto-editing-mobile.png') })
+})
+
+test('TVMT menu opens shared tabs; all four document kinds save date and name with cancellation and chronology checks', async ({ page }) => {
+  test.setTimeout(120_000)
+  const fixture = await seed(true)
+  await ensureDispatcherTaskIndexFresh()
+  const initial = await snapshot()
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'ТВМТ', exact: true }).click()
+  await page.getByRole('button', { name: 'История ПСТО и ТВМТ', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'История ПСТО и ТВМТ', exact: true }) })
+  await expect(dialog.getByRole('tab', { name: 'Стыки', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await dialog.getByRole('tab', { name: 'Документы', exact: true }).click()
+  const pane = dialog.getByRole('tabpanel', { name: 'Документы', exact: true })
+  const choices = ['psto-requests', 'psto-results', 'tvmt-requests', 'tvmt-results']
+  const dates = ['2026-09-03', '2026-09-04', '2026-09-04', '2026-09-07']
+  const dateFields = ['psto_request_date', 'psto_date', 'tvmt_request_date', 'tvmt_conclusion_date']
+  for (const [i, definition] of definitions.entries()) {
+    await pane.getByRole('combobox', { name: 'Вид документа', exact: true }).selectOption(choices[i])
+    await pane.getByPlaceholder('Поиск документов').fill(fixture.documents[i].title)
+    await pane.getByRole('complementary').getByRole('button').filter({ hasText: fixture.documents[i].title }).click()
+    await pane.getByRole('button', { name: 'Редактировать', exact: true }).click()
+    const date = pane.getByLabel('Дата документа', { exact: true })
+    const name = pane.getByLabel('Название документа', { exact: true })
+    const save = pane.getByRole('button', { name: 'Сохранить изменения документа', exact: true })
+    await expect(date).toBeEnabled()
+    await expect(name).toBeEnabled()
+    await expect(pane.getByRole('region', { name: 'Полный состав документа' })).toContainText('S1')
+    await expect(pane.getByRole('region', { name: 'Полный состав документа' })).toContainText('S2')
+    const before = await snapshot()
+    await date.fill('2026-08-31')
+    await expect(save).toBeDisabled()
+    await expect(pane.getByText(/Сохранение заблокировано:/)).toBeVisible()
+    expect(await snapshot()).toEqual(before)
+    const nextTitle = `${fixture.documents[i].title} исправлено через вкладку`
+    await date.fill(dates[i])
+    await name.fill(nextTitle)
+    await save.click()
+    const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Сохранить изменения документа', exact: true }) })
+    await expect(confirm).toContainText('2 поз. в 2 ст.')
+    await confirm.getByRole('button', { name: 'Отмена', exact: true }).click()
+    expect(await snapshot()).toEqual(before)
+    await expect(name).toHaveValue(nextTitle)
+    await expect(date).toHaveValue(dates[i])
+    await save.click()
+    await confirm.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+    await expect(pane.getByRole('heading', { name: nextTitle, exact: true })).toBeVisible()
+    const after = await snapshot()
+    expect(after.documents.find(doc => doc.id === fixture.documents[i].id)).toMatchObject({ title: nextTitle, row_count: 2 })
+    expect(after.rows.find(row => row.id === fixture.ids[1])![definition.field]).toBe(nextTitle)
+    expect(after.cycles[0][definition.field]).toBe(nextTitle)
+    // The primary history of S1 must not be confused with its selected repeat.
+    expect(after.rows.find(row => row.id === fixture.ids[0])![definition.field]).toBe(initial.rows.find(row => row.id === fixture.ids[0])![definition.field])
+    const storedDates = await withE2eDatabase(async db => (await db.query(`select ${dateFields[i]}::text as date from weld_joints where id=$1
+      union all select ${dateFields[i]}::text from psto_repeat_cycles where id=$2`, [fixture.ids[1], fixture.cycleId])).rows)
+    expect(storedDates.map(row => row.date)).toEqual([dates[i], dates[i]])
+  }
+  expect(errors).toEqual([])
+})

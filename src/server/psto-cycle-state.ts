@@ -39,6 +39,19 @@ export async function clearPendingPstoRepeatRequests(tx: SystemDocumentSequenceT
   }).where(buildNumberArrayMatch(pstoRepeatCycles.id, ids))
 }
 
+/** The caller has locked and validated the complete document. Preserve every
+ * unrelated cycle field, including historical values in their stored form. */
+export async function updatePstoRepeatDocumentFields(
+  tx: SystemDocumentSequenceTransaction,
+  ids: readonly number[],
+  values: Partial<Pick<NewPstoRepeatCycle, 'pstoRequest' | 'pstoRequestDate' | 'pstoDate' | 'heatTreatmentDiagram' | 'tvmtRequest' | 'tvmtRequestDate' | 'tvmtConclusion' | 'tvmtConclusionDate'>>,
+  now: Date,
+) {
+  if (!ids.length) return
+  await tx.update(pstoRepeatCycles).set({ ...values, updatedAt: now })
+    .where(buildNumberArrayMatch(pstoRepeatCycles.id, ids))
+}
+
 export function getPrimaryPstoCyclePersistenceValues(row: WeldRow) {
   return {
     pstoRequest: textOrNull(row.pstoRequest),

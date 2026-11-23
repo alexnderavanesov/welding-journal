@@ -9,6 +9,8 @@ import { DOCUMENT_VERSION_SELECT } from './document-version'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import type { SystemDocumentReference } from '@/lib/system-document-types'
+import { getSpecialistCertificates, validateSpecialistCertificates, type SpecialistDateRequirement } from '@/lib/specialist-certificates'
+import { parseDateLikeToIso } from '@/lib/date-format'
 import { SPECIALIST_METHODS, getSpecialistDocumentProfile, normalizeSpecialistSelection, resolveDocumentSpecialists, type DocumentSpecialists, type SpecialistCreationAssignment, type SpecialistRecord, type SpecialistSelection } from '@/lib/document-specialists'
 
 // Never load weld membership/source metadata when assigning document signers.
@@ -18,18 +20,27 @@ const SPECIALIST_DOCUMENT_SELECT = {
   documentVersion: DOCUMENT_VERSION_SELECT,
 }
 
-export const listSpecialists = createServerFn({ method: 'GET' })
-  .validator((data: { search?: string; offset?: number; kind?: SpecialistRecord['kind']; methods?: readonly string[]; status?: 'active' | 'archived' | 'all'; includeCounts?: boolean } = {}) => ({
+export const listSpecialists = createServerFn({ method: 'POST' })
+  .validator((data: { search?: string; offset?: number; kind?: SpecialistRecord['kind']; methods?: readonly string[]; requirements?: readonly SpecialistDateRequirement[]; status?: 'active' | 'archived' | 'all'; includeCounts?: boolean } = {}) => ({
     search: String(data.search ?? '').trim().slice(0, 200), offset: Math.max(0, Math.floor(Number(data.offset) || 0)),
     kind: data.kind === 'inspector' || data.kind === 'thermist' ? data.kind : undefined,
     methods: Array.isArray(data.methods) ? SPECIALIST_METHODS.filter(method => data.methods!.includes(method)) : [],
     status: data.status === 'all' || data.status === 'archived' ? data.status : 'active', includeCounts: data.includeCounts === true,
+    requirements: normalizeSpecialistRequirements(data.requirements),
   }))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    const filters = and(data.search ? or(ilike(specialists.name, `%${data.search.replace(/[\\%_]/g, '\\$&')}%`), ilike(specialists.certificate, `%${data.search.replace(/[\\%_]/g, '\\$&')}%`)) : undefined,
+    const certificates = sql`coalesce(${specialists.certificates}, jsonb_build_array(jsonb_build_object('number', ${specialists.certificate}, 'methods', to_jsonb(${specialists.methods}))))`
+    const search = `%${data.search.replace(/[\\%_]/g, '\\$&')}%`
+    const filters = and(data.search ? or(ilike(specialists.name, search), sql`exists(select 1 from jsonb_array_elements(${certificates}) c where c->>'number' ilike ${search})`) : undefined,
         data.kind ? eq(specialists.kind, data.kind) : undefined,
-        data.methods.length ? sql`${specialists.methods} @> ${sql.param(data.methods)}::text[]` : undefined)
+        data.methods.length ? sql`${specialists.methods} @> ${sql.param(data.methods)}::text[]` : undefined,
+        // Apply eligibility to the whole registry BEFORE its 100-row page.
+        data.requirements.length ? sql`not exists(select 1 from jsonb_array_elements(${JSON.stringify(data.requirements)}::jsonb) r
+          where not exists(select 1 from jsonb_array_elements(${certificates}) c
+            where (c->'methods') @> (r->'methods') and (
+              (c->>'validFrom' is null and c->>'validTo' is null)
+              or ((c->>'validFrom') <= (r->>'date') and (c->>'validTo') >= (r->>'date')))))` : undefined)
     const [found, counts] = await Promise.all([
       requireDb().select().from(specialists).where(and(filters, data.status === 'all' ? undefined : eq(specialists.archived, data.status === 'archived')))
         .orderBy(asc(specialists.name), asc(specialists.id)).limit(101).offset(data.offset),
@@ -37,6 +48,16 @@ export const listSpecialists = createServerFn({ method: 'GET' })
     ])
     return { records: found.slice(0, 100), hasMore: found.length > 100, counts: counts[0] }
   })
+
+export function normalizeSpecialistRequirements(requirements: readonly SpecialistDateRequirement[] = []) {
+  if (!Array.isArray(requirements) || requirements.length > 10000) throw new Error('Некорректные даты заключений.')
+  return [...new Map(requirements.map((requirement: SpecialistDateRequirement) => {
+    const date = parseDateLikeToIso(requirement.date)
+    if (!date || !Array.isArray(requirement.methods) || requirement.methods.some((method: string) => !SPECIALIST_METHODS.some(allowed => allowed === method))) throw new Error('Укажите корректную дату и вид контроля заключения.')
+    const value = { date, methods: [...new Set(requirement.methods)].sort() }
+    return [JSON.stringify(value), value] as const
+  })).values()]
+}
 
 export function normalizeSpecialistArchive(data: { id: number; revision: number; archived: boolean }) {
   if (!Number.isSafeInteger(data?.id) || data.id <= 0 || !Number.isSafeInteger(data.revision) || data.revision <= 0 || typeof data.archived !== 'boolean') throw new Error('Обновите карточку специалиста.')
@@ -55,15 +76,15 @@ export const archiveSpecialist = createServerFn({ method: 'POST' }).validator(no
 
 export function normalizeSpecialistCard(data: Omit<SpecialistRecord, 'id' | 'revision'> & { id?: number; revision?: number }) {
   const name = String(data?.name ?? '').trim()
-  const certificate = String(data?.certificate ?? '').trim()
   const stamp = String(data?.stamp ?? '').trim()
   if (stamp.length > 200) throw new Error('Клеймо специалиста — до 200 символов.')
-  if (!name || !certificate || name.length > 300 || certificate.length > 200) throw new Error('Укажите ФИО и № квалификационного удостоверения (до 300 и 200 символов).')
+  if (!name || name.length > 300) throw new Error('Укажите ФИО (до 300 символов).')
   if (data.kind !== 'inspector' && data.kind !== 'thermist') throw new Error('Выберите тип специалиста.')
-  const methods = data.kind === 'thermist' ? [] : [...new Set(data.methods ?? [])]
-  if (data.kind === 'inspector' && (!methods.length || methods.some(method => !SPECIALIST_METHODS.includes(method)))) throw new Error('Выберите виды контроля специалиста.')
+  const certificates = validateSpecialistCertificates(getSpecialistCertificates(data), data.kind, SPECIALIST_METHODS)
+  const certificate = certificates[0]!.number
+  const methods = [...new Set(certificates.flatMap(item => item.methods))]
   if (data.id !== undefined && (!Number.isSafeInteger(data.id) || data.id <= 0 || !Number.isSafeInteger(data.revision) || data.revision! <= 0)) throw new Error('Обновите карточку специалиста.')
-  return { id: data.id, revision: data.revision, name, certificate, stamp, kind: data.kind, methods }
+  return { id: data.id, revision: data.revision, name, certificate, certificates, stamp, kind: data.kind, methods }
 }
 
 export const saveSpecialist = createServerFn({ method: 'POST' })
@@ -111,7 +132,7 @@ export async function applySpecialistAssignments(input: AssignDocumentSpecialist
       const profiles = documents.map(document => getSpecialistDocumentProfile(document.type))
       if (profiles.some(profile => !profile) || new Set(profiles.map(profile => profile?.kind)).size !== 1) throw new Error('Выберите заключения НК/ТВМТ либо ПСТО отдельно. Заявки, ЖСР, чек-листы и ЗНИ не поддерживают назначения.')
       const records = await loadSelectedSpecialists(tx, [data.selection])
-      await writeDocumentSpecialists(tx, documents.map((document, index) => ({ id: document.id, snapshot: resolveDocumentSpecialists(document.specialists, data.selection, records, profiles[index]!) })))
+      await writeDocumentSpecialists(tx, documents.map((document, index) => ({ id: document.id, snapshot: resolveDocumentSpecialists(document.specialists, data.selection, records, profiles[index]!, document.periodFrom ?? '') })))
       return { count: documents.length }
     })
 }
@@ -167,7 +188,7 @@ export async function assignCreatedDocumentSpecialists(tx: SystemDocumentSequenc
     const matches = foundByKey.get(key(target.type, target.title, target.reference.date)) ?? []
     if (matches.length !== 1) throw new Error('Не удалось определить создаваемое заключение для назначения специалиста.')
     const document = matches[0]!
-    return { id: document.id, snapshot: resolveDocumentSpecialists(document.specialists, target.selection, records, getSpecialistDocumentProfile(document.type)!) }
+    return { id: document.id, snapshot: resolveDocumentSpecialists(document.specialists, target.selection, records, getSpecialistDocumentProfile(document.type)!, target.reference.date) }
   })
   if (new Set(writes.map(write => write.id)).size !== writes.length) throw new Error('Назначения одного документа повторяются.')
   await writeDocumentSpecialists(tx, writes)

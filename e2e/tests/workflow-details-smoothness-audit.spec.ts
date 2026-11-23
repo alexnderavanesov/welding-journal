@@ -185,9 +185,11 @@ test('populated duplicate registry, three PSTO cycles and paged active exception
       await probe.measure(`details:psto-cycle-${sequence}`, async () => {
         const tab = history.getByRole('tab', { name, exact: true })
         await tab.click(); await expect(tab).toHaveAttribute('aria-selected', 'true')
-        await expect(history.getByRole('textbox', { name: 'Наименование заявки', exact: true }).first()).toHaveValue(sequence === 1 ? 'SM-P1-1' : `SM-P${sequence}-F0001`)
+        const expectedName = sequence === 1 ? 'SM-P1-1' : `SM-P${sequence}-F0001`
+        if (process.env.SMOOTHNESS_BASELINE === '1') await expect(history.getByRole('textbox', { name: 'Наименование заявки', exact: true }).first()).toHaveValue(expectedName)
+        else await expect(history.getByText(expectedName, { exact: true })).toBeVisible()
       })
-      await probe.scroll(`details:psto-cycle-${sequence}-scroll`, history.locator('section').filter({ has: page.getByRole('textbox', { name: 'Наименование заявки', exact: true }) }).first())
+      await probe.scroll(`details:psto-cycle-${sequence}-scroll`, history.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Заявка ПСТО', exact: true }) }))
     }
     await page.keyboard.press('Escape'); await expect(history).toBeHidden()
     await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()

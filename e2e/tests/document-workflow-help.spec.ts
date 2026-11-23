@@ -157,7 +157,7 @@ test('Escape closes document connections after clicking text and preserves the u
   await page.goto('/lnk')
   await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
   await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
-  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true }) })
+  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все заявки ЛНК', exact: true }) })
   await manager.getByPlaceholder('Название, дата, стык или линия').fill('Help B')
   await manager.getByRole('button', { name: /Help B/ }).click()
   await manager.getByRole('button', { name: 'Связи документов', exact: true }).click()

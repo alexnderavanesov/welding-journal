@@ -6,7 +6,7 @@ import { LineJointPage } from './line-program-joint-page'
 import { ProgramDraftProvider } from './line-program-drafts'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-const mocks = vi.hoisted(() => ({ rows: vi.fn(), ensure: vi.fn() }))
+const mocks = vi.hoisted(() => ({ rows: vi.fn(), ensure: vi.fn(), first: vi.fn() }))
 vi.mock('@/server/line-program', () => ({ getLineProgramJointPage: mocks.rows }))
 vi.mock('@/server/line-program-control', () => ({ applyLineProgramControl: vi.fn(), previewLineProgramControl: vi.fn() }))
 vi.mock('@/server/line-program-report', () => ({ getLineProgramReport: vi.fn() }))
@@ -18,10 +18,11 @@ vi.mock('./line-program-assignment-table', () => ({
     useEffect(() => {
       onReady({ isDestroyed: () => false,
         getRowNode: () => ({ id: '1', data: { id: 1 }, rowIndex: 70, rowTop: 3080, rowHeight: 44 }),
+        getDisplayedRowAtIndex: mocks.first,
         getFilterModel: () => ({}), ensureNodeVisible: mocks.ensure,
       })
     }, [onReady])
-    return <div data-testid="reveal-table" />
+    return <div data-testid="reveal-table" data-program-grid="joints"><div className="ag-row" row-id="1"><button>F1</button></div></div>
   },
 }))
 
@@ -30,9 +31,9 @@ const row: WeldRow = { id: 1, joint: 'F1', connectionType: 'С', weldDate: '2026
 let client: QueryClient | undefined
 let container: HTMLDivElement | undefined
 
-afterEach(() => { cleanup(); client?.clear(); container?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mocks.ensure.mockClear(); mocks.rows.mockReset() })
+afterEach(() => { cleanup(); client?.clear(); container?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mocks.ensure.mockClear(); mocks.rows.mockReset(); mocks.first.mockReset() })
 
-async function beginReveal() {
+async function beginReveal(options: { scope?: boolean; focusedJoint?: number; initialRows?: WeldRow[]; configure?: (root: HTMLDivElement) => void } = {}) {
   const frames = new Map<number, FrameRequestCallback>(); let sequence = 0
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { const id = ++sequence; frames.set(id, callback); return id })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
@@ -40,17 +41,20 @@ async function beginReveal() {
     const pending = [...frames.values()]; frames.clear()
     await act(async () => { pending.forEach(callback => callback(performance.now())) })
   }
-  const nextRows = { rows: [{ ...row, rowVersion: '124' }], total: 1, approvedKeys: [] }
+  const initialRows = options.initialRows ?? [row]
+  const nextRows = { rows: initialRows.map(row => ({ ...row, rowVersion: '124' })), total: initialRows.length, approvedKeys: [] }
   let finish!: (value: typeof nextRows) => void
   mocks.rows.mockImplementation(() => new Promise(resolve => { finish = resolve }))
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  client.setQueryData(['line-program', 'rows', 1, 'welds'], { rows: [row], total: 1, approvedKeys: [] })
+  client.setQueryData(['line-program', 'rows', 1, 'welds'], { rows: initialRows, total: initialRows.length, approvedKeys: [] })
   container = document.createElement('div'); document.body.append(container)
-  const workspace = { key: 'all', selection: { slice: 'all' as const, focusedJoint: 1, reveal: 101 }, container, open: true }
+  mocks.first.mockReturnValue({ id: '1', data: { id: 1 }, rowIndex: 0, rowTop: 0, rowHeight: 44 })
+  const workspace = { key: 'all', selection: { slice: 'all' as const, focusedJoint: options.scope ? undefined : options.focusedJoint ?? 1, reveal: 101 }, container, open: true }
   render(<QueryClientProvider client={client}><ProgramDraftProvider><LineJointPage line={line} workspaces={[workspace]} /></ProgramDraftProvider></QueryClientProvider>)
   await waitFor(() => expect(mocks.rows).toHaveBeenCalledOnce())
+  options.configure?.(container)
   await frame(); await frame(); await frame()
-  expect(mocks.ensure).toHaveBeenCalledTimes(1)
+  if (!options.scope && initialRows.some(row => row.id === workspace.selection.focusedJoint)) expect(mocks.ensure).toHaveBeenCalledTimes(1)
   return { frame, finish: () => act(async () => { finish(nextRows) }) }
 }
 
@@ -78,4 +82,62 @@ it('keeps the reveal bounded and does not repeat a completed attempt on later re
   await finish()
   for (let i = 0; i < 12; i++) await frame()
   expect(mocks.ensure).toHaveBeenCalledTimes(calls)
+})
+
+it('reaches the first scope joint when native reveal leaves it clipped, and corrects a later height shift', async () => {
+  let top = 3300
+  vi.stubGlobal('scrollY', 9461); vi.stubGlobal('innerHeight', 1000)
+  const scroll = vi.fn((options: { top: number }) => {
+    top -= options.top - window.scrollY
+    vi.stubGlobal('scrollY', options.top)
+  })
+  vi.stubGlobal('scrollTo', scroll)
+  const nativeReveal = vi.fn()
+  const { frame, finish } = await beginReveal({ scope: true, configure(root) {
+    root.querySelector<HTMLElement>('section')!.scrollIntoView = nativeReveal
+    root.querySelector<HTMLElement>('[data-program-grid]')!.dataset.programPageScroll = 'true'
+    vi.spyOn(root.querySelector('.ag-row')!, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, top, 800, 44))
+  } })
+  expect(nativeReveal).toHaveBeenCalledOnce()
+  expect(mocks.first).toHaveBeenCalledWith(0)
+  expect(scroll).toHaveBeenCalledOnce()
+  expect(top).toBe(478)
+  expect(container!.querySelector('section')).toHaveFocus()
+  // The enclosing auto-height row settles after the first correction.
+  top += 600
+  await frame()
+  expect(scroll).toHaveBeenCalledTimes(2)
+  expect(top).toBe(478)
+  for (let i = 0; i < 10; i++) await frame()
+  await finish()
+  for (let i = 0; i < 12; i++) await frame()
+  expect(scroll).toHaveBeenCalledTimes(2)
+})
+
+it.each(['pointerdown', 'wheel', 'keydown'])('does not fight %s during an unfinished scope reveal or restart it after refresh', async event => {
+  const { frame, finish } = await beginReveal({ scope: true })
+  expect(mocks.ensure).toHaveBeenCalledOnce()
+  act(() => { window.dispatchEvent(new Event(event)) })
+  await finish()
+  for (let i = 0; i < 12; i++) await frame()
+  expect(mocks.ensure).toHaveBeenCalledOnce()
+})
+
+it('bounds scope reveal attempts without changing the existing navigation budget', async () => {
+  const { frame } = await beginReveal({ scope: true })
+  for (let i = 0; i < 20; i++) await frame()
+  expect(mocks.ensure).toHaveBeenCalledTimes(8)
+})
+
+it.each([
+  { name: 'an empty scope', scope: true, initialRows: [] },
+  { name: 'a missing requested joint', focusedJoint: 99 },
+])('retains section focus for $name without navigating to another joint', async options => {
+  const nativeReveal = vi.fn()
+  const { frame } = await beginReveal({ ...options, configure(root) { root.querySelector<HTMLElement>('section')!.scrollIntoView = nativeReveal } })
+  for (let i = 0; i < 12; i++) await frame()
+  expect(nativeReveal).toHaveBeenCalledOnce()
+  expect(container!.querySelector('section')).toHaveFocus()
+  expect(mocks.ensure).not.toHaveBeenCalled()
+  expect(mocks.first).not.toHaveBeenCalled()
 })

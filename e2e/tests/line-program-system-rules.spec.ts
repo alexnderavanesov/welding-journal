@@ -266,7 +266,7 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
       await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
       await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК', exact: true })
         .getByRole('button', { name: 'До ТО', exact: true }).click()
-      const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК до ТО', exact: true }) })
+      const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК до ТО', exact: true }) })
       await manager.getByLabel('Вид контроля в реестре', { exact: true }).selectOption('УЗК')
       const filtered = page.waitForResponse(response => response.url().includes('/_serverFn/') &&
         rpcName(response.url()).startsWith('listLnkWorkflowRows') && Boolean(response.request().postData()?.includes(joint)))
@@ -275,7 +275,8 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
       // Editing starts after the buffered search has loaded its new page, and
       // targets this date's record rather than the preceding backfill fixture.
       await manager.getByRole('button', { name: /SYS-BACKFILL · F702.*УЗК до ТО.*11\.09\.2026/ }).click()
-      const correctionResult = manager.getByRole('group', { name: 'Результат', exact: true })
+      await manager.getByRole('button', { name: 'Редактировать', exact: true }).click()
+      const correctionResult = manager.getByRole('group', { name: 'Результат выбранного стыка', exact: true })
       await expect(correctionResult.getByRole('button', { name: 'годен', exact: true })).toHaveAttribute('aria-pressed', 'true')
       const beforeCorrection = await ownControlSnapshot(id)
       await correctionResult.getByRole('button', { name: 'вырез', exact: true }).click()

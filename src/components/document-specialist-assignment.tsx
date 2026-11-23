@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, ChevronDown, FileText, Pencil, UserRound, UsersRound } from 'lucide-react'
 import { assignDocumentSpecialists } from '@/server/specialists'
 import { getSpecialistDocumentProfile, type DocumentSpecialists, type SpecialistSelection } from '@/lib/document-specialists'
+import { selectSpecialistCertificate } from '@/lib/specialist-certificates'
 import { useSecurityGuard } from '@/lib/security-context'
 import { GENERATED_DOCUMENT_HISTORY_QUERY_KEY } from '@/lib/weld-query-utils'
 import { DialogHeader } from './dialog-header'
@@ -15,6 +16,7 @@ export type SpecialistDocument = {
   id: number | string; documentId?: number; type: string; methodCode?: string; title: string; updatedAt: string
   specialists?: DocumentSpecialists | null; specialistsRevision?: number
   documentVersion?: string
+  date?: string; periodFrom?: string | null
 }
 
 export function DocumentSpecialistCell({ document, role, onEdit }: { document: SpecialistDocument; role: keyof SpecialistSelection; onEdit?: (document: SpecialistDocument, role: keyof SpecialistSelection) => void }) {
@@ -47,7 +49,7 @@ function SpecialistAssignmentEditor({ documents, onClose, onlyRole }: { document
   const profiles = documents.map(document => getSpecialistDocumentProfile(document.type, document.methodCode))
   const compatible = !!profile && profiles.every(candidate => candidate?.kind === profile.kind)
   const requiredProfile = profile ? { ...profile, methods: [...new Set(profiles.flatMap(candidate => candidate?.methods ?? []))] } : null
-  const options = useSpecialistOptions(requiredProfile)
+  const options = useSpecialistOptions(requiredProfile, undefined, documents.map((document, index) => ({ date: document.date ?? document.periodFrom ?? '', methods: profiles[index]?.methods ?? [] })))
   const roles = (['first', 'second'] as const).filter(role => !onlyRole || role === onlyRole)
   const counts = { assign: 0, replace: 0, clear: 0 }
   for (const document of documents) for (const role of roles) {
@@ -77,7 +79,9 @@ function SpecialistAssignmentEditor({ documents, onClose, onlyRole }: { document
     if (id === undefined) return 'Без изменений'
     if (id === null) return 'Не назначен'
     const record = options.known.get(id)
-    return record ? `${record.name} · № ${record.certificate}` : `Специалист №${id}`
+    const documentProfile = getSpecialistDocumentProfile(document.type, document.methodCode)
+    const certificate = record && documentProfile ? selectSpecialistCertificate(record, documentProfile, document.date ?? document.periodFrom ?? '') : undefined
+    return record ? certificate ? `${record.name} · № ${certificate.number}` : `${record.name} · нет допуска на дату заключения` : `Специалист №${id}`
   }
   return <SpecialistDialogShell label="Назначить специалистов" wide={!onlyRole} busy={busy} onClose={close}>
     <DialogHeader title={<span className="flex items-center gap-2"><UsersRound aria-hidden="true" className="h-5 w-5 text-sky-600" />{onlyRole ? 'Назначение специалиста' : 'Назначить специалистов'}</span>}

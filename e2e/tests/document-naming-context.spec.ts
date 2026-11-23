@@ -342,7 +342,7 @@ for (const lostResponse of ['abort', 'truncated', 'gateway'] as const) test(`bro
   await page.reload()
   await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
   await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
-  const registry = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true }) })
+  const registry = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все заявки ЛНК', exact: true }) })
   for (const row of committed!.rows) {
     await registry.getByPlaceholder('Название, дата, стык или линия').fill(row.vik_request)
     await expect(registry.getByRole('button', { name: new RegExp(row.vik_request) })).toBeVisible()
@@ -461,7 +461,7 @@ for (const role of ['owner', 'lnk-only', 'psto-only'] as const) test(`${role}: r
         const beforeExtension = await readSystemDocumentNextNumbers(requireDb(), SYSTEM_DOCUMENT_SEQUENCE_IDS)
         await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
         await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
-        const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true }) })
+        const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все заявки ЛНК', exact: true }) })
         await manager.getByPlaceholder('Название, дата, стык или линия').fill(names[0])
         await manager.getByRole('button', { name: new RegExp(names[0]) }).click()
         await manager.getByRole('button', { name: 'Добавить позиции', exact: true }).click()

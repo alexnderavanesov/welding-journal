@@ -335,6 +335,17 @@ export function HeatTreatmentHeaderActions({
               description="Внести результаты по ожидающим заявкам ТВМТ."
               availability={availability}
             />
+            <div className="my-1 border-t border-slate-100" />
+            <WorkflowActionMenuItem
+              label="История ПСТО и ТВМТ"
+              icon={ListFilter}
+              tone="slate"
+              onClick={() => runWorkflowAction(onOpenResultRegistry)}
+              disabled={availability === 'ready' && resultRegistryDisabled}
+              disabledReason="История пока пуста: ни один цикл ПСТО еще не начат."
+              description="Заявки и заключения ТВМТ всех циклов. Просмотр и изменение во вкладках «Стыки» и «Документы»."
+              availability={availability}
+            />
           </div>
         ) : null}
       </div>

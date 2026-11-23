@@ -393,17 +393,13 @@ pg.Client.prototype.query = function (...args) {
     && (Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []).includes('%E2E-DEEP-POPUP%')
   const facetRequest = jointFacetTrace ? facetScope.getStore() : undefined
   const scaleFacetRequest = scaleFacetTrace ? scaleFacetScope.getStore() : undefined
-  const result = facetRequest ? traceFacetQuery(this, args, sql, operation, facetRequest)
-    : scaleFacetRequest ? traceFacetQuery(this, args, sql, operation, scaleFacetRequest, scaleFacetTrace)
-    : captureWideDate ? captureWideDateLeaf(this, args, sql, rpc)
-    : groupRepro && operation === 'SELECT' && sql.includes('"row_groupKey"') && sql.includes('"journal_root_state"')
-    ? explainGroupRepro(this, args, sql) : original.apply(this, args)
-  if (resources && result?.then && operation === 'SELECT') {
+  let recordRead
+  if (resources && operation === 'SELECT') {
     const table = /\bfrom\s+"(\w+)"/i.exec(sql ?? '')?.[1] ?? 'metadata'
     const kind = table === 'weld_joints' && /join\s+"line_programs"/i.test(sql) ? 'weld_joints_join_line_programs' : table
     const started = performance.now()
     // Count only sizes/durations and schema table names, never SQL or values.
-    result.then(reply => {
+    recordRead = reply => {
       const reading = resources.reads[kind] ??= { calls: 0, rows: 0, totalMilliseconds: 0, maxRows: 0, maxWideRows: 0, maxColumns: 0, maxMilliseconds: 0 }
       reading.calls++; reading.rows += reply.rowCount ?? 0
       reading.totalMilliseconds += performance.now() - started
@@ -417,8 +413,22 @@ pg.Client.prototype.query = function (...args) {
         resources.slowReads.push({ table: kind, milliseconds, rows: reply.rowCount, columns: reply.fields?.map(field => field.name), uptimeSeconds: process.uptime() })
         if (resources.slowReads.length > 100) resources.slowReads.shift()
       }
-    }, () => {})
+    }
   }
+  // Pool.query forwards a callback to Client.query even when its caller awaits
+  // a promise. Transaction clients return promises directly. Observe both
+  // contracts without changing the original return value or callback receiver.
+  const callback = recordRead && typeof args.at(-1) === 'function' ? args.at(-1) : undefined
+  const forwarded = callback ? [...args.slice(0, -1), function (...values) {
+    if (!values[0]) recordRead(values[1])
+    return callback.apply(this, values)
+  }] : args
+  const result = facetRequest ? traceFacetQuery(this, forwarded, sql, operation, facetRequest)
+    : scaleFacetRequest ? traceFacetQuery(this, forwarded, sql, operation, scaleFacetRequest, scaleFacetTrace)
+    : captureWideDate ? captureWideDateLeaf(this, forwarded, sql, rpc)
+    : groupRepro && operation === 'SELECT' && sql.includes('"row_groupKey"') && sql.includes('"journal_root_state"')
+    ? explainGroupRepro(this, forwarded, sql) : original.apply(this, forwarded)
+  if (recordRead && !callback && typeof result?.then === 'function') result.then(recordRead, () => {})
   return result
 }
 const flush = () => {

@@ -1,14 +1,17 @@
+import { PSTO_DOCUMENTS } from '@/lib/workflow-document-choices'
+import { WorkflowManagerViews, WorkflowDocumentLink, useWorkflowManagerView } from './workflow-manager-views'
+import { useDocumentPositionChange } from '@/lib/use-document-position-change'
+import { ManagerEditPanel, ManagerEditSection, useDocumentJointCount } from './manager-edit-panel'
 import { DocumentConnectionsButton } from './document-connections-button'
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
-import { ArrowRight, CalendarClock, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
+import { ArrowRight, Pencil, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { JointConnectionTypeMeta, MetaSeparator } from '@/components/joint-meta'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
-import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { Button } from '@/components/ui/button'
@@ -63,11 +66,10 @@ type StageDraft = {
 export type PstoResultManagerDialogProps = {
   elevated?: boolean
   rows: WeldRow[]
-  diagramDrafts: Record<number, string>
+  registryScope?: 'all' | 'selected'
   isPending: boolean
   canOpenDocument: boolean
   onClose: () => void
-  onDiagramDraftChange: (rowId: number, value: string) => void
   onRenameDiagram: (row: WeldRow, diagramName: string) => void
   onDeleteResult: (row: WeldRow) => void
   onCorrectStage?: (payload: CorrectPstoCycleStagePayload) => void
@@ -96,6 +98,7 @@ export type PstoResultManagerDialogProps = {
 export function PstoResultManagerDialog({
   elevated = false,
   rows,
+  registryScope = 'all',
   isPending,
   canOpenDocument,
   onClose,
@@ -120,8 +123,27 @@ export function PstoResultManagerDialog({
   onLoadMoreRows,
   onRegistrySearchChange,
 }: PstoResultManagerDialogProps) {
-  const { can } = useAccess()
   const saveCheckSettings = useSaveCheckSettings()
+  const managerView = useWorkflowManagerView()
+  const documentReferences = useMemo(() => registryScope === 'selected'
+    ? rows.flatMap(row => buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? []).flatMap(cycle => {
+        const documentRow = getCycleDocumentRow(row, cycle)
+        return getExistingStages(cycle).flatMap(stage => {
+          const reference = getSystemDocumentReferenceForField(documentRow, getStageDocumentField(stage))
+          return reference ? [reference] : []
+        })
+      }))
+    : undefined, [rows, registryScope])
+  const [dirtyStages, setDirtyStages] = useState<ReadonlySet<PstoCycleStage>>(() => new Set())
+  const onStageDirtyChange = useCallback((stage: PstoCycleStage, dirty: boolean) => {
+    setDirtyStages(current => {
+      if (current.has(stage) === dirty) return current
+      const next = new Set(current)
+      if (dirty) next.add(stage)
+      else next.delete(stage)
+      return next
+    })
+  }, [])
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const filteredRows = useMemo(() => {
@@ -153,6 +175,12 @@ export function PstoResultManagerDialog({
     stage: PstoCycleStage
     token: number
   } | null>(null)
+  const onStageEditingChange = useCallback((rowId: number, sequence: number, stage: PstoCycleStage, editing: boolean) => {
+    if (editing) return
+    setDateEditorTarget(current => current?.rowId === rowId && current.sequence === sequence && current.stage === stage && current.token
+      ? { ...current, token: 0 }
+      : current)
+  }, [])
   const selectedRow = filteredRows.find((row) => row.id === selectedRowId) ?? filteredRows[0] ?? null
   const timeline = useMemo(
     () => selectedRow ? buildPstoCycleTimeline(selectedRow, selectedRow.pstoRepeatCycles ?? []) : [],
@@ -218,9 +246,6 @@ export function PstoResultManagerDialog({
     const stageData = getStageData(cycle, stage)
     const fieldKey = getStageDocumentField(stage)
     const documentRow = getCycleDocumentRow(row, cycle)
-    const deleteReason = !can('psto.delete')
-      ? 'Нет права удаления в ПСТО. Обратитесь к администратору.'
-      : getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
       heading: `${text(row.line) || '-'} · ${text(row.joint) || '-'}`,
@@ -230,10 +255,10 @@ export function PstoResultManagerDialog({
       rows: [row],
       sourceLabel: `цикл ПСТО/ТВМТ · стык ${text(row.joint) || row.id}`,
       actions: [{
-        id: 'change-stage-date',
-        label: `Изменить дату: ${getPstoCycleStageInlineLabel(stage)}`,
-        icon: CalendarClock,
-        disabled: isPending || !stageData.name,
+        id: 'edit-stage',
+        label: 'Внести изменения',
+        icon: Pencil,
+        disabled: isPending,
         onSelect: () => {
           setSelectedRowId(row.id)
           setSelectedSequence(cycle.sequence)
@@ -244,15 +269,6 @@ export function PstoResultManagerDialog({
             token: (current?.token ?? 0) + 1,
           }))
         },
-      }],
-      dangerActions: [{
-        id: 'delete-cycle-stage',
-        label: `Удалить: ${getPstoCycleStageInlineLabel(stage)}`,
-        icon: Trash2,
-        danger: true,
-        disabled: isPending || Boolean(deleteReason),
-        title: deleteReason || undefined,
-        onSelect: () => runDeleteStage(row, cycle, stage),
       }],
       openDocumentDisabledReason: !canOpenDocumentForStage(fieldKey)
         ? 'Сначала загрузите шаблон этого документа в настройках'
@@ -280,9 +296,13 @@ export function PstoResultManagerDialog({
     <WorkflowDialogShell variant="manager" elevated={elevated}>
       <DialogHeader
         title="История ПСТО и ТВМТ"
-        subtitle="Основной и повторные циклы одного стыка показаны в хронологическом порядке. Удаление выполняется только с конца цепочки."
+        subtitle={managerView.tab === 'documents' ? 'Выберите документ для просмотра состава и изменения общих реквизитов.' : 'Основной и повторные циклы одного стыка показаны в хронологическом порядке. Удаление выполняется только с конца цепочки.'}
         onClose={onClose}
       />
+      <WorkflowManagerViews view={managerView} documents={{ choices: PSTO_DOCUMENTS, references: documentReferences,
+        disabled: isPending || dirtyStages.size > 0,
+        disabledReason: dirtyStages.size > 0 ? 'Сначала сохраните или отмените изменения позиции на вкладке «Стыки».' : undefined,
+        onSaved: onDocumentDateSaved, onMessage, onRunRootCauseAction, onOpenJournalRows }}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
@@ -408,7 +428,7 @@ export function PstoResultManagerDialog({
                     : initialSequence === selectedCycle.sequence ? initialStage : undefined,
                 ).map((stage) => (
                   <CycleStageEditor
-                    key={`${cycleKey(selectedCycle)}:${stage}`}
+                    key={`${selectedRow.id}:${cycleKey(selectedCycle)}:${stage}`}
                     row={selectedRow}
                     cycle={selectedCycle}
                     stage={stage}
@@ -449,7 +469,9 @@ export function PstoResultManagerDialog({
                       dateEditorTarget.sequence === selectedCycle.sequence &&
                       dateEditorTarget.stage === stage
                       ? dateEditorTarget.token
-                      : 0}
+                      : undefined}
+                    onStageEditingChange={onStageEditingChange}
+                    onStageDirtyChange={onStageDirtyChange}
                     rootCauseFocus={rootCauseTarget?.rowId === selectedRow.id &&
                       rootCauseTarget.sequence === selectedCycle.sequence &&
                       rootCauseTarget.stage === stage
@@ -457,9 +479,7 @@ export function PstoResultManagerDialog({
                       : initialStage === stage && initialSequence === selectedCycle.sequence
                         ? rootCauseTarget?.focus ?? 'date'
                         : undefined}
-                    onRunRootCauseAction={onRunRootCauseAction}
-                    onDocumentDateSaved={onDocumentDateSaved}
-                    onMessage={onMessage}
+                    onEditDocument={managerView.openDocument}
                   />
                 ))}
               </section>
@@ -467,6 +487,7 @@ export function PstoResultManagerDialog({
           )}
         </main>
       </div>
+      </WorkflowManagerViews>
       <DialogContextMenuLayer ref={contextMenuRef} />
     </WorkflowDialogShell>
   )
@@ -486,10 +507,10 @@ function CycleStageEditor({
   onCorrectTvmtAndRemoveLaterCycles,
   onOpenContextMenu,
   dateEditorFocusKey,
+  onStageEditingChange,
+  onStageDirtyChange,
   rootCauseFocus,
-  onRunRootCauseAction,
-  onDocumentDateSaved,
-  onMessage,
+  onEditDocument,
 }: {
   row: WeldRow
   cycle: PstoCycleSnapshot
@@ -503,16 +524,23 @@ function CycleStageEditor({
   onOpenCycle: (sequence: number) => void
   onCorrectTvmtAndRemoveLaterCycles?: (draft: StageDraft) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void
-  dateEditorFocusKey: number
+  dateEditorFocusKey?: number
+  onStageEditingChange: (rowId: number, sequence: number, stage: PstoCycleStage, editing: boolean) => void
+  onStageDirtyChange: (stage: PstoCycleStage, dirty: boolean) => void
   rootCauseFocus?: 'date' | 'name' | 'result'
-  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
-  onDocumentDateSaved?: () => void
-  onMessage?: (message: string) => void
+  onEditDocument: (reference: import('@/lib/system-document-types').SystemDocumentReference) => void
 }) {
+  const confirmPositionChange = useDocumentPositionChange()
   const { can } = useAccess()
+  // Keep this callback stable while a menu request changes: only folding an
+  // opened editor consumes its request, not an ordinary parent rerender.
+  const onEditingChange = useCallback((editing: boolean) => onStageEditingChange(row.id, cycle.sequence, stage, editing),
+    [onStageEditingChange, row.id, cycle.sequence, stage])
   const stageData = getStageData(cycle, stage)
   const documentField = getStageDocumentField(stage)
   const documentReference = getSystemDocumentReferenceForField(getCycleDocumentRow(row, cycle), documentField)
+  const { jointCount, onCompositionLoaded } = useDocumentJointCount(JSON.stringify(documentReference))
+  const canMovePosition = !documentReference || (jointCount ?? 0) > 1
   const usesWholeDocumentDateEditor = Boolean(documentReference)
   const [draft, setDraft] = useState<StageDraft>(stageData)
   useEffect(() => setDraft(stageData), [stageData.date, stageData.name, stageData.result])
@@ -523,6 +551,8 @@ function CycleStageEditor({
     draft.name !== stageData.name ||
     draft.result !== stageData.result
   )
+  useEffect(() => { onStageDirtyChange(stage, hasChanges) }, [onStageDirtyChange, stage, hasChanges])
+  useEffect(() => () => onStageDirtyChange(stage, false), [onStageDirtyChange, stage])
   const requisiteErrors = getDocumentRequisiteErrors({ name: draft.name, date: draft.date, nameLabel: 'наименование документа', dateLabel: 'Дата документа' })
   const draftComplete = requisiteErrors.length === 0 && (stage !== 'tvmtResult' || Boolean(draft.result))
   const saveBlockReason = hasChanges
@@ -554,6 +584,14 @@ function CycleStageEditor({
           Открыть
         </Button>
       </div>
+      <p className="mt-2 break-words text-sm text-slate-700">{stageData.name || 'Документ не указан'}</p>
+      <DocumentConnectionsButton reference={documentReference} />
+      <div className="mt-4">
+      <ManagerEditPanel title="Документ и выбранная позиция" requestToken={dateEditorFocusKey ?? rootCauseFocus} onEditingChange={onEditingChange}>
+        {documentReference ? <WorkflowDocumentLink reference={documentReference} onOpen={onEditDocument}
+          onCompositionLoaded={onCompositionLoaded} focusDate={rootCauseFocus === 'date'} /> : null}
+        <ManagerEditSection title={`${stage === 'pstoRequest' || stage === 'tvmtRequest' ? 'Редактирование позиции заявки' : 'Редактирование результата стыка'} · ${text(row.joint) || '-'} · ${getPstoCycleStageInlineLabel(stage)}`}
+          description="Изменения применяются только к выбранной позиции. Остальные стыки и их результаты сохраняются.">
       <div className={`mt-4 grid min-w-0 gap-3 ${stage === 'tvmtResult'
         ? 'sm:grid-cols-2'
         : !usesWholeDocumentDateEditor ? 'sm:grid-cols-[minmax(145px,0.8fr)_minmax(0,1.6fr)]' : ''}`}>
@@ -587,8 +625,8 @@ function CycleStageEditor({
             />
           </label>
         ) : null}
-        <label className={`min-w-0 space-y-1.5 text-xs font-medium text-slate-600 ${stage === 'tvmtResult' ? 'sm:col-span-2' : ''}`}>
-          <span>{getNameLabel(stage)}</span>
+        {canMovePosition ? <label className={`min-w-0 space-y-1.5 text-xs font-medium text-slate-600 ${stage === 'tvmtResult' ? 'sm:col-span-2' : ''}`}>
+          <span>{getNameLabel(stage)} только этого стыка</span>
           <Input
             className="min-w-0 aria-invalid:border-rose-400"
             aria-invalid={!draft.name.trim()}
@@ -597,23 +635,9 @@ function CycleStageEditor({
             disabled={isPending}
             onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
           />
-        </label>
+        </label> : null}
       </div>
-      <DocumentConnectionsButton reference={documentReference} />
-      {documentReference && (rootCauseFocus === 'date' || dateEditorFocusKey > 0) ? (
-        <div className="mt-4">
-          <SystemDocumentDateEditor
-            key={`${cycleKey(cycle)}:${stage}:${dateEditorFocusKey}`}
-            reference={documentReference}
-            label={`Дата: ${getPstoCycleStageInlineLabel(stage)}`}
-            disabled={isPending}
-            autoFocus
-            onMessage={onMessage}
-            onRunRootCauseAction={onRunRootCauseAction}
-            onSaved={onDocumentDateSaved}
-          />
-        </div>
-      ) : null}
+      {canMovePosition ? <p className="mt-3 text-xs leading-5 text-slate-500">Другое название перенесёт выбранную позицию в отдельный документ или присоединит к существующему с теми же реквизитами. Для переименования всех позиций используйте вкладку «Документы».</p> : null}
       <div className="mt-4 grid min-w-0 gap-3 border-t border-slate-200 pt-4">
         <div className="min-w-0 space-y-2 break-words text-xs leading-5">
           <p className="text-slate-500">
@@ -624,6 +648,9 @@ function CycleStageEditor({
           {saveBlockReason ? <p className="font-medium text-rose-700">Сохранение заблокировано: {saveBlockReason}</p> : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={isPending || !hasChanges} onClick={() => setDraft(stageData)}>
+            Отменить изменения
+          </Button>
           {blockingLaterCycleSequence ? (
             <>
               <Button
@@ -644,7 +671,9 @@ function CycleStageEditor({
                   variant="destructive"
                   disabled={isPending || Boolean(deletePermissionReason)}
                   title={deletePermissionReason || undefined}
-                  onClick={() => onCorrectTvmtAndRemoveLaterCycles(draft)}
+                  onClick={() => void confirmPositionChange({ previousName: stageData.name, nextName: draft.name,
+                    position: `${text(row.line)} · ${text(row.joint)} · ТВМТ`,
+                    save: () => onCorrectTvmtAndRemoveLaterCycles(draft) })}
                 >
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                   Удалить последующие циклы и сохранить
@@ -670,13 +699,18 @@ function CycleStageEditor({
                 size="sm"
                 disabled={isPending || !hasChanges || !draftComplete || Boolean(saveBlockReason)}
                 title={saveBlockReason || undefined}
-                onClick={() => onSave(draft)}
+                onClick={() => void confirmPositionChange({ previousName: stageData.name, nextName: draft.name,
+                  position: `${text(row.line)} · ${text(row.joint)} · ${getPstoCycleStageLabel(stage)}`,
+                  save: () => onSave(draft) })}
               >
-                Сохранить
+                Сохранить изменения
               </Button>
             </>
           )}
         </div>
+      </div>
+        </ManagerEditSection>
+      </ManagerEditPanel>
       </div>
     </article>
   )

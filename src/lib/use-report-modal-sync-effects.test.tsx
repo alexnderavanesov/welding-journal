@@ -14,9 +14,9 @@ describe('report modal context loading', () => {
       const [draft, setDraft] = useState(() => ({ ...createDefaultPstoResultDraft(), rowIds: new Set([8]), search: 'other joint', requestName: 'R', requestDate: '2026-09-01' }))
       usePstoReportModalSyncEffects({
         availablePstoRequestRows: [], heatTreatmentRows: [row], isPstoRowsContextReady: true,
-        isPstoRequestModalOpen: false, isPstoResultManagerOpen: false, isPstoResultModalOpen: true,
-        managedPstoResultRows: [], pstoResultRequestOptions: [],
-        setManagedPstoDiagramDrafts: () => undefined, setPstoResultDraft: setDraft,
+        isPstoRequestModalOpen: false, isPstoResultModalOpen: true,
+        pstoResultRequestOptions: [],
+        setPstoResultDraft: setDraft,
         setSelectedHeatTreatmentIds: () => undefined,
       })
       return draft
@@ -108,11 +108,8 @@ describe('report modal context loading', () => {
         heatTreatmentRows: [{ id: 8 }] as WeldRow[],
         isPstoRowsContextReady: true,
         isPstoRequestModalOpen: false,
-        isPstoResultManagerOpen: false,
         isPstoResultModalOpen: true,
-        managedPstoResultRows: [],
         pstoResultRequestOptions: [],
-        setManagedPstoDiagramDrafts: () => undefined,
         setPstoResultDraft: setDraft,
         setSelectedHeatTreatmentIds: () => undefined,
       })
@@ -160,11 +157,8 @@ describe('report modal context loading', () => {
         heatTreatmentRows: rows,
         isPstoRowsContextReady: ready,
         isPstoRequestModalOpen: true,
-        isPstoResultManagerOpen: false,
         isPstoResultModalOpen: false,
-        managedPstoResultRows: [],
         pstoResultRequestOptions: [],
-        setManagedPstoDiagramDrafts: vi.fn(),
         setPstoResultDraft: vi.fn(),
         setSelectedHeatTreatmentIds,
       }),

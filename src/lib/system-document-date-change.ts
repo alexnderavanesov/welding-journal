@@ -1,4 +1,5 @@
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
@@ -24,61 +25,33 @@ export type SystemDocumentDateChangePlan = {
   pstoRepeatCycles: PstoRepeatCycleRecord[]
 }
 
-export function buildSystemDocumentDateChangePreview({
-  reference,
-  nextDate,
-  rows,
-  sourcePositions = [],
-}: {
-  reference: SystemDocumentReference
-  nextDate: string
-  rows: readonly WeldRow[]
-  sourcePositions?: readonly SystemDocumentSourcePosition[]
-}) {
-  const normalizedDate = normalizeDateLikeForStorage(nextDate)
-  if (!normalizedDate || normalizedDate === reference.date) return null
-  try {
-    const plan = buildSystemDocumentDateChangePlan({
-      reference,
-      nextDate: normalizedDate,
-      rows,
-      sourcePositions,
-    })
-    return {
-      rows: plan.rows,
-      nextReference: plan.nextReference,
-      nextTitle: plan.nextTitle,
-      nextDate: plan.nextDate,
-      rowCount: plan.rowCount,
-      positionCount: plan.positionCount,
-    }
-  } catch {
-    return null
-  }
-}
-
 export function buildSystemDocumentDateChangePlan({
   reference,
   nextDate,
+  nextTitle: requestedTitle,
   rows,
   sourcePositions = [],
+  allowUnchangedForPreview = false,
 }: {
   reference: SystemDocumentReference
   nextDate: string
+  nextTitle?: string
   rows: readonly WeldRow[]
   sourcePositions?: readonly SystemDocumentSourcePosition[]
+  /** Validate composition without inventing a name change; never used by persistence. */
+  allowUnchangedForPreview?: boolean
 }): SystemDocumentDateChangePlan {
   const normalizedDate = normalizeDateLikeForStorage(nextDate)
   const dateReason = getDateInputValidationReason(nextDate, 'Дата документа')
   if (dateReason || !normalizedDate) throw new Error(dateReason || 'Укажите дату документа')
   if (!reference.title.trim()) throw new Error('Не указано наименование документа')
-  if (normalizedDate === reference.date) throw new Error('Новая дата совпадает с текущей')
+  const nextTitle = requestedTitle === undefined ? reference.title : formatCustomDocumentName(requestedTitle)
+  if (!nextTitle) throw new Error('Укажите наименование документа')
+  if (!allowUnchangedForPreview && normalizedDate === reference.date && nextTitle === reference.title) throw new Error(requestedTitle === undefined ? 'Новая дата совпадает с текущей' : 'Реквизиты совпадают с текущими')
   if (rows.length === 0) throw new Error('В документе больше нет позиций')
 
-  // Dates and names are independent facts, even when the name contains a date
-  // or resembles a numbering template. Renaming is a separate explicit action.
-  const nextTitle = reference.title
-  const nextReference = { ...reference, date: normalizedDate }
+  // A date-only operation must never implicitly rename a document.
+  const nextReference = { ...reference, title: nextTitle, date: normalizedDate }
   const proposedRows = rows.map(cloneRow)
   const rowsById = new Map(proposedRows.map((row) => [row.id, row]))
   const directRowIds = new Set<number>()
@@ -207,6 +180,16 @@ function changePstoCyclePosition<T extends WeldRow | PstoRepeatCycleRecord>(
     [fields.nameKey]: nextTitle,
     [fields.dateKey]: nextDate,
   }
+}
+
+export function getSystemDocumentPrimaryFieldPairs(reference: SystemDocumentReference): Array<{ nameKey: WeldFieldKey; dateKey: WeldFieldKey }> {
+  const psto = getPstoDocumentFields(reference)
+  if (psto) return [psto]
+  return ALL_LNK_FIELD_METHODS
+    .filter(method => reference.methodCode ? method.code === reference.methodCode : method.code !== 'ТВМТ')
+    .map(method => reference.type === 'lnkRequest'
+      ? { nameKey: method.requestKey, dateKey: method.requestDateKey }
+      : { nameKey: method.conclusionKey, dateKey: method.conclusionDateKey })
 }
 
 function getPstoDocumentFields(reference: SystemDocumentReference): {

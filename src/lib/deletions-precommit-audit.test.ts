@@ -95,7 +95,7 @@ describe('operator deletion cancellation and identity', () => {
         lnkRows: rows, controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS, lnkRequestOptions: [],
         setMessage: vi.fn(), setLnkNotice: vi.fn(), highlightChangedRows: vi.fn(), setSelectedLnkIds: vi.fn(),
         setLnkRequestDraft: vi.fn(), setLnkRequestNaming: vi.fn(), setIsLnkRequestModalOpen: vi.fn(),
-        setManagedLnkRequestName: vi.fn(), setManagedLnkRequestNameDraft: vi.fn(), setIsLnkRequestManagerOpen: vi.fn(),
+        setManagedLnkRequestName: vi.fn(), setIsLnkRequestManagerOpen: vi.fn(),
         setIsLnkResultModalOpen: vi.fn(), setLnkResultDraft: vi.fn(), setLnkOfficialityDraft: vi.fn(),
         setIsLnkOfficialityModalOpen: vi.fn(), resetDismissedRepeatedJointTasks: vi.fn(),
         setManagedLnkPendingResultChanges: vi.fn(), setManagedLnkResultChangeHint: vi.fn(),
@@ -105,9 +105,9 @@ describe('operator deletion cancellation and identity', () => {
       const actions = useManagedLnkRequestActions({
         lnkRows: rows,
         lnkRequestManagerOptions: [request], managedLnkRequestName: request.name, managedLnkRequestDate: request.date,
-        managedLnkRequestNameDraft: request.name, lnkRequestCorrectionMutation: { mutate: vi.fn() },
+        lnkRequestCorrectionMutation: { mutate: vi.fn() },
         lnkRequestManagerMutation: manager, setIsLnkRequestManagerOpen: vi.fn(), setManagedLnkRequestName: vi.fn(),
-        setManagedLnkRequestDate: vi.fn(), setManagedLnkRequestNameDraft: vi.fn(),
+        setManagedLnkRequestDate: vi.fn(),
       })
       return { actions, manager }
     }, { initialProps: { rows: [first] }, wrapper: ({ children }) =>

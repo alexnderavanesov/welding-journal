@@ -59,7 +59,7 @@ async function openManager(page: Page) {
   await page.goto('/lnk')
   await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
   await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
-  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true }) })
+  const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все заявки ЛНК', exact: true }) })
   await manager.getByPlaceholder('Название, дата, стык или линия').fill(requestName)
   await manager.getByRole('button', { name: new RegExp(requestName) }).click()
   await expect(manager.getByRole('button', { name: 'Добавить позиции', exact: true })).toBeEnabled()
@@ -69,7 +69,10 @@ async function chooseFreshPosition(page: Page) {
   const manager = await openManager(page)
   await manager.getByRole('button', { name: 'Добавить позиции', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Заявка ЛНК', exact: true }) })
+  const loaded = page.waitForResponse(response => response.url().includes('/_serverFn/') &&
+    rpcName(response.url()).startsWith('listLnkWorkflowRows') && Boolean(response.request().postData()?.includes('F953')))
   await dialog.getByPlaceholder('Проект, шифр, линия, спул или стык').fill('F953')
+  await loaded
   await dialog.getByRole('checkbox', { name: `Выбрать стык ${line} F953`, exact: true }).check()
   for (const method of ['ВИК', 'РК']) {
     const button = dialog.getByRole('button', { name: method, exact: true })
@@ -109,7 +112,7 @@ test('оператор дополняет заявку с годным ВИК и
   expect(after.documents.find(doc => doc.id === requestBefore.id)?.joints).toEqual([ids.F951, ids.F952, ids.F953])
   const manager = await openManager(page)
   await expect(manager.getByText(`${line} · F953`, { exact: true })).toBeVisible()
-  await manager.getByRole('button', { name: 'Дополнительные действия с заявкой' }).click()
+  await manager.getByRole('button', { name: 'Редактировать' }).click()
   await expect(manager.getByRole('button', { name: 'Удалить выбранную заявку' })).toBeDisabled()
 })
 

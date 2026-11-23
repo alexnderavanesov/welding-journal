@@ -1,5 +1,4 @@
 import { canSelectPstoResultRow, rowBelongsToPstoRequest } from '@/lib/report-modal-rows'
-import { hasText } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import {
@@ -24,14 +23,6 @@ export function getPstoResultRequestIdentity(
     return current
   }
   return requestOptions.length === 1 ? requestOptions[0] : null
-}
-
-export function buildManagedPstoDiagramDrafts(rows: RowWithId[]) {
-  return Object.fromEntries(
-    rows
-      .filter((row) => hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate))
-      .map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()]),
-  )
 }
 
 export function resolvePstoResultDraftAfterRequestChange(

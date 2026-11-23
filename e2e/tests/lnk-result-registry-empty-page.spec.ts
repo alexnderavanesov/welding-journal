@@ -51,7 +51,7 @@ test('a locally empty method/result filter keeps access to the next registry por
   await page.goto('/lnk')
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Редактирование результатов ЛНК', exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Все результаты ЛНК', exact: true })
   await expect(dialog).toBeVisible()
   const search = dialog.getByPlaceholder('Стык, линия, заявка или заключение')
   const method = dialog.getByLabel('Вид контроля в реестре')
@@ -138,10 +138,19 @@ test('a locally empty method/result filter keeps access to the next registry por
     await entry.scrollIntoViewIfNeeded()
     await entry.click({ timeout: 3000 })
     const card = dialog.locator('main')
+    // The registry opens in view mode; each result block now owns its editor
+    // and save action instead of exposing a permanently editable global footer.
+    if (!baselineLabels) {
+      const edit = card.getByRole('button', { name: 'Редактировать', exact: true })
+      if (await edit.isVisible()) await edit.click()
+      await expect(card.getByRole('button', { name: 'Свернуть редактирование', exact: true })).toBeVisible()
+    }
     const remove = card.getByRole('button', { name: 'Удалить результат', exact: true })
     await remove.scrollIntoViewIfNeeded()
     await expect(remove).toBeInViewport()
-    await expect(dialog.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeInViewport()
+    const save = (baselineLabels ? dialog : card).getByRole('button', { name: 'Сохранить изменения', exact: true })
+    await save.scrollIntoViewIfNeeded()
+    await expect(save).toBeInViewport()
     await search.scrollIntoViewIfNeeded()
     await search.click()
     await expect(search).toBeFocused()

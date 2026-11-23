@@ -1,7 +1,10 @@
+import { WorkflowManagerViews, WorkflowDocumentLink, useWorkflowManagerView } from './workflow-manager-views'
+import { useDocumentPositionChange } from '@/lib/use-document-position-change'
+import { ConclusionPositionChangeHelp, ManagerEditPanel, ManagerEditSection, useDocumentJointCount } from './manager-edit-panel'
 import { DocumentConnectionsButton } from './document-connections-button'
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
-import { CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
+import { Pencil, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
@@ -9,7 +12,6 @@ import { JointConnectionTypeMeta, MetaSeparator } from '@/components/joint-meta'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
-import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkResultManagerFooter } from '@/components/lnk-result-manager-footer'
 import { LnkPendingResultBadge } from '@/components/lnk-result-manager-summary'
@@ -73,6 +75,7 @@ export type PreHeatTreatmentResultManagerDialogProps = {
   elevated?: boolean
   rows: WeldRow[]
   registryMode: PreHeatTreatmentRegistryMode
+  registryScope?: 'all' | 'selected'
   readOnly?: boolean
   initialRelationId?: number | null
   isPending: boolean
@@ -112,6 +115,7 @@ export function PreHeatTreatmentResultManagerDialog({
   elevated = false,
   rows,
   registryMode,
+  registryScope = 'all',
   readOnly = false,
   initialRelationId,
   isPending,
@@ -136,11 +140,15 @@ export function PreHeatTreatmentResultManagerDialog({
   onDocumentDateSaved,
   onMessage,
 }: PreHeatTreatmentResultManagerDialogProps) {
+  const confirmPositionChange = useDocumentPositionChange()
+  const [isEditing, setIsEditing] = useState(false)
   const { can } = useAccess()
   const deletePermissionReason = can('lnk.delete') ? '' : 'Нет права удаления в ЛНК. Обратитесь к администратору.'
   const saveCheckSettings = useSaveCheckSettings()
+  const managerView = useWorkflowManagerView()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [localSearch, setSearch] = useState('')
+  const [isSearchPending, setIsSearchPending] = useState(false)
   const [localMethodFilter, setMethodFilter] = useState('')
   const [localRequestFilter, setRequestFilter] = useState<RequestFilter>('all')
   const [localResultFilter, setResultFilter] = useState<ResultFilter>('all')
@@ -158,6 +166,14 @@ export function PreHeatTreatmentResultManagerDialog({
   }
   const [dateEditorTarget, setDateEditorTarget] = useState<{ relationId: number; token: number } | null>(null)
   const entries = useMemo(() => buildEntries(rows, registryMode), [registryMode, rows])
+  const documentReferences = useMemo(() => {
+    if (registryScope !== 'selected') return undefined
+    return rows.flatMap(row => PRE_HEAT_TREATMENT_LNK_METHODS.flatMap(method => {
+      const field = getPreFieldKey(method.code, registryMode === 'request' ? 'requestName' : 'conclusionName')
+      const reference = field ? getSystemDocumentReferenceForField(row, field) : null
+      return reference ? [reference] : []
+    }))
+  }, [rows, registryMode, registryScope])
   const filteredEntries = useMemo(() => {
     const query = normalizeSearchText(search)
     return entries.filter((entry) => {
@@ -199,6 +215,11 @@ export function PreHeatTreatmentResultManagerDialog({
     [filteredEntries, selectedRelationId],
   )
   const [requestDraft, setRequestDraft] = useState(() => createRequestDraft(selectedEntry?.control))
+  const editingRelationId = useRef<number | null>(null)
+  const handleEditingChange = useCallback((open: boolean) => {
+    editingRelationId.current = open ? selectedEntry?.control.id ?? null : null
+    setIsEditing(open)
+  }, [selectedEntry?.control.id])
   // Requisites remain a dedicated operation. Keep unsaved text when moving
   // between cards; result selection itself belongs to the shared batch state.
   const [resultDocumentDrafts, setResultDocumentDrafts] = useState<Record<string, { name: string; date: string }>>({})
@@ -248,22 +269,12 @@ export function PreHeatTreatmentResultManagerDialog({
     setSelectedRelationId(entry.control.id)
     const point = getDialogMenuPoint(event)
     const managesResult = registryMode === 'result'
-    const pendingResult = pendingResultChanges[String(entry.control.id)]
     const documentField = getPreFieldKey(
       entry.methodCode,
       managesResult ? 'conclusionName' : 'requestName',
     )
     const documentName = text(managesResult ? entry.control.conclusionName : entry.control.requestName)
 
-    const deleteReason = readOnly
-      ? 'История доступна только для просмотра.'
-      : deletePermissionReason || (managesResult
-        ? getPreHeatTreatmentResultRemovalBlockReason(
-            entry.row,
-            entry.control,
-            saveCheckSettings,
-          )
-        : getPreHeatTreatmentRequestRemovalBlockReason(entry.row, entry.control))
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
       heading: `${text(entry.row.line) || '-'} · ${text(entry.row.joint) || '-'}`,
@@ -274,11 +285,10 @@ export function PreHeatTreatmentResultManagerDialog({
       sourceLabel: `НК ${entry.methodCode} до ТО · стык ${text(entry.row.joint) || entry.row.id}`,
       actions: [
         {
-          id: 'change-document-date',
-          label: managesResult ? 'Изменить дату заключения' : 'Изменить дату заявки',
-          icon: CalendarClock,
-          disabled: !documentField || isPending || readOnly || (managesResult && metadataBlocked),
-          title: managesResult && metadataBlocked ? 'Сначала сохраните или отмените изменения результатов.' : undefined,
+          id: 'edit-entry',
+          label: 'Внести изменения',
+          icon: Pencil,
+          disabled: isPending || readOnly || isSearchPending || Boolean(serverPage?.isLoading),
           onSelect: () => {
             setSelectedRelationId(entry.control.id)
             setDateEditorTarget((current) => ({
@@ -288,17 +298,6 @@ export function PreHeatTreatmentResultManagerDialog({
           },
         },
       ],
-      dangerActions: [{
-        id: managesResult ? 'delete-pre-result' : 'delete-pre-request',
-        label: managesResult ? pendingResult === null ? 'Будет удалён' : 'Удалить результат' : 'Удалить заявку',
-        icon: Trash2,
-        danger: true,
-        disabled: isPending || Boolean(deleteReason) || (managesResult && pendingResult === null),
-        title: deleteReason || undefined,
-        onSelect: () => managesResult
-          ? onStageResultChange(entry.row, entry.control, null)
-          : onDeleteRequest(entry.row, entry.control),
-      }],
       openDocumentDisabledReason: !documentField
         ? 'Поле документа не найдено'
         : !canOpenDocument(documentField)
@@ -323,6 +322,8 @@ export function PreHeatTreatmentResultManagerDialog({
   const selectedDocumentReference = selectedEntry && selectedDocumentField
     ? getSystemDocumentReferenceForField(selectedEntry.row, selectedDocumentField)
     : null
+  const { jointCount, onCompositionLoaded } = useDocumentJointCount(JSON.stringify(selectedDocumentReference))
+  const canMovePosition = !selectedDocumentReference || (jointCount ?? 0) > 1
   const resultDeleteReason = deletePermissionReason || (selectedEntry
     ? getPreHeatTreatmentResultRemovalBlockReason(
         selectedEntry.row,
@@ -343,24 +344,38 @@ export function PreHeatTreatmentResultManagerDialog({
   )
   const resultRequisiteErrors = getDocumentRequisiteErrors({ name: resultDraft.name, date: resultDraft.date })
 
+  const resultSaveControls = (<LnkResultManagerFooter
+        pendingEntriesCount={pendingResultCount}
+        isResultReplacementPending={isPending}
+        saveDisabledReason={readOnly ? 'История доступна только для просмотра.' : undefined}
+        onResetPendingChanges={onResetChanges}
+        onSaveChanges={onSaveChanges}
+      />
+  )
+
   const content = (
     <>
       <DialogHeader
         title={registryMode === 'request'
-          ? readOnly ? 'История заявок ЛНК до ТО' : 'Редактирование заявок ЛНК до ТО'
-          : readOnly ? 'История результатов ЛНК до ТО' : 'Редактирование результатов ЛНК до ТО'}
+          ? readOnly ? 'История заявок ЛНК до ТО' : registryScope === 'all' ? 'Все заявки ЛНК до ТО' : 'Заявки выбранных стыков ЛНК до ТО'
+          : readOnly ? 'История результатов ЛНК до ТО' : registryScope === 'all' ? 'Все результаты ЛНК до ТО' : 'Результаты выбранных стыков ЛНК до ТО'}
         subtitle={readOnly
           ? 'Процесс выключен в настройках проекта. Документы и сохраненные данные доступны без изменений.'
           : registryMode === 'request'
             ? 'Найдите заявку, проверьте ее состав или выполните доступное действие.'
-            : 'Подготовьте замены и удаления, затем сохраните изменения и проверьте общий список подтверждения.'}
+            : 'Выберите результат для просмотра. Для изменений нажмите «Редактировать».'}
         onClose={onClose}
         actions={onStageChange ? <LnkControlStageSwitch value="beforeHeatTreatment" onChange={(stage) => {
           if (stage === 'primary') onStageChange()
         }} /> : null}
       />
+      <WorkflowManagerViews view={managerView} documents={{ choices: [{ key: `before-${registryMode}`, label: registryMode === 'request' ? 'Заявки ЛНК до ТО' : 'Заключения ЛНК до ТО', type: registryMode === 'request' ? 'lnkRequest' : 'lnkConclusion', stage: 'До ТО' }],
+        references: documentReferences,
+        disabled: metadataBlocked || readOnly,
+        disabledReason: readOnly ? 'История доступна только для просмотра.' : pendingResultCount > 0 ? 'Сначала сохраните или отмените изменения результатов на вкладке «Стыки».' : undefined,
+        onSaved: onDocumentDateSaved, onMessage, onRunRootCauseAction, onOpenJournalRows }}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
+        <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-slate-200 bg-slate-50/70 lg:overflow-visible lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
             <Button className="w-full" onClick={onOpenWorkflow} disabled={isPending || readOnly}>
               <Plus className="mr-2 h-4 w-4" />
@@ -372,6 +387,7 @@ export function PreHeatTreatmentResultManagerDialog({
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <BufferedFilterInput
                 value={search}
+                onPendingChange={setIsSearchPending}
                 onValueChange={(search) => changeFilters({ search })}
                 placeholder={registryMode === 'request'
                   ? 'Название, дата, стык или линия'
@@ -607,33 +623,25 @@ export function PreHeatTreatmentResultManagerDialog({
                 </div>
               </section>
               <DocumentConnectionsButton reference={selectedDocumentReference} />
+              <ManagerEditPanel key={`${registryMode}:${selectedEntry.control.id}`}
+                onEditingChange={handleEditingChange}
+                defaultOpen={editingRelationId.current === selectedEntry.control.id}
+                title={registryMode === 'request' ? 'Заявка и выбранная позиция' : 'Результат и заключение'} disabled={readOnly || isSearchPending || Boolean(serverPage?.isLoading)}
+                requestToken={dateEditorTarget?.relationId === selectedEntry.control.id ? dateEditorTarget.token
+                  : rootCauseTarget?.rowId === selectedEntry.row.id && rootCauseTarget.methodCode === selectedEntry.methodCode &&
+                    (!rootCauseTarget.relationId || rootCauseTarget.relationId === selectedEntry.control.id)
+                    ? `${rootCauseTarget.documentPart}:${rootCauseTarget.focus}` : undefined}
+                summary={<p className="break-words text-sm text-slate-600">
+                  {registryMode === 'request' ? text(selectedEntry.control.requestName) : text(selectedEntry.control.conclusionName)}
+                  {' · '}{formatDisplayDate(registryMode === 'request' ? selectedEntry.control.requestDate : selectedEntry.control.conclusionDate) || 'Дата не указана'}
+                </p>}>
+                {selectedDocumentReference ? <WorkflowDocumentLink reference={selectedDocumentReference}
+                  onOpen={managerView.openDocument} onCompositionLoaded={onCompositionLoaded} focusDate={rootCauseTarget?.documentPart === (registryMode === 'request' ? 'request' : 'conclusion') && rootCauseTarget?.focus === 'date'} /> : null}
               {registryMode === 'request' ? (
                 <section className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
-                <h3 className="text-sm font-semibold text-slate-900">Заявка</h3>
-                {selectedDocumentReference && (
-                  dateEditorTarget?.relationId === selectedEntry.control.id ||
-                  (rootCauseTarget?.focus === 'date' &&
-                    rootCauseTarget.rowId === selectedEntry.row.id &&
-                    rootCauseTarget.methodCode === selectedEntry.methodCode &&
-                    rootCauseTarget.documentPart === 'request' &&
-                    (!rootCauseTarget.relationId || rootCauseTarget.relationId === selectedEntry.control.id))
-                ) ? (
-                  <div className="mt-4">
-                    <SystemDocumentDateEditor
-                      key={`${selectedEntry.control.id}:${dateEditorTarget?.token ?? 0}`}
-                      reference={selectedDocumentReference}
-                      label="Дата заявки ЛНК до ТО"
-                      disabled={isPending || readOnly}
-                      autoFocus
-                      onMessage={onMessage}
-                      onRunRootCauseAction={onRunRootCauseAction}
-                      onSaved={() => {
-                        setDateEditorTarget(null)
-                        onDocumentDateSaved?.()
-                      }}
-                    />
-                  </div>
-                ) : null}
+                <h3 className="text-sm font-semibold text-slate-900">Редактирование позиции заявки · {text(selectedEntry.row.joint)} · {selectedEntry.methodCode}</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Изменения относятся только к выбранной позиции. Другое название перенесёт её в отдельную заявку или присоединит к существующей с теми же реквизитами. Остальные позиции сохраняются в прежней заявке.</p>
+
                 <div className={`mt-4 grid gap-3 ${selectedDocumentReference ? '' : 'md:grid-cols-[180px_minmax(280px,1fr)]'}`}>
                   {!selectedDocumentReference ? (
                     <label className="space-y-1.5 text-xs font-medium text-slate-600">
@@ -647,14 +655,14 @@ export function PreHeatTreatmentResultManagerDialog({
                       />
                     </label>
                   ) : null}
-                  <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                    <span>Наименование заявки</span>
+                  {canMovePosition ? <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                    <span>Заявка только этого стыка</span>
                     <Input
                       value={requestDraft.name}
                       disabled={isPending || readOnly}
                       onChange={(event) => setRequestDraft((current) => ({ ...current, name: event.target.value }))}
                     />
-                  </label>
+                  </label> : null}
                 </div>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
                   <p className="max-w-2xl text-xs leading-5 text-slate-500">
@@ -674,151 +682,107 @@ export function PreHeatTreatmentResultManagerDialog({
                       <Trash2 className="mr-2 h-4 w-4" />
                       Удалить заявку
                     </Button>
-                    <Button
+                    {canMovePosition ? <Button
                       type="button"
                       disabled={isPending || readOnly || !hasRequestChanges || !requestDraft.date || !requestDraft.name}
-                      onClick={() => onCorrect({
+                      onClick={() => void confirmPositionChange({
+                        previousName: text(selectedEntry.control.requestName), nextName: requestDraft.name,
+                        position: `${text(selectedEntry.row.line)} · ${text(selectedEntry.row.joint)} · ${selectedEntry.methodCode} до ТО`,
+                        save: () => onCorrect({
                         relationId: selectedEntry.control.id,
                         expectedVersion: String(selectedEntry.row.rowVersion ?? '').trim(),
                         stage: 'request',
                         action: 'update',
                         requestDate: requestDraft.date,
                         requestName: requestDraft.name,
-                      })}
+                      }) })}
                     >
-                      Сохранить заявку
-                    </Button>
+                      Изменить заявку этого стыка
+                    </Button> : null}
                   </div>
                 </div>
                 </section>
               ) : null}
               {registryMode === 'result' ? (
                 <section className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
-                  <h3 className="text-sm font-semibold text-slate-900">Результат и заключение</h3>
-                  {selectedDocumentReference && (
-                    dateEditorTarget?.relationId === selectedEntry.control.id ||
-                    (rootCauseTarget?.focus === 'date' &&
-                      rootCauseTarget.rowId === selectedEntry.row.id &&
-                      rootCauseTarget.methodCode === selectedEntry.methodCode &&
-                      rootCauseTarget.documentPart === 'conclusion' &&
-                      (!rootCauseTarget.relationId || rootCauseTarget.relationId === selectedEntry.control.id))
-                  ) ? (
-                    <div className="mt-4">
-                      <SystemDocumentDateEditor
-                        key={`${selectedEntry.control.id}:${dateEditorTarget?.token ?? 0}`}
-                        reference={selectedDocumentReference}
-                        label={`Дата заключения ${selectedEntry.methodCode} до ТО`}
-                        disabled={metadataBlocked || readOnly}
-                        autoFocus
-                        onMessage={onMessage}
-                        onRunRootCauseAction={onRunRootCauseAction}
-                        onSaved={() => {
-                          setDateEditorTarget(null)
-                          onDocumentDateSaved?.()
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                  <div className={`mt-4 grid gap-3 ${selectedDocumentReference
-                    ? 'md:grid-cols-[180px_minmax(260px,1fr)]'
-                    : 'md:grid-cols-[180px_180px_minmax(260px,1fr)]'}`}>
-                    <WorkflowResultOptionPicker
-                        compact
-                        value={resultDraft.result}
-                        options={PRE_HEAT_TREATMENT_RESULT_OPTIONS}
+                  <h3 className="text-sm font-semibold text-slate-900">Редактирование результата стыка · {text(selectedEntry.row.joint)} · {selectedEntry.methodCode}</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Изменения применяются только к выбранной позиции. Результаты остальных стыков сохраняются.</p>
+
+                  <div className="mt-4 grid gap-4 rounded-lg border border-slate-200 bg-white p-4 lg:grid-cols-2">
+                    <div className="min-w-0 space-y-2">
+                      <WorkflowResultOptionPicker compact label="Результат выбранного стыка"
+                        value={resultDraft.result} options={PRE_HEAT_TREATMENT_RESULT_OPTIONS}
                         restrictionHelpHref={getSystemRuleSettingsHref('СП-07')}
                         getDisabledReason={getDisabledResultReason}
                         onChange={(result) => onStageResultChange(selectedEntry.row, selectedEntry.control, {
-                          result,
-                          conclusionName: text(selectedEntry.control.conclusionName),
+                          result, conclusionName: text(selectedEntry.control.conclusionName),
                           conclusionDate: parseDateLikeToIso(selectedEntry.control.conclusionDate) ?? '',
-                        })}
-                    />
-                    {!selectedDocumentReference ? (
-                      <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                        <span>Дата контроля</span>
-                        <Input
-                          type="date"
-                          value={resultDraft.date}
-                          aria-invalid={!resultDraft.date}
-                          className="aria-invalid:border-rose-400"
-                          autoFocus={rootCauseTarget?.focus === 'date'}
-                          disabled={metadataBlocked || readOnly}
-                          onChange={(event) => changeResultDocumentDraft({ date: event.target.value })}
-                        />
-                      </label>
-                    ) : null}
-                    <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                      <span>Наименование заключения</span>
-                      <Input
-                        value={resultDraft.name}
-                        aria-invalid={!resultDraft.name.trim()}
-                        className="aria-invalid:border-rose-400"
-                        disabled={metadataBlocked || readOnly}
-                        onChange={(event) => changeResultDocumentDraft({ name: event.target.value })}
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
-                    {hasResultDocumentChanges && resultRequisiteErrors.length > 0 ? (
-                      <p className="w-full whitespace-pre-line text-xs text-rose-700" role="alert">{resultRequisiteErrors.join('\n')}</p>
-                    ) : null}
-                    {resultDeleteReason && !readOnly ? (
-                      <p className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-                        {resultDeleteReason}
-                      </p>
-                    ) : null}
-                    <p className="max-w-2xl text-xs leading-5 text-slate-500">
-                      Замены и удаления применятся только через «Сохранить изменения» и подтверждение. Название и дата сохраняются отдельно кнопкой «Сохранить реквизиты». Дата остается между датой заявки и ПСТО. Для остальных методов ВИК до ТО должен быть уже годен.
-                    </p>
-                    {pendingResultCount > 0 ? <p className="w-full text-xs text-amber-700">Сначала сохраните или отмените изменения результатов, затем исправляйте реквизиты.</p> : null}
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                        })} />
+                      <p className="text-xs leading-5 text-slate-500">Выберите новый результат и нажмите «Сохранить изменения» в этом блоке.</p>
+                    </div>
+                    <div className="min-w-0 space-y-2 border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+                      <Button type="button" variant="outline" size="sm"
+                        className="gap-2 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                         disabled={isPending || readOnly || selectedPendingResult === null || Boolean(resultDeleteReason)}
                         title={readOnly ? 'История доступна только для просмотра.' : resultDeleteReason || 'Удаление будет применено после сохранения и подтверждения.'}
-                        onClick={() => onStageResultChange(selectedEntry.row, selectedEntry.control, null)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        onClick={() => onStageResultChange(selectedEntry.row, selectedEntry.control, null)}>
+                        <Trash2 className="h-3.5 w-3.5" />
                         {selectedPendingResult === null ? 'Будет удалён' : 'Удалить результат'}
                       </Button>
-                      <Button
-                        type="button"
-                        disabled={
-                          metadataBlocked ||
-                          readOnly ||
-                          !hasResultDocumentChanges ||
-                          resultRequisiteErrors.length > 0
-                        }
-                        onClick={() => onCorrect({
-                          relationId: selectedEntry.control.id,
-                          expectedVersion: String(selectedEntry.row.rowVersion ?? '').trim(),
-                          stage: 'result',
-                          action: 'update',
-                          result: text(selectedEntry.control.result),
-                          conclusionDate: resultDraft.date,
-                          conclusionName: resultDraft.name,
-                        })}
-                      >
-                        Сохранить реквизиты
-                      </Button>
+                      <p className={`text-xs leading-5 ${resultDeleteReason ? 'text-amber-700' : 'text-slate-500'}`}>
+                        {resultDeleteReason || 'После сохранения и подтверждения у этой позиции очистятся результат, дата контроля и заключение.'}
+                      </p>
                     </div>
                   </div>
+                  {canMovePosition ? <details className="mt-4 rounded-md border border-slate-200 bg-white p-3"
+                    open={!selectedDocumentReference || rootCauseTarget?.focus === 'name'}>
+                    <summary className="cursor-pointer text-sm font-medium text-slate-700">
+                      <span className="inline-flex items-center gap-2">Изменить заключение только этого стыка
+                        {selectedDocumentReference ? <ConclusionPositionChangeHelp /> : null}
+                      </span>
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <p className="text-xs leading-5 text-slate-500">Другое название перенесёт только эту позицию в отдельный документ или присоединит к существующему с теми же реквизитами. Остальные позиции останутся в прежнем документе.</p>
+                      {!selectedDocumentReference ? <label className="block space-y-1.5 text-xs font-medium text-slate-600">
+                        <span>Дата контроля</span>
+                        <Input type="date" value={resultDraft.date} aria-invalid={!resultDraft.date}
+                          className="aria-invalid:border-rose-400" autoFocus={rootCauseTarget?.focus === 'date'}
+                          disabled={metadataBlocked || readOnly}
+                          onChange={(event) => changeResultDocumentDraft({ date: event.target.value })} />
+                      </label> : null}
+                      <label className="block space-y-1.5 text-xs font-medium text-slate-600">
+                        <span>Заключение только этого стыка</span>
+                        <Input value={resultDraft.name} aria-invalid={!resultDraft.name.trim()}
+                          className="aria-invalid:border-rose-400" disabled={metadataBlocked || readOnly}
+                          onChange={(event) => changeResultDocumentDraft({ name: event.target.value })} />
+                      </label>
+                      {hasResultDocumentChanges && resultRequisiteErrors.length > 0 ? <p className="whitespace-pre-line text-xs text-rose-700" role="alert">{resultRequisiteErrors.join('\n')}</p> : null}
+                      {pendingResultCount > 0 ? <p className="text-xs text-amber-700">Сначала сохраните или отмените изменения результатов, затем исправляйте реквизиты.</p> : null}
+                      <Button type="button" disabled={metadataBlocked || readOnly || !hasResultDocumentChanges || resultRequisiteErrors.length > 0}
+                        onClick={() => void confirmPositionChange({
+                          previousName: text(selectedEntry.control.conclusionName), nextName: resultDraft.name,
+                          position: `${text(selectedEntry.row.line)} · ${text(selectedEntry.row.joint)} · ${selectedEntry.methodCode} до ТО`,
+                          save: () => onCorrect({ relationId: selectedEntry.control.id,
+                            expectedVersion: String(selectedEntry.row.rowVersion ?? '').trim(), stage: 'result', action: 'update',
+                            result: text(selectedEntry.control.result), conclusionDate: resultDraft.date, conclusionName: resultDraft.name,
+                          }),
+                        })}>Изменить заключение этого стыка</Button>
+                    </div>
+                  </details> : null}
+                  {resultSaveControls}
                 </section>
               ) : null}
+              </ManagerEditPanel>
             </div>
           )}
+          {registryMode === 'result' && pendingResultCount > 0 && (!selectedEntry || !isEditing) ? (
+            <ManagerEditSection title="Подготовленные изменения результатов" description="Здесь сохраняются изменения результатов, подготовленные в этом окне, в том числе скрытые текущим фильтром.">
+              {resultSaveControls}
+            </ManagerEditSection>
+          ) : null}
         </main>
       </div>
-      {registryMode === 'result' ? <LnkResultManagerFooter
-        pendingEntriesCount={pendingResultCount}
-        isResultReplacementPending={isPending}
-        saveDisabledReason={readOnly ? 'История доступна только для просмотра.' : undefined}
-        onResetPendingChanges={onResetChanges}
-        onSaveChanges={onSaveChanges}
-      /> : null}
+      </WorkflowManagerViews>
       <DialogContextMenuLayer ref={contextMenuRef} />
     </>
   )

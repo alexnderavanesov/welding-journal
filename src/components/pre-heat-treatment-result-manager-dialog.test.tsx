@@ -1,12 +1,15 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { fireEvent, render as baseRender, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PreHeatTreatmentResultManagerDialog } from '@/components/pre-heat-treatment-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 const access = vi.hoisted(() => ({ canDelete: true }))
+const documentStorage = vi.hoisted(() => ({ list: vi.fn() }))
 vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: (permission: string) => permission !== 'lnk.delete' || access.canDelete }) }))
-beforeEach(() => { access.canDelete = true })
+beforeEach(() => { access.canDelete = true; documentStorage.list.mockReset().mockResolvedValue({ rows: [], total: 0 }) })
 
 const resultEditProps = () => ({
   pendingResultChanges: {}, pendingResultCount: 0,
@@ -14,6 +17,26 @@ const resultEditProps = () => ({
 })
 
 describe('PreHeatTreatmentResultManagerDialog', () => {
+  it.each(['request', 'result'] as const)('limits the %s document tab to all before-TO documents of selected joints', async registryMode => {
+    const row = { id: 7, rowVersion: '107', line: 'L7', joint: 'F7', vikConclusion: 'Основное заключение',
+      preHeatTreatmentControls: [
+        { id: 11, weldJointId: 7, method: 'ВИК', requestName: 'З-ВИК', requestDate: '2026-08-04', result: 'годен', conclusionName: 'К-ВИК', conclusionDate: '2026-08-05' },
+        { id: 12, weldJointId: 7, method: 'РК', requestName: 'З-РК', requestDate: '2026-08-04', result: 'годен', conclusionName: 'К-РК', conclusionDate: '2026-08-05' },
+      ],
+    } as WeldRow
+    render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode={registryMode} registryScope="selected" isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()}
+      onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+    // A filter in the joint tab must not trim the documents of the selected joints.
+    fireEvent.change(screen.getByLabelText('Вид контроля в реестре'), { target: { value: 'ВИК' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Документы' }))
+    expect(await screen.findByText('Документы выбранных стыков')).toBeVisible()
+    const list = within(screen.getByRole('complementary'))
+    expect(list.getByRole('button', { name: new RegExp(registryMode === 'request' ? 'З-ВИК' : 'К-ВИК') })).toBeVisible()
+    expect(list.getByRole('button', { name: new RegExp(registryMode === 'request' ? 'З-РК' : 'К-РК') })).toBeVisible()
+    expect(list.queryByText('Основное заключение')).not.toBeInTheDocument()
+    expect(documentStorage.list).not.toHaveBeenCalled()
+  })
   it.each(['request', 'result'] as const)('explains missing delete permission in the %s card and menu while preserving requisite editing', registryMode => {
     access.canDelete = false
     const control = { id: 11, weldJointId: 7, method: 'ВИК', requestName: 'З-11', requestDate: '2026-08-04',
@@ -25,20 +48,20 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
       onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={onCorrect} onDeleteRequest={onDeleteRequest}
       onStageResultChange={onStageResultChange} onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()}
       onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+  openEditors()
     const deleteLabel = registryMode === 'request' ? 'Удалить заявку' : 'Удалить результат'
     expect(screen.getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
     expect(screen.getByRole('button', { name: deleteLabel })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: deleteLabel }))
     expect(onDeleteRequest).not.toHaveBeenCalled()
     expect(onStageResultChange).not.toHaveBeenCalled()
-    const input = screen.getByLabelText(registryMode === 'request' ? 'Наименование заявки' : 'Наименование заключения')
+    const input = screen.getByLabelText(registryMode === 'request' ? 'Заявка только этого стыка' : 'Заключение только этого стыка')
     fireEvent.change(input, { target: { value: 'Исправлено' } })
-    fireEvent.click(screen.getByRole('button', { name: registryMode === 'request' ? 'Сохранить заявку' : 'Сохранить реквизиты' }))
+    fireEvent.click(screen.getByRole('button', { name: registryMode === 'request' ? 'Изменить заявку этого стыка' : 'Изменить заключение этого стыка' }))
     expect(onCorrect).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', relationId: 11 }))
     fireEvent.contextMenu(within(screen.getByRole('complementary')).getByText(registryMode === 'request' ? 'З-11' : 'К-11'))
-    const remove = within(screen.getByTestId('context-action-menu')).getByRole('button', { name: deleteLabel })
-    expect(remove).toBeDisabled()
-    expect(within(screen.getByTestId('context-action-menu')).getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
+    expect(within(screen.getByTestId('context-action-menu')).queryByRole('button', { name: deleteLabel })).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('context-action-menu')).getByRole('button', { name: 'Внести изменения' })).toBeVisible()
   })
   it.each(['request', 'result'] as const)('opens the %s row menu without offering a stage transfer', registryMode => {
     const row = { id: 7, joint: 'F7', line: 'L7',
@@ -48,9 +71,10 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode={registryMode} isPending={false}
       onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()}
       onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+  openEditors()
     fireEvent.contextMenu(within(screen.getByRole('complementary')).getByText(registryMode === 'request' ? 'З-11' : 'К-11'))
     const menu = screen.getByTestId('context-action-menu')
-    expect(within(menu).getByRole('button', { name: registryMode === 'request' ? 'Изменить дату заявки' : 'Изменить дату заключения' })).toBeVisible()
+    expect(within(menu).getByRole('button', { name: registryMode === 'request' ? 'Внести изменения' : 'Внести изменения' })).toBeVisible()
     expect(within(menu).queryByRole('button', { name: /Изменить этап/ })).not.toBeInTheDocument()
   })
 
@@ -62,6 +86,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode="result" isPending={false}
       onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()} onStageResultChange={onStageResultChange}
       onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+  openEditors()
     expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
     expect(screen.getByText(/последний негодный результат/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
@@ -76,7 +101,8 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode="result" isPending={false}
       onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={onCorrect} onDeleteRequest={vi.fn()} onStageResultChange={onStageResultChange}
       onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
-    const picker = within(screen.getByRole('group', { name: 'Результат' }))
+  openEditors()
+    const picker = within(screen.getByRole('group', { name: 'Результат выбранного стыка' }))
     expect(picker.getByRole('button', { name: 'ремонт' })).toBeDisabled()
     expect(picker.getByRole('button', { name: 'ремонт' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.focus(screen.getByRole('group', { name: 'ремонт' }))
@@ -128,17 +154,18 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         canOpenDocument={() => true}
       />,
     )
+  openEditors()
 
-    expect(screen.getByRole('heading', { name: 'Редактирование заявок ЛНК до ТО' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Все заявки ЛНК до ТО' })).toBeInTheDocument()
     expect(screen.getByText('У17').parentElement).toHaveTextContent('Тип: У17')
     expect(screen.getByRole('dialog')).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getByRole('button', { name: 'Новая заявка' })).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Название, дата, стык или линия')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Открыть документ' })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Наименование заявки'), {
+    fireEvent.change(screen.getByLabelText('Заявка только этого стыка'), {
       target: { value: 'Заявка ВИК до ТО исправлена' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить заявку' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить заявку этого стыка' }))
     expect(onCorrect).toHaveBeenCalledWith({
       relationId: 11,
       expectedVersion: '107',
@@ -197,12 +224,13 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         canOpenDocument={() => true}
       />,
     )
+  openEditors()
 
-    expect(screen.getByRole('heading', { name: 'Редактирование результатов ЛНК до ТО' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Все результаты ЛНК до ТО' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Внести результаты' })).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Стык, линия, заявка или заключение')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Открыть документ' })).toBeInTheDocument()
-    expect(screen.getByText('Заключение ВИК до ТО-002')).toBeInTheDocument()
+    expect(within(screen.getByRole('complementary')).getByText('Заключение ВИК до ТО-002')).toBeInTheDocument()
     expect(screen.queryByText('Заявка РК до ТО-002')).not.toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Фильтр результатов' })).toBeInTheDocument()
   })
@@ -240,6 +268,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         canOpenDocument={() => true}
       />,
     )
+  openEditors()
 
     expect(screen.getAllByRole('button', { name: /Заявка до ТО-/ })).toHaveLength(12)
     expect(screen.queryByText('Заявка до ТО-120')).not.toBeInTheDocument()
@@ -300,12 +329,13 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         canOpenDocument={() => true}
       />,
     )
+  openEditors()
 
     fireEvent.change(screen.getByLabelText('Дата заявки'), { target: { value: '2026-08-03' } })
-    fireEvent.change(screen.getByLabelText('Наименование заявки'), {
+    fireEvent.change(screen.getByLabelText('Заявка только этого стыка'), {
       target: { value: 'Заявка ВИК до ТО-009' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить заявку' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить заявку этого стыка' }))
 
     expect(onCorrect).toHaveBeenCalledWith({
       relationId: 31,
@@ -317,3 +347,19 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     })
   })
 })
+
+function openEditors() {
+  for (const button of screen.queryAllByRole('button', { name: 'Редактировать' })) fireEvent.click(button)
+}
+
+vi.mock('@/lib/use-document-position-change', () => ({ useDocumentPositionChange: () => ({ save }: { save: () => void }) => save() }))
+vi.mock('@/components/system-document-date-editor', () => ({ SystemDocumentDateEditor: ({ label, mode, onCompositionLoaded }: { label: string; mode?: string; onCompositionLoaded?: (count: number) => void }) => { useEffect(() => { onCompositionLoaded?.(2) }, [onCompositionLoaded]); return <div data-testid={mode === 'name' ? 'document-name-editor' : 'document-date-editor'}>{label}</div> } }))
+
+const render = (ui: import('react').ReactNode, options?: import('@testing-library/react').RenderOptions) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>, ...options })
+}
+vi.mock('@/lib/use-system-document-context', () => ({
+  useSystemDocumentContext: () => ({ data: { rows: [{ id: 1 }, { id: 2 }], sourcePositions: [] }, isPending: false, isError: false }),
+}))
+vi.mock('@/lib/system-document-storage', () => ({ loadWorkflowDocumentHistoryGrid: documentStorage.list }))

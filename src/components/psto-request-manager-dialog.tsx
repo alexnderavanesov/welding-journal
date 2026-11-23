@@ -1,10 +1,12 @@
+import { PSTO_REQUEST_DOCUMENTS } from '@/lib/workflow-document-choices'
+import { WorkflowManagerViews, WorkflowDocumentLink, useWorkflowManagerView } from './workflow-manager-views'
+import { ManagerEditPanel, ManagerEditSection } from './manager-edit-panel'
 import { DocumentConnectionsButton } from './document-connections-button'
 import { useMemo, useRef, useState, type MouseEvent } from 'react'
-import { CalendarClock, Pencil, Search, Trash2 } from 'lucide-react'
+import { Pencil, Search } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
-import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { PstoRequestManagerPosition } from '@/components/psto-request-manager-position'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
@@ -15,17 +17,14 @@ import {
   RequestManagerUsageBadge,
   RequestManagerUsagePanel,
   RequestPositionPanel,
-  RequestRenamePanel,
 } from '@/components/request-manager-panels'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
 import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
 import { getPstoCycleStageDeleteBlockReason } from '@/lib/psto-cycle-corrections'
-import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import {
   getSystemDocumentReferenceForField,
-  isSystemDocumentNameForRows,
 } from '@/lib/system-document-types'
 import { buildPrimaryPstoSystemDocumentRow } from '@/lib/system-document-virtual-row'
 import {
@@ -45,15 +44,12 @@ export type PstoRequestManagerDialogProps = {
   requestOptionsHasMore?: boolean
   requestSearch?: string
   requestRows: WeldRow[]
-  requestNameDraft: string
   isManagerPending: boolean
   isCorrectionPending: boolean
   canOpenDocument: boolean
   onClose: () => void
   onChangeRequest: (request: RequestDocumentIdentity) => void
   onRequestSearchChange?: (value: string) => void
-  onRequestNameDraftChange: (requestName: string) => void
-  onRenameRequest: () => void
   onOpenDocument: (row: WeldRow) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
@@ -74,15 +70,12 @@ export function PstoRequestManagerDialog({
   requestOptionsHasMore = false,
   requestSearch = '',
   requestRows,
-  requestNameDraft,
   isManagerPending,
   isCorrectionPending,
   canOpenDocument,
   onClose,
   onChangeRequest,
   onRequestSearchChange,
-  onRequestNameDraftChange,
-  onRenameRequest,
   onOpenDocument,
   onOpenJournalRows,
   onOpenPstoHistory,
@@ -94,6 +87,7 @@ export function PstoRequestManagerDialog({
   onDocumentDateSaved,
   onMessage,
 }: PstoRequestManagerDialogProps) {
+  const managerView = useWorkflowManagerView()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [dateEditorFocusKey, setDateEditorFocusKey] = useState(0)
   const rowsWithLaterStages = requestRows.filter((row) => (
@@ -102,26 +96,12 @@ export function PstoRequestManagerDialog({
   const requestDeleteBlockReason = rowsWithLaterStages > 0
     ? `В ${rowsWithLaterStages} ${formatJointCount(rowsWithLaterStages)} уже есть последующие этапы. Сначала удалите их с конца цепочки в окне «История ПСТО и ТВМТ».`
     : ''
-  const requestConclusionSettings = useRequestConclusionSettings()
-  const isSystemRequest = isSystemDocumentNameForRows(
-    requestRows,
-    'pstoRequest',
-    requestName,
-    requestConclusionSettings,
-  )
   const selectedIdentity = createRequestDocumentIdentity(requestName, requestDate)
   const documentReference = useMemo(
     () => requestRows[0]
       ? getSystemDocumentReferenceForField(buildPrimaryPstoSystemDocumentRow(requestRows[0]), 'pstoRequest')
       : null,
     [requestRows],
-  )
-  const canRename = Boolean(
-    requestName &&
-    !isSystemRequest &&
-    requestNameDraft.trim() &&
-    requestNameDraft.trim() !== requestName &&
-    !isManagerPending,
   )
   const openRequestContextMenu = (event: MouseEvent<HTMLElement>) => {
     if (!selectedIdentity || isNativeContextMenuTarget(event.target)) return
@@ -141,33 +121,10 @@ export function PstoRequestManagerDialog({
       documentLabel: 'заявку',
       rows: requestRows,
       sourceLabel: `заявка ПСТО «${requestName}»`,
-      actions: [
-        {
-          id: 'change-request-date',
-          label: 'Изменить дату заявки',
-          icon: CalendarClock,
-          disabled: !documentReference || isManagerPending || isCorrectionPending,
-          onSelect: () => setDateEditorFocusKey((current) => current + 1),
-        },
-        {
-          id: 'rename-request',
-          label: 'Переименовать заявку',
-          icon: Pencil,
-          disabled: !canRename,
-          title: isSystemRequest
-            ? 'Системную заявку переименовать нельзя'
-            : 'Сначала введите новое название в поле переименования',
-          onSelect: onRenameRequest,
-        },
-      ],
-      dangerActions: [{
-        id: 'delete-request',
-        label: 'Удалить заявку',
-        icon: Trash2,
-        danger: true,
-        disabled: isManagerPending || Boolean(requestDeleteBlockReason),
-        title: requestDeleteBlockReason || undefined,
-        onSelect: () => onDeleteRequest(selectedIdentity),
+      actions: [{
+        id: 'edit-request', label: 'Внести изменения', icon: Pencil,
+        disabled: isManagerPending || isCorrectionPending,
+        onSelect: () => setDateEditorFocusKey(current => current + 1),
       }],
       openDocumentDisabledReason: documentReason,
       onOpenDocument: () => {
@@ -182,11 +139,12 @@ export function PstoRequestManagerDialog({
   return (
     <WorkflowDialogShell variant="manager" elevated={elevated}>
       <RequestDialogHeader
-        title="Редактирование заявок ПСТО"
+        title="Все заявки ПСТО"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
         onClose={onClose}
       />
 
+      <WorkflowManagerViews view={managerView} documents={{ choices: PSTO_REQUEST_DOCUMENTS, disabled: isManagerPending || isCorrectionPending, onSaved: reference => { const identity = createRequestDocumentIdentity(reference.title, reference.date); if (identity) onChangeRequest(identity); onDocumentDateSaved?.() }, onMessage, onRunRootCauseAction, onOpenJournalRows }}>
       <div
         className="min-h-0 space-y-4 overflow-auto px-5 py-4"
         onContextMenu={openRequestContextMenu}
@@ -205,7 +163,7 @@ export function PstoRequestManagerDialog({
             label="Заявка ПСТО"
             value={selectedIdentity?.key ?? ''}
             options={requestOptions}
-            onChange={onChangeRequest}
+            onChange={(request) => { setDateEditorFocusKey(0); onChangeRequest(request) }}
           />
           {requestOptionsHasMore ? (
             <p className="text-xs text-amber-700">
@@ -227,43 +185,23 @@ export function PstoRequestManagerDialog({
           <RequestManagerEmptyState>Созданных заявок ПСТО пока нет.</RequestManagerEmptyState>
         )}
 
-        {documentReference && (dateEditorFocusKey > 0 || (
-          rootCauseTarget?.focus === 'date' &&
-          requestRows.some((row) => row.id === rootCauseTarget.rowId) &&
-          rootCauseTarget.sequence === 1 &&
-          rootCauseTarget.stage === 'pstoRequest'
-        )) ? (
-          <SystemDocumentDateEditor
-            key={`${documentReference.documentId ?? documentReference.title}:${dateEditorFocusKey}`}
-            reference={documentReference}
-            label="Дата заявки ПСТО"
-            disabled={isManagerPending || isCorrectionPending}
-            autoFocus
-            onMessage={onMessage}
-            onRunRootCauseAction={onRunRootCauseAction}
-            onSaved={(result) => {
-              const nextIdentity = createRequestDocumentIdentity(result.nextTitle, result.nextDate)
-              if (nextIdentity) onChangeRequest(nextIdentity)
-              setDateEditorFocusKey(0)
-              onDocumentDateSaved?.()
-            }}
-          />
-        ) : null}
-
-        <RequestRenamePanel
-          value={requestNameDraft}
-          placeholder="Новое наименование заявки"
-          disabled={!requestName || isSystemRequest || isManagerPending}
-          canRename={canRename}
-          onChange={onRequestNameDraftChange}
-          onRename={onRenameRequest}
-        >
-          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-            Дата меняется сразу у всех позиций заявки. Полное наименование сохраняется,
-            включая номер и дату в тексте имени. Переименование выполняется отдельно.
-          </p>
-        </RequestRenamePanel>
-
+        {requestName ? <ManagerEditPanel key={selectedIdentity?.key} title="Заявка и её состав"
+          requestToken={dateEditorFocusKey || (rootCauseTarget?.stage === 'pstoRequest' && rootCauseTarget.sequence === 1 &&
+            requestRows.some(row => row.id === rootCauseTarget.rowId) ? rootCauseTarget.focus : undefined)}
+          summary={(editing) => !editing ? <RequestPositionPanel title="Состав заявки" description="Для изменения заявки или её состава нажмите «Редактировать»."
+            hasRows={requestRows.length > 0} emptyText="В заявке нет стыков.">
+            {requestRows.map(row => <PstoRequestManagerPosition key={row.id} row={row} readOnly
+              isCorrectionPending={isCorrectionPending} onClearPosition={onClearPosition} />)}
+          </RequestPositionPanel> : null}>
+        {documentReference ? <WorkflowDocumentLink reference={documentReference} onOpen={managerView.openDocument} focusDate={rootCauseTarget?.focus === 'date'} /> : null}
+        <ManagerEditSection title="Удаление всей заявки" description="Это действие относится ко всей заявке; отдельные позиции редактируются ниже.">
+        <RequestDeletePanel
+          description={requestDeleteBlockReason || 'Будут очищены только заявка ПСТО и ее дата по всем стыкам выбранной заявки.'}
+          disabled={!requestName || isManagerPending || Boolean(requestDeleteBlockReason)}
+          onDelete={() => onDeleteRequest(selectedIdentity ?? undefined)}
+        />
+        </ManagerEditSection>
+        <ManagerEditSection title="Редактирование состава заявки" description="Исключается только выбранный стык. Остальные стыки заявки сохраняются.">
         <RequestPositionPanel
           title="Очистить конкретный стык"
           description="Можно удалить заявку только у выбранного стыка, не затрагивая остальные стыки этой заявки."
@@ -280,12 +218,11 @@ export function PstoRequestManagerDialog({
           ))}
         </RequestPositionPanel>
 
-        <RequestDeletePanel
-          description={requestDeleteBlockReason || 'Будут очищены только заявка ПСТО и ее дата по всем стыкам выбранной заявки.'}
-          disabled={!requestName || isManagerPending || Boolean(requestDeleteBlockReason)}
-          onDelete={() => onDeleteRequest(selectedIdentity ?? undefined)}
-        />
+        </ManagerEditSection>
+        </ManagerEditPanel> : null}
+
       </div>
+      </WorkflowManagerViews>
       <DialogContextMenuLayer ref={contextMenuRef} />
     </WorkflowDialogShell>
   )

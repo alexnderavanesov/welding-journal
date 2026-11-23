@@ -422,7 +422,7 @@ test('request names open the exact document in grouped journal and LNK; missing 
   await link.click({ button: 'right' })
   await page.getByRole('button', { name: 'Редактирование', exact: true }).hover()
   await page.getByRole('button', { name: 'Заявка · Основной', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Редактирование заявок ЛНК', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Все заявки ЛНК', exact: true })).toBeVisible()
   await expect(modal).toBeHidden()
   expect(context.pages()).toHaveLength(1)
   expect(errors).toEqual([])

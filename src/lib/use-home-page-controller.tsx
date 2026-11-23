@@ -54,7 +54,6 @@ import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state
 import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
 import { hasPstoDocumentHistory } from '@/lib/psto-cycle'
-import { buildManagedPstoDiagramDrafts } from '@/lib/psto-report-action-utils'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
@@ -576,7 +575,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isLnkRequestManagerOpen,
     managedLnkRequestName,
     managedLnkRequestDate,
-    managedLnkRequestNameDraft,
     lnkRequestSearch,
     lnkRequestComposerMode,
     lnkRequestTargetKey,
@@ -586,7 +584,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsLnkRequestManagerOpen,
     setManagedLnkRequestName,
     setManagedLnkRequestDate,
-    setManagedLnkRequestNameDraft,
     setLnkRequestSearch,
     setLnkRequestComposerMode,
     setLnkRequestTargetKey,
@@ -600,10 +597,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isPstoRequestManagerOpen,
     managedPstoRequestName,
     managedPstoRequestDate,
-    managedPstoRequestNameDraft,
     isPstoResultModalOpen,
     isPstoResultManagerOpen,
-    managedPstoDiagramDrafts,
     pstoResultDraft,
     setPstoRequestNaming,
     setPstoRequestDate,
@@ -613,10 +608,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsPstoRequestManagerOpen,
     setManagedPstoRequestName,
     setManagedPstoRequestDate,
-    setManagedPstoRequestNameDraft,
     setIsPstoResultModalOpen,
     setIsPstoResultManagerOpen,
-    setManagedPstoDiagramDrafts,
     setPstoResultDraft,
   } = pstoController
   const {
@@ -841,9 +834,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setLnkRequestNaming,
     setLnkRequestSearch,
     setLnkResultDraft,
-    setManagedPstoDiagramDrafts,
     setManagedPstoRequestName,
-    setManagedPstoRequestNameDraft,
     setPreservedLnkOrderIds,
     setPstoRequestNaming,
     setPstoRequestSearch,
@@ -1330,7 +1321,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setLnkRequestNaming,
     setIsLnkRequestModalOpen,
     setManagedLnkRequestName,
-    setManagedLnkRequestNameDraft,
     setIsLnkRequestManagerOpen,
     setIsLnkResultModalOpen,
     setLnkResultDraft,
@@ -1393,19 +1383,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     closeLnkRequestManager,
     deleteManagedLnkRequest,
     openLnkRequestManager,
-    renameManagedLnkRequest,
   } = useManagedLnkRequestActions({
     lnkRows,
     lnkRequestManagerOptions,
     managedLnkRequestName,
     managedLnkRequestDate,
-    managedLnkRequestNameDraft,
     lnkRequestCorrectionMutation,
     lnkRequestManagerMutation,
     setIsLnkRequestManagerOpen,
     setManagedLnkRequestName,
     setManagedLnkRequestDate,
-    setManagedLnkRequestNameDraft,
   })
   const openLnkRequestRegistry = (requestName?: string, requestDate?: string) => {
     if (lnkRequestMutation.isPending || lnkRequestExtensionMutation.isPending) return
@@ -1500,7 +1487,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsPstoResultModalOpen,
     setPstoResultDraft,
     setManagedPstoRequestName,
-    setManagedPstoRequestNameDraft,
     setIsPstoRequestManagerOpen,
     setHeatTreatmentFieldEditing,
     defaultPstoRequestNaming,
@@ -2025,18 +2011,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isLnkResultModalOpen,
     isPstoRowsContextReady,
     isPstoRequestModalOpen,
-    isPstoResultManagerOpen,
     isPstoResultModalOpen,
     lnkRows,
     managedLnkResultEntries,
     managedLnkResultMethodKey,
     managedLnkResultMethods,
-    managedPstoResultRows,
     pstoResultRequestOptions,
     setLnkResultDraft,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultMethodKey,
-    setManagedPstoDiagramDrafts,
     setPstoResultDraft,
     setSelectedHeatTreatmentIds,
     setSelectedLnkIds,
@@ -2057,7 +2040,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openPstoResultManager,
     openPstoResultManagerForRows,
     renameManagedPstoDiagram,
-    renameManagedPstoRequest,
     setPstoResultRows,
     submitCreatePstoRequest,
     toggleAllPstoRequestRows,
@@ -2071,7 +2053,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     filteredPstoResultRows,
     managedPstoRequestName,
     managedPstoRequestDate,
-    managedPstoRequestNameDraft,
     nextPstoDiagramName,
     nextPstoRequestName,
     nextPstoRequestNumber,
@@ -2094,10 +2075,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsPstoRequestModalOpen,
     setIsPstoResultManagerOpen,
     setIsPstoResultModalOpen,
-    setManagedPstoDiagramDrafts,
     setManagedPstoRequestName,
     setManagedPstoRequestDate,
-    setManagedPstoRequestNameDraft,
     setMessage,
     setPstoRequestDate,
     setPstoRequestNaming,
@@ -3563,28 +3542,24 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const request = pstoRequestManagerOptions[0]
     setManagedPstoRequestName(request.name)
     setManagedPstoRequestDate(request.date)
-    setManagedPstoRequestNameDraft(request.name)
   }, [
     isPstoRequestManagerOpen,
     managedPstoRequestName,
     pstoRequestManagerOptions,
     setManagedPstoRequestDate,
     setManagedPstoRequestName,
-    setManagedPstoRequestNameDraft,
   ])
   useEffect(() => {
     if (!isLnkRequestManagerOpen || managedLnkRequestName || lnkRequestManagerOptions.length === 0) return
     const request = lnkRequestManagerOptions[0]
     setManagedLnkRequestName(request.name)
     setManagedLnkRequestDate(request.date)
-    setManagedLnkRequestNameDraft(request.name)
   }, [
     isLnkRequestManagerOpen,
     lnkRequestManagerOptions,
     managedLnkRequestName,
     setManagedLnkRequestDate,
     setManagedLnkRequestName,
-    setManagedLnkRequestNameDraft,
   ])
   useEffect(() => {
     if (!isPstoResultManagerOpen || !isPstoResultRegistryAll) {
@@ -3597,13 +3572,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       ...current,
       rowIds: new Set(pstoResultRegistryRows.map((row) => row.id)),
     }))
-    setManagedPstoDiagramDrafts(buildManagedPstoDiagramDrafts(pstoResultRegistryRows))
   }, [
     isPstoResultManagerOpen,
     isPstoResultRegistryAll,
     isPstoRowsContextReady,
     pstoResultRegistryRows,
-    setManagedPstoDiagramDrafts,
     setPstoResultDraft,
   ])
   const reportHeaderActionsProps = createReportHeaderActionsProps({
@@ -3817,12 +3790,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         open: isLnkRequestManagerOpen,
         name: managedLnkRequestName,
         date: managedLnkRequestDate,
-        nameDraft: managedLnkRequestNameDraft,
       }
       return () => {
         setManagedLnkRequestName(previous.name)
         setManagedLnkRequestDate(previous.date)
-        setManagedLnkRequestNameDraft(previous.nameDraft)
         setIsLnkRequestManagerOpen(previous.open)
       }
     }
@@ -3899,12 +3870,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         open: isPstoRequestManagerOpen,
         name: managedPstoRequestName,
         date: managedPstoRequestDate,
-        nameDraft: managedPstoRequestNameDraft,
       }
       return () => {
         setManagedPstoRequestName(previous.name)
         setManagedPstoRequestDate(previous.date)
-        setManagedPstoRequestNameDraft(previous.nameDraft)
         setIsPstoRequestManagerOpen(previous.open)
       }
     }
@@ -3913,12 +3882,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         open: isPstoResultManagerOpen,
         registryAll: isPstoResultRegistryAll,
         resultDraft: pstoResultDraft,
-        diagramDrafts: managedPstoDiagramDrafts,
       }
       return () => {
         setIsPstoResultRegistryAll(previous.registryAll)
         setPstoResultDraft(previous.resultDraft)
-        setManagedPstoDiagramDrafts(previous.diagramDrafts)
         setIsPstoResultManagerOpen(previous.open)
       }
     }
@@ -4002,7 +3969,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         if (!method || !identity?.name) throw new Error('Заявка ЛНК для исправления уже изменилась.')
         setManagedLnkRequestName(identity.name)
         setManagedLnkRequestDate(identity.date)
-        setManagedLnkRequestNameDraft(identity.name)
         setLnkWorkflowRequestSearch(identity.name)
         setIsLnkRequestManagerOpen(true)
       } else if (destination === 'lnk-result-manager' && target.kind === 'lnk-control') {
@@ -4041,12 +4007,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         if (!identity?.name) throw new Error('Заявка ПСТО для исправления уже изменилась.')
         setManagedPstoRequestName(identity.name)
         setManagedPstoRequestDate(identity.date)
-        setManagedPstoRequestNameDraft(identity.name)
         setPstoWorkflowRequestSearch(identity.name)
         setIsPstoRequestManagerOpen(true)
       } else if (destination === 'psto-result-manager' && target.kind === 'psto-cycle') {
         setPstoResultDraft((current) => ({ ...current, rowIds: new Set([row.id]) }))
-        setManagedPstoDiagramDrafts({})
         setIsPstoResultRegistryAll(false)
         setIsPstoResultManagerOpen(true)
       } else if (destination === 'duplicate-control' && target.kind === 'duplicate-control') {
@@ -4676,7 +4640,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestOptionsHasMore: pstoWorkflowRequestOptionsQuery.data?.hasMore ?? false,
       requestSearch: pstoWorkflowRequestSearch,
       requestRows: managedPstoRequestRows,
-      requestNameDraft: managedPstoRequestNameDraft,
       isManagerPending: pstoRequestManagerMutation.isPending,
       isCorrectionPending: pstoRequestCorrectionMutation.isPending,
       canOpenDocument: availableSystemDocumentTypes.has('pstoRequest'),
@@ -4685,8 +4648,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         : () => setIsPstoRequestManagerOpen(false),
       onChangeRequest: changeManagedPstoRequest,
       onRequestSearchChange: setPstoWorkflowRequestSearch,
-      onRequestNameDraftChange: setManagedPstoRequestNameDraft,
-      onRenameRequest: () => runProtectedEdit('переименование заявки ПСТО', renameManagedPstoRequest),
       onOpenDocument: (row) => openReportDocument(row, 'pstoRequest'),
       onOpenJournalRows: openModalRowsInWeldingJournal,
       onOpenPstoHistory: openPstoHistoryFromDialog,
@@ -4750,7 +4711,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     resultManager: {
       elevated: currentWorkflowRootCauseDestination === 'psto-result-manager',
       rows: isPstoResultRegistryAll ? pstoResultRegistryRows : managedPstoResultRows,
-      diagramDrafts: managedPstoDiagramDrafts,
+      registryScope: isPstoResultRegistryAll ? 'all' as const : 'selected' as const,
       isPending:
         pstoResultCorrectionMutation.isPending ||
         pstoCycleCorrectionMutation.isPending ||
@@ -4770,8 +4731,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onClose: currentWorkflowRootCauseDestination === 'psto-result-manager'
         ? returnFromWorkflowRootCause
         : closePstoResultManager,
-      onDiagramDraftChange: (rowId, value) =>
-        setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
       onRenameDiagram: (row, diagramName) =>
         runProtectedEdit('переименование диаграммы ПСТО', () => renameManagedPstoDiagram(row, diagramName)),
       onDeleteResult: (row) => runProtectedDelete('удаление результата ПСТО', () => deleteManagedPstoResult(row)),
@@ -4969,7 +4928,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       allRows: lnkRows,
       requestRows: managedLnkRequestRows,
       requestMethods: managedLnkRequestMethods,
-      requestNameDraft: managedLnkRequestNameDraft,
       isManagerPending: lnkRequestManagerMutation.isPending,
       isCorrectionPending: lnkRequestCorrectionMutation.isPending,
       canOpenDocument: (fieldKey) => {
@@ -4979,9 +4937,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onClose: currentWorkflowRootCauseDestination === 'lnk-request-manager'
         ? returnFromWorkflowRootCause
         : closeLnkRequestManager,
-      onStageChange: hasPreHeatTreatmentContext(managedLnkRequestRows.map(row => row.id), true)
+      onStageChange: hasPreHeatTreatmentContext(null, true)
         ? () => openPreHeatTreatmentResultRegistry({
-            rowIds: managedLnkRequestRows.map((row) => row.id),
+            // This window is the complete request registry. Its selected
+            // primary request is not the scope of the before-TO registry.
             registryMode: 'request',
           })
         : undefined,
@@ -5004,8 +4963,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onOpenJournalRows: openModalRowsInWeldingJournal,
       onOpenPstoHistory: openPstoHistoryFromDialog,
       onCopyDocumentName: copyManagerDocumentName,
-      onRequestNameDraftChange: setManagedLnkRequestNameDraft,
-      onRenameRequest: () => runProtectedEdit('переименование заявки ЛНК', renameManagedLnkRequest),
       onClearPosition: (row, methodKey) =>
         runProtectedDelete('очистку позиции заявки ЛНК', () => clearManagedLnkRequestPosition(row, methodKey)),
       onDeleteRequest: (request) => runProtectedDelete('удаление заявки ЛНК', () => deleteManagedLnkRequest(request)),
@@ -5288,6 +5245,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           elevated: currentWorkflowRootCauseDestination === 'pre-lnk-manager',
           readOnly: false,
           rows: preHeatTreatmentResultRegistryRows,
+          registryScope: preHeatTreatmentResultManagerRowIds ? 'selected' as const : 'all' as const,
           serverPage: currentWorkflowRootCauseDestination === 'pre-lnk-manager' ? undefined : {
             filters: preRegistry,
             page: preRegistry.page,

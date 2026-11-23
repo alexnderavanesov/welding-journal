@@ -14,7 +14,6 @@ export function usePstoRequestManagerMutation({
   setMessage,
   highlightChangedRows,
   setManagedPstoRequestName,
-  setManagedPstoRequestNameDraft,
   setIsPstoRequestManagerOpen,
   onWorkflowCorrectionSaved,
 }: UsePstoReportMutationsOptions) {
@@ -91,10 +90,8 @@ export function usePstoRequestManagerMutation({
       )
       if (variables.action === 'rename' && variables.nextRequestName) {
         setManagedPstoRequestName(variables.nextRequestName)
-        setManagedPstoRequestNameDraft(variables.nextRequestName)
       } else {
         setManagedPstoRequestName('')
-        setManagedPstoRequestNameDraft('')
         setIsPstoRequestManagerOpen(false)
       }
       scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })

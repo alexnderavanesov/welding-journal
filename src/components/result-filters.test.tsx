@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { ResultFilters } from '@/components/result-filters'
+import { BufferedFilterInput, ResultFilters } from '@/components/result-filters'
 
 describe('ResultFilters', () => {
   it('keeps the selected-row switch and bulk action inside the filter toolbar', () => {
@@ -63,6 +63,20 @@ describe('ResultFilters', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('marks a typed filter pending until its value is committed, so editing cannot race a new page', () => {
+    vi.useFakeTimers()
+    try {
+      const onValueChange = vi.fn(), onPendingChange = vi.fn()
+      const view = render(<BufferedFilterInput value="" onValueChange={onValueChange} onPendingChange={onPendingChange} />)
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'F16' } })
+      expect(onPendingChange).toHaveBeenLastCalledWith(true)
+      act(() => vi.advanceTimersByTime(180))
+      expect(onValueChange).toHaveBeenCalledExactlyOnceWith('F16')
+      view.rerender(<BufferedFilterInput value="F16" onValueChange={onValueChange} onPendingChange={onPendingChange} />)
+      expect(onPendingChange).toHaveBeenLastCalledWith(false)
+    } finally { vi.useRealTimers() }
   })
 
   it('returns the exact request selected from the searchable picker', () => {

@@ -86,6 +86,7 @@ export function createAuditOriginResolver(operation: string, input: unknown, set
   const fillOptions = object(operation === 'savePreHeatTreatmentFill' ? data.options : preBatch ? data.fill : object(data.preHeatTreatmentConfirmation).fill)
   const documentEdit = ['assignDocumentSpecialists', 'changeSystemDocumentDate'].includes(operation)
   const documentDateFields = getDocumentDateFields(object(data.reference))
+  const documentNameFields = getDocumentNameFields(object(data.reference))
   const known = Boolean(simple || direct || weldSave || weldDelete || psto || pre || preBatch || fill || documentEdit || operation === 'createWeldJoints')
   const scope = data.mutationScope === 'lnk' ? lnkFields : data.mutationScope === 'psto' ? pstoFields : weldingFields
   // Server preparation can fill/replace fields on the original import objects.
@@ -173,14 +174,23 @@ export function createAuditOriginResolver(operation: string, input: unknown, set
       return 'user'
     }
     if (documentEdit) {
-      if (entity === 'generated_documents') return (operation === 'assignDocumentSpecialists' ? key === 'specialists' : ['periodFrom', 'periodTo'].includes(key)) ? 'user' : 'automatic'
-      if (operation === 'changeSystemDocumentDate' && ['weld_joints', 'psto_repeat_cycles', 'pre_heat_treatment_controls'].includes(entity) && documentDateFields.has(key)) return 'user'
+      if (entity === 'generated_documents') return (operation === 'assignDocumentSpecialists' ? key === 'specialists' : (data.nextTitle !== undefined && key === 'title') || ['periodFrom', 'periodTo'].includes(key)) ? 'user' : 'automatic'
+      if (operation === 'changeSystemDocumentDate' && ['weld_joints', 'psto_repeat_cycles', 'pre_heat_treatment_controls'].includes(entity) && (documentDateFields.has(key) || (data.nextTitle !== undefined && documentNameFields.has(key)))) return 'user'
       return 'automatic'
     }
     if (operation === 'updateLnkDefectDescription' && data.stage === 'beforeHeatTreatment') return entity === 'pre_heat_treatment_controls' && key === 'defectDescription' ? 'user' : 'automatic'
     if (direct) return entity === 'weld_joints' && direct.has(key) ? 'user' : 'automatic'
     return simple?.includes(entity) ? 'user' : 'automatic'
   }
+}
+function getDocumentNameFields(reference: Row): Set<string> {
+  if (reference.type === 'pstoRequest') return fields('pstoRequest')
+  if (reference.type === 'pstoConclusion') return fields('heatTreatmentDiagram')
+  const request = reference.type === 'lnkRequest'
+  if (!request && reference.type !== 'lnkConclusion') return new Set()
+  if (reference.sourceKind === 'beforeHeatTreatment') return fields(request ? 'requestName' : 'conclusionName')
+  return new Set(ALL_LNK_FIELD_METHODS.filter(method => reference.methodCode ? method.code === reference.methodCode : method.code !== 'ТВМТ')
+    .map(method => request ? method.requestKey : method.conclusionKey))
 }
 function getDocumentDateFields(reference: Row): Set<string> {
   if (reference.type === 'pstoRequest') return fields('pstoRequestDate')

@@ -37,7 +37,7 @@ for (const selected of [false, true]) test(`переключение реест�
   await expect(dialog.getByText('MAIN-C-F803', { exact: true }).first()).toBeVisible()
   if (!selected) await expect(dialog.getByText('MAIN-C-F801', { exact: true }).first()).toBeVisible()
   await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
-  dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК до ТО', exact: true }) })
+  dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: selected ? 'Результаты выбранных стыков ЛНК до ТО' : 'Все результаты ЛНК до ТО', exact: true }) })
   await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill('SCOPE-L1')
   await expect(dialog.getByText('PRE-C-F803', { exact: true }).first()).toBeVisible()
   if (selected) await expect(dialog.getByText('PRE-C-F802', { exact: true })).toHaveCount(0)

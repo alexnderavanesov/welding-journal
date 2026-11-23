@@ -54,6 +54,13 @@ export type SystemDocumentReference = {
   cycleSequences?: number[]
 }
 
+/** Registry summaries may contain thousands of members; send only lookup identity. */
+export function getSystemDocumentLookupReference({
+  type, title, date, documentId, methodCode, sourceKind, cycleSequences,
+}: SystemDocumentReference): SystemDocumentReference {
+  return { type, title, date, documentId, methodCode, sourceKind, cycleSequences }
+}
+
 export type SystemDocumentDateContext = {
   rows: WeldRow[]
   sourcePositions: SystemDocumentSourcePosition[]

@@ -349,6 +349,11 @@ describe('HeatTreatmentHeaderActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ТВМТ' }))
     fireEvent.click(screen.getByRole('button', { name: 'Внести результаты ТВМТ' }))
     expect(actions.onAddTvmtResult).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'ТВМТ' }))
+    fireEvent.click(screen.getByRole('button', { name: 'История ПСТО и ТВМТ' }))
+    expect(actions.onOpenResultRegistry).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'История ПСТО и ТВМТ' })).not.toBeInTheDocument()
   })
 
   it('uses one PSTO request and result command for every cycle', () => {

@@ -17,7 +17,6 @@ export function useLnkRequestManagerMutation({
   setMessage,
   highlightChangedRows,
   setManagedLnkRequestName,
-  setManagedLnkRequestNameDraft,
   setIsLnkRequestManagerOpen,
   onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
@@ -109,10 +108,8 @@ export function useLnkRequestManagerMutation({
       )
       if (variables.action === 'rename' && variables.nextRequestName) {
         setManagedLnkRequestName(variables.nextRequestName)
-        setManagedLnkRequestNameDraft(variables.nextRequestName)
       } else {
         setManagedLnkRequestName('')
-        setManagedLnkRequestNameDraft('')
         setIsLnkRequestManagerOpen(false)
       }
       scheduleWeldDataRefresh(

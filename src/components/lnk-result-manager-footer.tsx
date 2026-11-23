@@ -18,16 +18,17 @@ export function LnkResultManagerFooter({
   onSaveChanges,
 }: LnkResultManagerFooterProps) {
   return (
-    <div className="flex min-h-[68px] flex-col items-stretch gap-3 border-t border-slate-200/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
+    <div className="flex flex-col items-stretch gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
       <div className="min-w-0 text-sm text-slate-500">
         {pendingEntriesCount > 0 ? (
           <span className="inline-flex rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
-            Подготовлено изменений: {pendingEntriesCount}
+            Подготовлено изменений результатов: {pendingEntriesCount}
           </span>
         ) : (
-          <span className="text-xs">Выберите замену или удаление результата, затем сохраните изменения.</span>
+          <span className="text-xs">Нет изменений результатов. Дата и название сохраняются в блоке документа.</span>
         )}
       </div>
+      {pendingEntriesCount > 0 ? <p className="text-xs text-slate-500">Будут сохранены все подготовленные изменения результатов в этом окне. Перед сохранением проверьте список подтверждения.</p> : null}
       <div className="grid shrink-0 gap-2 sm:flex sm:justify-end">
         <Button
           variant="outline"

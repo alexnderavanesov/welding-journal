@@ -1,16 +1,16 @@
+import { LNK_REQUEST_DOCUMENTS } from '@/lib/workflow-document-choices'
+import { WorkflowManagerViews, WorkflowDocumentLink, useWorkflowManagerView } from './workflow-manager-views'
+import { ManagerEditPanel, ManagerEditSection } from './manager-edit-panel'
 import { DocumentConnectionsButton } from './document-connections-button'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
-  CalendarClock,
   FileSpreadsheet,
   ListFilter,
   LoaderCircle,
   LockKeyhole,
-  MoreHorizontal,
   Pencil,
   Plus,
   Search,
-  Trash2,
 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
@@ -19,13 +19,11 @@ import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
-import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
   RequestDeletePanel,
   RequestManagerEmptyState,
   RequestPositionPanel,
-  RequestRenamePanel,
 } from '@/components/request-manager-panels'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -35,10 +33,8 @@ import type { LnkRequestExtensionOption } from '@/lib/lnk-request-extension'
 import { LNK_METHODS } from '@/lib/report-config'
 import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
-import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import {
   getSystemDocumentReferenceForField,
-  isSystemDocumentNameForRows,
   type SystemDocumentReference,
 } from '@/lib/system-document-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
@@ -67,7 +63,6 @@ export type LnkRequestManagerDialogProps = {
   allRows: WeldRow[]
   requestRows: WeldRow[]
   requestMethods: LnkRequestMethod[]
-  requestNameDraft: string
   isManagerPending: boolean
   isCorrectionPending: boolean
   canOpenDocument: (fieldKey: LnkRequestMethod['requestKey']) => boolean
@@ -82,8 +77,6 @@ export type LnkRequestManagerDialogProps = {
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
-  onRequestNameDraftChange: (requestName: string) => void
-  onRenameRequest: () => void
   onClearPosition: (row: WeldRow, requestKey: LnkRequestMethod['requestKey']) => void
   onDeleteRequest: (request?: RequestDocumentIdentity) => void
   rootCauseTarget?: Extract<WorkflowRootCauseTarget, { kind: 'lnk-control' }>
@@ -102,7 +95,6 @@ export function LnkRequestManagerDialog({
   allRows,
   requestRows,
   requestMethods,
-  requestNameDraft,
   isManagerPending,
   isCorrectionPending,
   canOpenDocument,
@@ -117,8 +109,6 @@ export function LnkRequestManagerDialog({
   onOpenJournalRows,
   onOpenPstoHistory,
   onCopyDocumentName,
-  onRequestNameDraftChange,
-  onRenameRequest,
   onClearPosition,
   onDeleteRequest,
   rootCauseTarget,
@@ -126,16 +116,16 @@ export function LnkRequestManagerDialog({
   onDocumentDateSaved,
   onMessage,
 }: LnkRequestManagerDialogProps) {
+  const managerView = useWorkflowManagerView()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const [methodFilter, setMethodFilter] = useState('')
   const [filter, setFilter] = useState<RegistryFilter>('all')
-  const [showRequestSettings, setShowRequestSettings] = useState(false)
+  const [editTarget, setEditTarget] = useState<{ key: string; token: number } | null>(null)
   const [pendingRequestContextMenu, setPendingRequestContextMenu] = useState<{
     point: ReturnType<typeof getDialogMenuPoint>
     request: LnkRequestExtensionOption
   } | null>(null)
-  const requestConclusionSettings = useRequestConclusionSettings()
   const stableOnClearPosition = useStableEventCallback(onClearPosition)
   const selectedIdentity = useMemo(
     () => createRequestDocumentIdentity(requestName, requestDate),
@@ -146,15 +136,6 @@ export function LnkRequestManagerDialog({
       ? requestOptions.find((request) => request.key === selectedIdentity.key)
       : undefined,
     [requestOptions, selectedIdentity],
-  )
-  const isSystemRequest = useMemo(
-    () => isSystemDocumentNameForRows(
-      requestRows,
-      'lnkRequest',
-      requestName,
-      requestConclusionSettings,
-    ),
-    [requestConclusionSettings, requestName, requestRows],
   )
   const requestPositionEntries = useMemo(
     () => requestRows.map((row) => ({
@@ -209,23 +190,6 @@ export function LnkRequestManagerDialog({
     request: LnkRequestExtensionOption,
   ) => {
     const context = getRequestContext(request)
-    const systemRequest = isSystemDocumentNameForRows(
-      context.rows,
-      'lnkRequest',
-      request.name,
-      requestConclusionSettings,
-    )
-    const completed = context.rows.flatMap((row) =>
-      LNK_METHODS.flatMap((method) =>
-        isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], request) &&
-        hasCompletedLnkRequestPosition(row, method)
-          ? [{ row, method }]
-          : [],
-      ),
-    )[0]
-    const deleteReason = completed
-      ? `Удаление недоступно: по стыку ${String(completed.row.joint ?? '').trim() || `№${completed.row.id}`}, ${completed.method.code} уже внесен результат или заключение.`
-      : null
     const documentReason = !context.row || !context.method
       ? 'В заявке нет позиций'
       : !canOpenDocument(context.method.requestKey)
@@ -250,36 +214,14 @@ export function LnkRequestManagerDialog({
           onSelect: () => onAddPositions(request),
         },
         {
-          id: 'change-request-date',
-          label: 'Изменить дату заявки',
-          icon: CalendarClock,
-          disabled: !context.row || !context.method || isManagerPending || isCorrectionPending,
+          id: 'edit-request', label: 'Внести изменения', icon: Pencil,
+          disabled: isManagerPending || isCorrectionPending,
           onSelect: () => {
             onChangeRequest(request)
-            setShowRequestSettings(true)
-          },
-        },
-        {
-          id: 'rename-request',
-          label: 'Переименовать заявку',
-          icon: Pencil,
-          disabled: systemRequest || isManagerPending,
-          title: systemRequest ? 'Системную заявку переименовать нельзя' : undefined,
-          onSelect: () => {
-            onChangeRequest(request)
-            setShowRequestSettings(true)
+            setEditTarget(current => ({ key: request.key, token: (current?.token ?? 0) + 1 }))
           },
         },
       ],
-      dangerActions: [{
-        id: 'delete-request',
-        label: 'Удалить заявку',
-        icon: Trash2,
-        danger: true,
-        disabled: isManagerPending || Boolean(deleteReason),
-        title: deleteReason ?? undefined,
-        onSelect: () => onDeleteRequest(request),
-      }],
       openDocumentDisabledReason: documentReason,
       onOpenDocument: () => {
         if (context.row && context.method) onOpenDocument(context.row, context.method.requestKey)
@@ -298,7 +240,7 @@ export function LnkRequestManagerDialog({
       !context.method
     ) {
       contextMenuRef.current?.close()
-      setShowRequestSettings(false)
+      setEditTarget(null)
       setPendingRequestContextMenu({ point, request })
       onChangeRequest(request)
       return
@@ -339,20 +281,10 @@ export function LnkRequestManagerDialog({
     selectedDocumentMethod && canOpenDocument(selectedDocumentMethod.requestKey),
   )
 
-  useEffect(() => {
-    if (
-      rootCauseTarget?.stage === 'primary' &&
-      rootCauseTarget.documentPart === 'request' &&
-      rootCauseTarget.focus === 'date'
-    ) {
-      setShowRequestSettings(true)
-    }
-  }, [rootCauseTarget])
-
   const content = (
     <>
       <RequestDialogHeader
-        title="Редактирование заявок ЛНК"
+        title="Все заявки ЛНК"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
         onClose={onClose}
         actions={onStageChange ? <LnkControlStageSwitch value="primary" onChange={(stage) => {
@@ -360,6 +292,7 @@ export function LnkRequestManagerDialog({
         }} /> : null}
       />
 
+      <WorkflowManagerViews view={managerView} documents={{ choices: LNK_REQUEST_DOCUMENTS, disabled: isManagerPending || isCorrectionPending, onSaved: reference => { const identity = createRequestDocumentIdentity(reference.title, reference.date); if (identity) onChangeRequest(identity); onDocumentDateSaved?.() }, onMessage, onRunRootCauseAction, onOpenJournalRows }}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
@@ -436,7 +369,7 @@ export function LnkRequestManagerDialog({
                       type="button"
                       onClick={() => {
                         setPendingRequestContextMenu(null)
-                        setShowRequestSettings(false)
+                        setEditTarget(null)
                         onChangeRequest(request)
                       }}
                       onContextMenu={(event) => openRequestContextMenu(event, request)}
@@ -521,15 +454,7 @@ export function LnkRequestManagerDialog({
                       <FileSpreadsheet className="mr-2 h-4 w-4" />
                       Открыть документ
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Дополнительные действия с заявкой"
-                      title="Дополнительные действия"
-                      onClick={() => setShowRequestSettings((current) => !current)}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
+
                   </div>
                 </div>
 
@@ -556,53 +481,25 @@ export function LnkRequestManagerDialog({
                 </div>
               </section>
 
-              {showRequestSettings ? (
-                <section className="space-y-3 rounded-md border border-slate-200 bg-slate-50/70 p-4">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Дополнительные действия</h3>
-                    <p className="mt-1 text-xs text-slate-500">Переименование и удаление не меняют правила проверки заявки.</p>
-                  </div>
-                  {selectedDocumentReference ? (
-                    <SystemDocumentDateEditor
-                      reference={selectedDocumentReference}
-                      label="Дата заявки ЛНК"
-                      disabled={isManagerPending || isCorrectionPending}
-                      autoFocus={rootCauseTarget?.focus === 'date'}
-                      onMessage={onMessage}
-                      onRunRootCauseAction={onRunRootCauseAction}
-                      onSaved={(result) => {
-                        const nextIdentity = createRequestDocumentIdentity(result.nextTitle, result.nextDate)
-                        if (nextIdentity) onChangeRequest(nextIdentity)
-                        onDocumentDateSaved?.()
-                      }}
-                    />
-                  ) : null}
-                  <RequestRenamePanel
-                    value={requestNameDraft}
-                    placeholder="Новое наименование заявки"
-                    disabled={!requestName || isSystemRequest || isManagerPending}
-                    canRename={Boolean(
-                      requestName &&
-                        !isSystemRequest &&
-                        requestNameDraft.trim() &&
-                        !isManagerPending &&
-                        requestNameDraft.trim() !== requestName
-                    )}
-                    onChange={onRequestNameDraftChange}
-                    onRename={onRenameRequest}
-                  >
-                    <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-                      Изменение даты применяется ко всем позициям заявки. Полное наименование, включая номер и дату в тексте имени, сохраняется. Переименование выполняется отдельно.
-                    </p>
-                  </RequestRenamePanel>
+              <ManagerEditPanel key={selectedIdentity.key} title="Заявка и её состав"
+                requestToken={editTarget?.key === selectedIdentity.key ? editTarget.token
+                  : rootCauseTarget?.stage === 'primary' && rootCauseTarget.documentPart === 'request'
+                    ? `${rootCauseTarget.rowId}:${rootCauseTarget.focus}` : undefined}
+                summary={(editing) => !editing ? <RequestPositionPanel title="Состав заявки" description="Выберите «Редактировать», чтобы изменить заявку или исключить отдельную позицию."
+                  hasRows={requestRows.length > 0} emptyText="В заявке больше нет позиций." virtualized>
+                  <DialogVirtualizedRows items={requestPositionEntries} estimateRowHeight={66} getItemKey={({ row }) => row.id}
+                    renderItem={({ row, methods }) => <LnkRequestManagerPosition row={row} methods={methods} readOnly
+                      isCorrectionPending={isCorrectionPending} onClearPosition={stableOnClearPosition} />} footer={null} />
+                </RequestPositionPanel> : null}>
+                {selectedDocumentReference ? <WorkflowDocumentLink reference={selectedDocumentReference} onOpen={managerView.openDocument} focusDate={rootCauseTarget?.focus === 'date'} /> : null}
+                <ManagerEditSection title="Удаление всей заявки" description="Это действие относится ко всей заявке; отдельные позиции редактируются ниже.">
                   <RequestDeletePanel
                     description={deleteBlockReason ?? 'Все ожидающие позиции будут исключены из этой заявки. Назначения видов НК сохранятся, выполненные контроли таким действием удалить нельзя.'}
                     disabled={!requestName || isManagerPending || Boolean(deleteBlockReason)}
                     onDelete={() => onDeleteRequest(selectedIdentity ?? undefined)}
                   />
-                </section>
-              ) : null}
-
+                </ManagerEditSection>
+              <ManagerEditSection title="Редактирование состава заявки" description="Исключается только выбранный стык и вид контроля. Остальные позиции заявки сохраняются.">
               <RequestPositionPanel
                 title="Состав заявки"
                 description="Кнопка вида НК исключает только эту позицию стыка. Другие виды НК и остальные стыки заявки не меняются; выполненный контроль исключить нельзя."
@@ -625,11 +522,14 @@ export function LnkRequestManagerDialog({
                   footer={null}
                 />
               </RequestPositionPanel>
+              </ManagerEditSection>
+              </ManagerEditPanel>
             </div>
           )}
         </main>
       </div>
 
+      </WorkflowManagerViews>
       <DialogContextMenuLayer ref={contextMenuRef} />
     </>
   )

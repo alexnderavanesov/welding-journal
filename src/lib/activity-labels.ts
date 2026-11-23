@@ -83,7 +83,7 @@ const operationLabels: Record<string, string> = {
   correctPstoTvmtAndRemoveLaterCycles: 'Корректировка ТВМТ с удалением последующих циклов',
   saveDuplicateControl: 'Сохранение дублирующего контроля', saveDuplicateControls: 'Сохранение дублирующих контролей', deleteDuplicateControl: 'Удаление дублирующего контроля',
   extendLnkRequest: 'Дополнение заявки ЛНК', clearLnkRequestPosition: 'Удаление позиции заявки ЛНК', removeLnkResults: 'Удаление результатов ЛНК', updateLnkDefectDescription: 'Изменение описания дефектов',
-  manageLnkRequestDocument: 'Изменение заявки ЛНК', managePstoRequestDocument: 'Изменение заявки ПСТО', changeSystemDocumentDate: 'Изменение даты документа',
+  manageLnkRequestDocument: 'Изменение заявки ЛНК', managePstoRequestDocument: 'Изменение заявки ПСТО', changeSystemDocumentDate: 'Изменение реквизитов документа',
   applyDocumentOperation: 'Изменение документов', saveRemoteGeneratedDocuments: 'Сохранение сформированных документов', deleteRemoteGeneratedDocument: 'Удаление документа',
   assignDocumentSpecialists: 'Назначение специалистов документа', saveSpecialist: 'Сохранение специалиста', archiveSpecialist: 'Перевод специалиста в архив',
   saveWelderStampRecords: 'Сохранение клейм сварщиков', saveWelderStampSuspensionRecords: 'Изменение приостановок клейм',

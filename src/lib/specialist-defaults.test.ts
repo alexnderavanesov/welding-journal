@@ -7,6 +7,17 @@ import type { WeldRow } from './dispatcher-types'
 import { hydrateSpecialistNaming } from '@/components/system-document-split-control'
 
 describe('remembered common specialist pairs', () => {
+  it('omits expired defaults on the conclusion date and leaves explicit edits visible for validation', () => {
+    const record = { id: 1, name: 'Иванов', certificate: '2025', kind: 'inspector' as const, methods: ['ВИК' as const], revision: 1,
+      certificates: [{ number: '2025', validFrom: '2025-01-01', validTo: '2025-12-31', methods: ['ВИК' as const] }] }
+    const naming = { mode: 'system' as const, customName: '', specialistDefaults: { lnkConclusionVik: { first: 1, second: 1 } }, specialistDefaultRecords: [record] }
+    expect(hydrateSpecialistNaming(naming, 'lnkConclusionVik', '')).toBe(naming)
+    expect(hydrateSpecialistNaming(naming, 'lnkConclusionVik', '2025-12-31').specialists?.common).toEqual({ first: 1, second: 1 })
+    const expired = hydrateSpecialistNaming(naming, 'lnkConclusionVik', '2026-01-01')
+    expect(expired.specialists?.common).toEqual({ first: null, second: null })
+    const edited = { ...expired, specialists: { common: { first: 1 } } }
+    expect(hydrateSpecialistNaming(edited, 'lnkConclusionVik', '2026-02-01')).toBe(edited)
+  })
   it('bounds preferences to six methods and removes archived, missing or no longer qualified people per role', () => {
     const raw = Object.fromEntries([...SPECIALIST_DEFAULT_KEYS, 'lnkRequest', 'injected'].map(key => [key, { first: 1, second: 2 }]))
     const defaults = parseSpecialistDefaults(JSON.stringify(raw))

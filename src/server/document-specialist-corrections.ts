@@ -4,6 +4,7 @@ import { lockLayeredControlDocumentsForWeldChange } from './layered-control-docu
 import { lockSystemDocumentIndexes } from './system-document-index'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { writeDocumentSpecialists } from './specialists'
+import { prepareSpecialistDateChanges } from './specialist-date-validation'
 
 type Document = { id: number; type: string; title: string; date: string; snapshot: DocumentSpecialists | null; revision: number; positions: string[]; total: number; membership?: string }
 const types = ['system:lnkConclusionVik', 'system:lnkConclusionRk', 'system:lnkConclusionPvk', 'system:lnkConclusionUzk', 'system:pstoConclusion', 'system:tvmtConclusion']
@@ -58,7 +59,9 @@ export function planCorrectedDocumentSpecialists(before: Document[], after: Docu
     if (!sources.has(document.id) && (document.total > document.positions.length || document.snapshot?.first || document.snapshot?.second)) sources.set(document.id, document)
     const inherited = inheritDocumentSpecialists([...sources.values()].map(source => source.snapshot))
     const unchanged = !inheritDocumentSpecialists([document.snapshot, inherited.snapshot]).conflict
-    return unchanged && !inherited.conflict ? [] : [{ document, sources: [...sources.values()], ...inherited }]
+    const needsDateCheck = [inherited.snapshot.first, inherited.snapshot.second].some(person => person?.certificateDate && person.certificateDate !== document.date)
+    const policyChanged = (['first', 'second'] as const).some(role => inherited.snapshot[role]?.certificateDate && inherited.snapshot[role]!.certificateDate !== document.snapshot?.[role]?.certificateDate)
+    return unchanged && !inherited.conflict && !needsDateCheck && !policyChanged ? [] : [{ document, sources: [...sources.values()], ...inherited }]
   })
 }
 
@@ -69,12 +72,14 @@ export async function restoreCorrectedDocumentSpecialists(tx: SystemDocumentSequ
   const { createHash } = await import('node:crypto')
   const changes = planCorrectedDocumentSpecialists(captured.documents, await loadDocuments(tx, captured.rowIds))
   const conflicts = changes.filter(change => change.conflict)
+  const dates = await prepareSpecialistDateChanges(tx, changes.map(change => ({ ...change.document, snapshot: change.snapshot })))
   // Newly recreated IDs/timestamps vary after a rollback. Bind consent to the
   // original versions, exact resulting identities and positions instead.
-  const fingerprint = createHash('sha256').update(JSON.stringify(conflicts.map(change => ({
+  const fingerprint = createHash('sha256').update(JSON.stringify({ dates: { warnings: dates.warnings, revisions: dates.revisions }, changes: changes.map(change => ({
     type: change.document.type, title: change.document.title, date: change.document.date, positions: change.document.positions, total: change.document.total, membership: change.document.membership,
     sources: change.sources.map(source => ({ type: source.type, title: source.title, date: source.date, revision: source.revision, snapshot: source.snapshot, positions: source.positions, total: source.total, membership: source.membership })),
-  })))).digest('hex')
-  if (conflicts.length && confirmation !== fingerprint) throw new Error(`Исправление объединяет заключения с разными реквизитами специалистов (ФИО, удостоверение или клеймо). После подтверждения обе роли объединённых документов будут очищены. Пока ничего не сохранено. [specialist-confirmation:${fingerprint}]`)
-  await writeDocumentSpecialists(tx, changes.map(change => ({ id: change.document.id, snapshot: change.snapshot })))
+  })) })).digest('hex')
+  if ((conflicts.length || dates.warnings.length) && confirmation !== fingerprint) throw new Error(`${conflicts.length ? 'Исправление объединяет заключения с разными реквизитами специалистов (ФИО, удостоверение или клеймо). После подтверждения обе роли объединённых документов будут очищены. ' : ''}${dates.warnings.length ? `Изменение даты заключения изменит удостоверения специалистов. ${dates.warnings.slice(0, 10).join(' ')} ` : ''}Пока ничего не сохранено. [specialist-confirmation:${fingerprint}]`)
+  const snapshots = new Map(dates.writes.map(write => [write.id, write.snapshot]))
+  await writeDocumentSpecialists(tx, changes.map(change => ({ id: change.document.id, snapshot: snapshots.get(change.document.id) ?? change.snapshot })))
 }

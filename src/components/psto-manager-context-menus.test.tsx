@@ -1,10 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render as baseRender, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PstoRequestManagerDialog } from '@/components/psto-request-manager-dialog'
 import { PstoResultManagerDialog } from '@/components/psto-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { createRequestDocumentIdentity } from '@/lib/request-document-identity'
+
+vi.mock('@/lib/use-document-position-change', () => ({ useDocumentPositionChange: () => vi.fn() }))
+vi.mock('@/components/system-document-date-editor', () => ({ SystemDocumentDateEditor: ({ label }: { label: string }) => <input aria-label={label} /> }))
 
 const row = {
   id: 7,
@@ -29,14 +33,11 @@ describe('PSTO manager context menus', () => {
         requestDate={request.date}
         requestOptions={[request]}
         requestRows={[row]}
-        requestNameDraft={request.name}
         isManagerPending={false}
         isCorrectionPending={false}
         canOpenDocument
         onClose={vi.fn()}
         onChangeRequest={vi.fn()}
-        onRequestNameDraftChange={vi.fn()}
-        onRenameRequest={vi.fn()}
         onOpenDocument={onOpenDocument}
         onOpenJournalRows={vi.fn()}
         onCopyDocumentName={vi.fn()}
@@ -56,11 +57,9 @@ describe('PSTO manager context menus', () => {
     render(
       <PstoResultManagerDialog
         rows={[row]}
-        diagramDrafts={{ [row.id]: row.heatTreatmentDiagram as string }}
         isPending={false}
         canOpenDocument
         onClose={vi.fn()}
-        onDiagramDraftChange={vi.fn()}
         onRenameDiagram={vi.fn()}
         onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
@@ -81,11 +80,9 @@ describe('PSTO manager context menus', () => {
     render(
       <PstoResultManagerDialog
         rows={[row]}
-        diagramDrafts={{ [row.id]: row.heatTreatmentDiagram as string }}
         isPending={false}
         canOpenDocument
         onClose={vi.fn()}
-        onDiagramDraftChange={vi.fn()}
         onRenameDiagram={vi.fn()}
         onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
@@ -94,7 +91,9 @@ describe('PSTO manager context menus', () => {
       />,
     )
 
-    fireEvent.contextMenu(screen.getByLabelText('Наименование диаграммы'))
+    const card = within(screen.getByRole('heading', { name: 'Результат ПСТО' }).closest('article')!)
+    fireEvent.click(card.getByRole('button', { name: 'Редактировать' }))
+    fireEvent.contextMenu(card.getByLabelText('Наименование диаграммы только этого стыка'))
 
     expect(screen.queryByRole('button', { name: 'Открыть диаграмму' })).not.toBeInTheDocument()
   })
@@ -113,11 +112,9 @@ describe('PSTO manager context menus', () => {
           tvmtConclusionDate: null,
           tvmtConclusion: null,
         } as WeldRow]}
-        diagramDrafts={{}}
         isPending={false}
         canOpenDocument
         onClose={vi.fn()}
-        onDiagramDraftChange={vi.fn()}
         onRenameDiagram={vi.fn()}
         onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
@@ -130,3 +127,12 @@ describe('PSTO manager context menus', () => {
     expect(screen.queryByRole('heading', { name: 'Результат ПСТО' })).not.toBeInTheDocument()
   })
 })
+
+const render = (ui: import('react').ReactNode, options?: import('@testing-library/react').RenderOptions) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>, ...options })
+}
+vi.mock('@/lib/use-system-document-context', () => ({
+  useSystemDocumentContext: () => ({ data: { rows: [{ id: 1 }, { id: 2 }], sourcePositions: [] }, isPending: false, isError: false }),
+}))
+vi.mock('@/lib/system-document-storage', () => ({ loadWorkflowDocumentHistoryGrid: async () => ({ rows: [], total: 0 }) }))

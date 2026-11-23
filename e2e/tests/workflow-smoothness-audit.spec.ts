@@ -96,12 +96,15 @@ test('registries, officiality, duplicate controls and dispatcher: nested lists',
       'да','SM-O-U','2026-10-04','ремонт','SM-O-UC','2026-10-05','нет'
       from generate_series(1,100) n`, [officialityProject]))
     for (const [route, menu, action, title] of [
-      ['/lnk', 'Заявка', 'Все заявки ЛНК', 'Редактирование заявок ЛНК'],
-      ['/lnk', 'Результат', 'Все результаты ЛНК', 'Редактирование результатов ЛНК'],
+      ['/lnk', 'Заявка', 'Все заявки ЛНК', 'Все заявки ЛНК'],
+      ['/lnk', 'Результат', 'Все результаты ЛНК', 'Все результаты ЛНК'],
       ['/psto', 'Результат', 'История ПСТО и ТВМТ', 'История ПСТО и ТВМТ'],
     ]) {
       await page.goto(route)
-      const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
+      const heading = process.env.SMOOTHNESS_BASELINE === '1' && route === '/lnk'
+        ? title === 'Все заявки ЛНК' ? 'Редактирование заявок ЛНК' : 'Редактирование результатов ЛНК'
+        : title
+      const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
       const choice = route === '/psto' ? dialog.locator('aside').getByRole('button').filter({ hasText: /SM-\d+ ·/ }).first()
         : dialog.locator('[data-index]').first().getByRole('button').first()
       await probe.measure(`registry:${title}:open`, async () => {

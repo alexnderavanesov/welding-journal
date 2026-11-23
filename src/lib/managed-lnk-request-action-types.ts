@@ -13,7 +13,6 @@ export type UseManagedLnkRequestActionsOptions = {
   lnkRequestManagerOptions: RequestDocumentIdentity[]
   managedLnkRequestName: string
   managedLnkRequestDate: string
-  managedLnkRequestNameDraft: string
   lnkRequestCorrectionMutation: MutationLike<{ record: RowWithId; methodKey: WeldFieldKey; requestName: string | null }>
   lnkRequestManagerMutation: MutationLike<
     | { action: 'rename'; requestName: string; requestDate: string; nextRequestName: string }
@@ -22,5 +21,4 @@ export type UseManagedLnkRequestActionsOptions = {
   setIsLnkRequestManagerOpen: (value: boolean) => void
   setManagedLnkRequestName: (value: string) => void
   setManagedLnkRequestDate: (value: string) => void
-  setManagedLnkRequestNameDraft: (value: string) => void
 }

@@ -1,4 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { fireEvent, render as baseRender, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultManagerDialog } from '@/components/lnk-result-manager-dialog'
@@ -40,7 +42,7 @@ const rkRow = {
   rkConclusionDate: '2026-08-17',
 } as WeldRow
 
-function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialog>[0]> = {}) {
+function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialog>[0]> = {}, edit = true) {
   const onOpenRows = vi.fn()
   const onOpenDocument = vi.fn()
   const onOpenJournalRows = vi.fn()
@@ -79,10 +81,26 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialo
       {...overrides}
     />,
   )
+  if (edit) openEditors()
   return { onOpenRows, onOpenDocument, onOpenJournalRows }
 }
 
 describe('LnkResultManagerDialog', () => {
+  it('hides mutations initially and opens the same two scopes from button or context menu', () => {
+    renderDialog({}, false)
+    expect(screen.queryByRole('button', { name: 'Удалить результат' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('document-date-editor')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    expect(screen.getByRole('button', { name: 'К документу' })).toBeVisible()
+    expect(screen.getByRole('region', { name: /Редактирование результата стыка/ })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть редактирование' }))
+    expect(screen.queryByRole('button', { name: 'Удалить результат' })).not.toBeInTheDocument()
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Линия-2/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Внести изменения' }))
+    expect(screen.getByRole('region', { name: /Редактирование результата стыка · F2 · РК/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'К документу' })).toBeVisible()
+  })
+
   it('distinguishes loaded joints from matching results and keeps an empty portion loadable without automatic requests', () => {
     const onLoadMoreRows = vi.fn(), onRegistrySearchChange = vi.fn(), onRegistryResultFilterChange = vi.fn()
     renderDialog({ registryScope: 'all', rows: Array.from({ length: 500 }, (_, index) => ({ ...vikRow, id: index + 1 })),
@@ -112,12 +130,13 @@ describe('LnkResultManagerDialog', () => {
     const onClearResult = vi.fn()
     renderDialog({ onClearResult })
     fireEvent.contextMenu(screen.getByRole('button', { name: /Линия-2/ }))
-    const remove = within(screen.getByTestId('context-action-menu')).getByRole('button', { name: 'Удалить результат' })
+    expect(within(screen.getByTestId('context-action-menu')).queryByRole('button', { name: 'Удалить результат' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Внести изменения' }))
+    const remove = screen.getByRole('button', { name: 'Удалить результат' })
     expect(remove).toBeDisabled()
-    expect(within(screen.getByTestId('context-action-menu')).getByText('Нет права удаления в ЛНК. Обратитесь к администратору.')).toBeVisible()
     fireEvent.click(remove)
     expect(onClearResult).not.toHaveBeenCalled()
-    expect(screen.getByPlaceholderText('Наименование заключения для этого стыка')).toBeEnabled()
+    expect(screen.getByPlaceholderText('Заключение только этого стыка')).toBeEnabled()
   })
   const layeredRow = { ...vikRow, layeredControlAssigned: true, pvkResult: 'годен', pvkConclusion: 'ПВК-1', pvkConclusionDate: '2026-08-15', hasPvk: 'да' } as WeldRow
   const layeredEntry = { row: layeredRow, method: pvkMethod, changeKey: '1:pvkRequest' }
@@ -163,7 +182,7 @@ describe('LnkResultManagerDialog', () => {
     expect(screen.getByRole('button', { name: 'Удаление…' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Сохранить изменения' })).toBeDisabled()
-    expect(screen.getByPlaceholderText('Наименование заключения для этого стыка')).toBeDisabled()
+    expect(screen.getByPlaceholderText('Заключение только этого стыка')).toBeDisabled()
     expect(screen.queryByText('Ошибка другого стыка')).not.toBeInTheDocument()
   })
 
@@ -178,7 +197,7 @@ describe('LnkResultManagerDialog', () => {
   it('opens the exact result card requested by table navigation', () => {
     const actions = renderDialog()
 
-    expect(screen.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Результаты выбранных стыков ЛНК' })).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getByRole('heading', { name: 'Линия-1 · F1' })).toBeInTheDocument()
     expect(screen.getAllByText('ВИК-17').length).toBeGreaterThan(0)
@@ -255,8 +274,8 @@ describe('LnkResultManagerDialog', () => {
     renderDialog({ onReplaceResult })
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /Линия-2/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить результат' }))
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('button', { name: 'вырез' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Внести изменения' }))
+    fireEvent.click(within(screen.getByRole('region', { name: /Редактирование результата стыка/ })).getByRole('button', { name: 'вырез' }))
 
     expect(onReplaceResult).toHaveBeenCalledWith(rkRow, 'rkRequest', 'вырез')
   })
@@ -301,3 +320,20 @@ describe('LnkResultManagerDialog', () => {
   })
 
 })
+
+function openEditors() {
+  for (const details of document.querySelectorAll('details')) details.open = true
+  for (const button of screen.queryAllByRole('button', { name: 'Редактировать' })) fireEvent.click(button)
+}
+
+vi.mock('@/lib/use-document-position-change', () => ({ useDocumentPositionChange: () => ({ save }: { save: () => void }) => save() }))
+vi.mock('@/components/system-document-date-editor', () => ({ SystemDocumentDateEditor: ({ label, mode, onCompositionLoaded }: { label: string; mode?: string; onCompositionLoaded?: (count: number) => void }) => { useEffect(() => { onCompositionLoaded?.(2) }, [onCompositionLoaded]); return <div data-testid={mode === 'name' ? 'document-name-editor' : 'document-date-editor'}>{label}</div> } }))
+
+const render = (ui: import('react').ReactNode, options?: import('@testing-library/react').RenderOptions) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>, ...options })
+}
+vi.mock('@/lib/use-system-document-context', () => ({
+  useSystemDocumentContext: () => ({ data: { rows: [{ id: 1 }, { id: 2 }], sourcePositions: [] }, isPending: false, isError: false }),
+}))
+vi.mock('@/lib/system-document-storage', () => ({ loadWorkflowDocumentHistoryGrid: async () => ({ rows: [], total: 0 }) }))

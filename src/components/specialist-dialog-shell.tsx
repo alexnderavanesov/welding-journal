@@ -7,9 +7,15 @@ export function SpecialistDialogShell({ label, busy, onClose, children, wide = f
 }) {
   const root = useRef<HTMLDivElement>(null)
   const previousFocus = useRef(typeof document === 'undefined' ? null : document.activeElement)
-  useEffect(() => () => {
-    const target = previousFocus.current
-    if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true })
+  useEffect(() => {
+    const element = root.current
+    return () => queueMicrotask(() => {
+      // StrictMode replays effects while the dialog remains mounted. Return
+      // focus only after the actual removal, not during that replay.
+      if (element?.isConnected) return
+      const target = previousFocus.current
+      if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true })
+    })
   }, [])
 
   return <LargeDialogShell onEscape={onClose} escapeDisabled={busy} ariaLabel={label} maxWidthClassName={maxWidthClassName ?? (wide ? 'max-w-3xl' : 'max-w-xl')}

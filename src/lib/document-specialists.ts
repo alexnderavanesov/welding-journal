@@ -1,17 +1,22 @@
+import { selectSpecialistCertificate } from './specialist-certificates'
+import { parseDateLikeToIso } from './date-format'
+
 export const SPECIALIST_METHODS = ['ВИК', 'РК', 'ПВК', 'УЗК', 'ТВМТ'] as const
 export type SpecialistMethod = typeof SPECIALIST_METHODS[number]
 export type SpecialistKind = 'inspector' | 'thermist'
+export type SpecialistCertificate = { number: string; validFrom: string | null; validTo: string | null; methods: SpecialistMethod[] }
 export type SpecialistRecord = {
   id: number
   name: string
   kind: SpecialistKind
   certificate: string
+  certificates?: SpecialistCertificate[] | null
   stamp?: string
   methods: SpecialistMethod[]
   revision: number
   archived?: boolean
 }
-export type SpecialistSnapshot = Pick<SpecialistRecord, 'id' | 'name' | 'certificate' | 'stamp'>
+export type SpecialistSnapshot = Pick<SpecialistRecord, 'id' | 'name' | 'certificate' | 'stamp'> & { certificateDate?: string }
 export type DocumentSpecialists = { first?: SpecialistSnapshot | null; second?: SpecialistSnapshot | null }
 export type SpecialistSelection = { first?: number | null; second?: number | null }
 export type SpecialistDraft = { common?: SpecialistSelection; documents?: Record<string, SpecialistSelection> }
@@ -58,18 +63,27 @@ export function inheritDocumentSpecialists(snapshots: Array<DocumentSpecialists 
   }))
   const snapshot = pair(snapshots[0])
   const conflict = snapshots.some(value => identity(pair(value)) !== identity(snapshot))
+  // Equal printed details may come from both legacy and date-checked documents.
+  // Retain the new validation marker regardless of source ordering.
+  if (!conflict) for (const role of ['first', 'second'] as const) {
+    const checked = snapshots.find(value => value?.[role]?.certificateDate)?.[role]
+    if (checked) snapshot[role] = checked
+  }
   return { snapshot: conflict ? pair(null) : snapshot, conflict }
 }
 
-export function resolveDocumentSpecialists(current: DocumentSpecialists | null | undefined, selection: SpecialistSelection, records: Map<number, SpecialistRecord>, profile: SpecialistDocumentProfile): DocumentSpecialists {
+export function resolveDocumentSpecialists(current: DocumentSpecialists | null | undefined, selection: SpecialistSelection, records: Map<number, SpecialistRecord>, profile: SpecialistDocumentProfile, date?: string): DocumentSpecialists {
   const result = { ...current }
   for (const role of ['first', 'second'] as const) {
     const id = selection[role]
     if (id === undefined) continue
     if (id === null) { result[role] = null; continue }
+    if (date !== undefined && !parseDateLikeToIso(date)) throw new Error('Укажите корректную дату заключения перед назначением специалиста.')
     const record = records.get(id)
     if (!record || !specialistMatches(record, profile)) throw new Error(`Специалист не найден, архивирован или не имеет допуска для роли «${profile.labels[role === 'first' ? 0 : 1]}» (${profile.methods.join(', ') || 'ПСТО'}). Обновите выбор.`)
-    result[role] = { id: record.id, name: record.name, certificate: record.certificate, ...(record.stamp ? { stamp: record.stamp } : {}) }
+    const certificate = date === undefined ? undefined : selectSpecialistCertificate(record, profile, date)
+    if (date !== undefined && !certificate) throw new Error(`У специалиста «${record.name}» нет действующего удостоверения на дату заключения ${date} (${profile.methods.join(', ') || 'ПСТО'}). Замените специалиста или очистите роль.`)
+    result[role] = { id: record.id, name: record.name, certificate: certificate?.number ?? record.certificate, ...(record.stamp ? { stamp: record.stamp } : {}), ...(date === undefined ? {} : { certificateDate: date }) }
   }
   return result
 }

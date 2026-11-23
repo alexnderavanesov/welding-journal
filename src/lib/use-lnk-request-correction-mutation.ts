@@ -40,7 +40,6 @@ export function useLnkRequestCorrectionMutation({
   setMessage,
   highlightChangedRows,
   setManagedLnkRequestName,
-  setManagedLnkRequestNameDraft,
   onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
@@ -98,7 +97,6 @@ export function useLnkRequestCorrectionMutation({
         })
         if (removedRequestName && !hasRemainingRequestPositions) {
           setManagedLnkRequestName('')
-          setManagedLnkRequestNameDraft('')
           setMessage(`Заявка ${removedRequestName} удалена, так как в ней не осталось позиций`)
         } else {
           setMessage('Позиция заявки ЛНК удалена')

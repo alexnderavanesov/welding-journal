@@ -25,6 +25,7 @@ import { buildGroupWrites, getSequenceRequest, savePreHeatTreatmentControlWrites
 import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex, DocumentNameOccupiedError } from './document-name-conflicts'
 import { assignCreatedDocumentSpecialists, loadSelectedSpecialists } from './specialists'
 import { getSpecialistDocumentProfile, resolveDocumentSpecialists } from '@/lib/document-specialists'
+import { selectSpecialistCertificate } from '@/lib/specialist-certificates'
 import { readSpecialistDefaults } from './specialist-defaults'
 import { lockDocumentGroupingPreference, rememberDocumentGrouping } from './document-grouping-preferences'
 import { assertStoredEarlyCoilDecisionSourcesRemainValid } from './early-coil-decision-guard'
@@ -93,13 +94,22 @@ export async function planPreHeatTreatmentFill(tx: Tx, rows: WeldRow[], options:
   ])) as NonNullable<PreHeatTreatmentFillOptions['specialists']>
   const splitModes = normalizeSystemDocumentSplitSettings({ ...naming.splitModes, ...options.splitModes })
   const { items, errors, issues } = buildPreHeatTreatmentFillItems(rows, { ...options, specialists })
+  const selectedSpecialists = await loadSelectedSpecialists(tx, items.flatMap(item => item.specialists ? [item.specialists] : []))
+  const usesDefaults = (item: typeof items[number]) => item.action === 'result' && options.specialists?.[item.methods[0]!] === undefined && options.overrides?.[item.key]?.specialists === undefined
+  for (const item of items) if (usesDefaults(item)) {
+    const method = item.methods[0]!, profile = getSpecialistDocumentProfile('lnkConclusion', method)!
+    for (const role of ['first', 'second'] as const) {
+      const record = selectedSpecialists.get(specialists[method]?.[role] ?? 0)
+      if (!record || !selectSpecialistCertificate(record, profile, item.date)) specialists[method] = { ...specialists[method], [role]: null }
+    }
+  }
+  for (const item of items) if (usesDefaults(item)) item.specialists = specialists[item.methods[0]!]
   const grouped = groupPreHeatTreatmentFillItems(rows, items, splitModes)
   errors.push(...grouped.errors)
   issues.push(...grouped.issues)
   const groups = grouped.groups
-  const selectedSpecialists = await loadSelectedSpecialists(tx, groups.flatMap(group => group.specialists ? [group.specialists] : []))
   for (const group of groups) if (group.action === 'result' && group.specialists) {
-    try { resolveDocumentSpecialists(null, group.specialists, selectedSpecialists, getSpecialistDocumentProfile('lnkConclusion', group.positions[0]?.methodCode)!) }
+    try { resolveDocumentSpecialists(null, group.specialists, selectedSpecialists, getSpecialistDocumentProfile('lnkConclusion', group.positions[0]?.methodCode)!, group.date) }
     catch (error) { errors.push((error as Error).message) }
   }
   const rowMap = new Map(rows.map(row => [row.id, row]))

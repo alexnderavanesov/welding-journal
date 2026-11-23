@@ -10,7 +10,7 @@ import { Button } from './ui/button'
 
 export function DocumentSpecialistsPanel({ plan, naming, onChange, disabled }: { plan: SystemDocumentCreationPlan; naming: RequestNamingState; onChange: (naming: RequestNamingState) => void; disabled?: boolean }) {
   const profile = getSpecialistDocumentProfile(plan.type, plan.methodCode)
-  const options = useSpecialistOptions(profile, naming.specialistDefaultRecords)
+  const options = useSpecialistOptions(profile, naming.specialistDefaultRecords, profile ? [{ date: plan.date ?? '', methods: profile.methods }] : [])
   const [page, setPage] = useState(0)
   const draft = naming.specialists ?? {}
   if (!profile) return null

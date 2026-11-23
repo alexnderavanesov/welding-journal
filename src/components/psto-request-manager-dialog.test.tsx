@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render as baseRender, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PstoRequestManagerDialog } from '@/components/psto-request-manager-dialog'
@@ -18,7 +19,7 @@ vi.mock('@/components/system-document-date-editor', () => ({
 }))
 
 describe('PstoRequestManagerDialog', () => {
-  it('edits the primary request document when the joint already has a repeat cycle', () => {
+  it('edits the primary request document when the joint already has a repeat cycle', async () => {
     const row = {
       id: 7,
       projectTitle: 'Проект',
@@ -50,7 +51,6 @@ describe('PstoRequestManagerDialog', () => {
         requestDate={request.date}
         requestOptions={[request]}
         requestRows={[row]}
-        requestNameDraft={request.name}
         isManagerPending={false}
         isCorrectionPending={false}
         canOpenDocument
@@ -63,8 +63,6 @@ describe('PstoRequestManagerDialog', () => {
         }}
         onClose={vi.fn()}
         onChangeRequest={vi.fn()}
-        onRequestNameDraftChange={vi.fn()}
-        onRenameRequest={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onCopyDocumentName={vi.fn()}
@@ -73,9 +71,18 @@ describe('PstoRequestManagerDialog', () => {
       />,
     )
 
-    const editor = screen.getByTestId('system-document-date-editor')
+    const editor = await screen.findByTestId('system-document-date-editor')
     expect(editor).toHaveAttribute('data-title', 'Основная заявка ПСТО')
     expect(editor).toHaveAttribute('data-date', '2026-08-02')
     expect(editor).toHaveAttribute('data-sequences', '1')
   })
 })
+
+const render = (ui: import('react').ReactNode, options?: import('@testing-library/react').RenderOptions) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>, ...options })
+}
+vi.mock('@/lib/use-system-document-context', () => ({
+  useSystemDocumentContext: () => ({ data: { rows: [{ id: 1 }, { id: 2 }], sourcePositions: [] }, isPending: false, isError: false }),
+}))
+vi.mock('@/lib/system-document-storage', () => ({ loadWorkflowDocumentHistoryGrid: async () => ({ rows: [], total: 0 }) }))

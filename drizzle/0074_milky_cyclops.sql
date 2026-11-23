@@ -1,0 +1,1 @@
+ALTER TABLE "specialists" ADD COLUMN "certificates" jsonb;

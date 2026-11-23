@@ -13,10 +13,16 @@ import { loadSystemDocumentSequences, SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY } from
 import { getSpecialistDocumentProfile } from '@/lib/document-specialists'
 import { previewSystemDocumentNames, type SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
+import { selectSpecialistCertificate } from '@/lib/specialist-certificates'
 
-export function hydrateSpecialistNaming(naming: RequestNamingState, key: string | null): RequestNamingState {
+export function hydrateSpecialistNaming(naming: RequestNamingState, key: string | null, date?: string): RequestNamingState {
   if (!key || !getSpecialistDocumentProfile(key) || naming.specialistProfile === key || !naming.specialistDefaults) return naming
-  const common = naming.specialistDefaults[key as keyof typeof naming.specialistDefaults] ?? { first: null, second: null }
+  if (date === '') return naming
+  const common = { ...naming.specialistDefaults[key as keyof typeof naming.specialistDefaults] ?? { first: null, second: null } }
+  if (date !== undefined) for (const role of ['first', 'second'] as const) {
+    const record = naming.specialistDefaultRecords?.find(record => record.id === common[role])
+    if (!record || !selectSpecialistCertificate(record, getSpecialistDocumentProfile(key)!, date)) common[role] = null
+  }
   return { ...naming, specialistProfile: key, specialists: naming.specialistProfile ? { common } : { ...naming.specialists, common: naming.specialists?.common ?? common } }
 }
 
@@ -70,7 +76,7 @@ export function SystemDocumentSplitControl({ plan, naming, onChange, disabled = 
       if (!active) return
       refreshNames.current = false
       const state = current.current
-      state.onChange(hydrateSpecialistNaming({ ...state.naming, ...(systemGroupNames ? { systemGroupNames } : {}), specialistDefaults: settings.specialistDefaults ?? {}, specialistDefaultRecords: settings.specialistDefaultRecords, splitModes: { ...settings.splitModes, ...state.naming.splitModes }, groupingDefaultsState: 'ready' }, state.key))
+      state.onChange(hydrateSpecialistNaming({ ...state.naming, ...(systemGroupNames ? { systemGroupNames } : {}), specialistDefaults: settings.specialistDefaults ?? {}, specialistDefaultRecords: settings.specialistDefaultRecords, splitModes: { ...settings.splitModes, ...state.naming.splitModes }, groupingDefaultsState: 'ready' }, state.key, state.plan?.date ?? ''))
     }).catch(() => {
       if (active) current.current.onChange({ ...current.current.naming, groupingDefaultsState: 'error' })
     })
@@ -78,9 +84,9 @@ export function SystemDocumentSplitControl({ plan, naming, onChange, disabled = 
   }, [attempt])
   useEffect(() => {
     const state = current.current
-    const next = hydrateSpecialistNaming(state.naming, state.key)
+    const next = hydrateSpecialistNaming(state.naming, state.key, state.plan?.date ?? '')
     if (next !== state.naming) state.onChange(next)
-  }, [key, naming.specialistDefaults])
+  }, [key, naming.specialistDefaults, plan?.date])
   const loading = naming.groupingDefaultsState !== 'ready'
   return <div className="ml-auto flex flex-wrap items-center gap-2 pb-1 text-xs text-slate-600">
     <DocumentSplitModeSelect value={plan?.mode ?? 'none'} disabled={disabled || !plan || loading}

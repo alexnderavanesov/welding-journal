@@ -236,6 +236,57 @@ test('bulk removal rejects stale preview and preliminary rejection without chang
   expect(await snapshot()).toEqual(before)
 })
 
+test('enabling an empty preliminary stage immediately restores request and conclusion chronology checks', async ({ page }) => {
+  await withE2eDatabase(db => db.query('update weld_joints set pre_heat_treatment_required=false where id=$1', [ids[5]]))
+  const empty = await snapshot()
+  expect(empty.controls).toEqual([])
+  expect(empty.documents).toEqual([])
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
+  await selectLnkRow(page, 'F882')
+  const menu = page.getByRole('button', { name: 'НК до ТО', exact: true })
+  await menu.click()
+  await page.getByRole('button', { name: 'Поставить отметку', exact: true }).click()
+  const mark = page.getByRole('dialog', { name: 'Поставить отметку НК до ТО', exact: true })
+  await mark.getByRole('button', { name: 'Поставить, оставить незаполненным', exact: true }).click()
+  await expect(mark).toBeHidden()
+  const marked = await snapshot()
+  expect(marked.rows.find(row => row.id === ids[5])?.pre_heat_treatment_required).toBe(true)
+  expect(marked.controls).toEqual([])
+  expect(marked.documents).toEqual([])
+  await menu.click()
+  await page.getByRole('button', { name: 'Заполнить недостающее как «Годен»', exact: true }).click()
+  const fill = page.getByRole('dialog', { name: 'Заполнить недостающий НК до ТО', exact: true })
+  const save = fill.getByRole('button', { name: 'Заполнить недостающее как «Годен»', exact: true })
+  for (const key of [`${ids[5]}:request:all`, `${ids[5]}:result:ВИК`]) {
+    const input = fill.getByLabel(`Дата ${key}`, { exact: true })
+    await input.fill('2026-10-31')
+    await expect(fill.getByText(/раньше даты сварки/).first()).toBeVisible()
+    await expect(save).toBeDisabled()
+    // A forged direct request must not bypass the freshly enabled stage either.
+    const options = { overrides: { [key]: { date: '2026-10-31' } } }
+    const invalid = await owner(previewPreHeatTreatmentFill)({ data: { rowIds: [ids[5]], options } })
+    expect(invalid.errors.join(' ')).toContain('раньше даты сварки')
+    await expect(owner(savePreHeatTreatmentFill)({ data: {
+      rowIds: [ids[5]], options: { ...options, token: invalid.token,
+        confirmedGroups: invalid.groups.map(group => ({ key: group.key, name: group.name, date: group.date, itemKeys: group.items.map(item => item.key) })),
+      },
+    } })).rejects.toThrow('раньше даты сварки')
+    expect(await snapshot()).toEqual(marked)
+    await input.fill('2026-11-01')
+    await expect(save).toBeEnabled()
+  }
+  await save.click()
+  await expect(fill).toBeHidden()
+  const after = await snapshot()
+  expect(after.controls).toHaveLength(1)
+  expect(after.controls[0]).toMatchObject({ weld_joint_id: ids[5], result: 'годен' })
+  expect(await withE2eDatabase(async db => (await db.query(
+    'select request_date::text,conclusion_date::text from pre_heat_treatment_controls where weld_joint_id=$1', [ids[5]],
+  )).rows)).toEqual([{ request_date: '2026-11-01', conclusion_date: '2026-11-01' }])
+  expect(after.documents).toHaveLength(2)
+})
+
 test('LNK toolbar marks and fills all selected methods, then explicitly removes the preliminary package', async ({ page }, info) => {
   await withE2eDatabase(db => db.query("update weld_joints set pre_heat_treatment_required=false,has_rk='да',has_pvk='да' where id=$1", [ids[5]]))
   await page.goto('/lnk')

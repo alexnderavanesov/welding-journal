@@ -1,5 +1,6 @@
 import { REPORT_ACCESS_AREAS, SETTING_ACCESS_AREAS, type Permission } from '@/lib/access-permissions'
 import { normalizePreHeatTreatmentResultEditBatch } from '@/lib/pre-heat-treatment-result-edit-plan'
+import { requireWorkflowDocumentArea, workflowDocumentReferenceArea } from '@/lib/workflow-document-area'
 
 // Explicit allowlist: a new server function is closed until its policy is reviewed.
 export const OPERATION_POLICIES = {
@@ -45,7 +46,7 @@ export const OPERATION_POLICIES = {
   "weld-mutations-api.ts#updateLnkDefectDescription": "lnk.edit",
   "weld-mutations-api.ts#manageLnkRequestDocument": "@lnkRequestAction",
   "weld-mutations-api.ts#managePstoRequestDocument": "@pstoRequestAction",
-  "weld-mutations-api.ts#changeSystemDocumentDate": "@documentEdit",
+  "weld-mutations-api.ts#changeSystemDocumentDate": "@workflowDocumentEdit",
   "weld-mutations-api.ts#deleteWeldJoint": "welding.delete",
   "weld-mutations-api.ts#deleteObsoleteRepeatedJoint": "welding.delete",
   "weld-mutations-api.ts#deleteWeldJoints": "welding.delete",
@@ -56,11 +57,12 @@ export const OPERATION_POLICIES = {
   "system-document-sequences.ts#resetSystemDocumentSequence": "numbering.edit",
   "statistics.ts#getStatisticsServerResult": "statistics.view",
   "system-documents.ts#listSystemDocumentHistoryGrid": "documents.view",
+  "system-documents.ts#listWorkflowDocumentHistoryGrid": "@workflowDocumentList",
   "system-documents.ts#checkSystemDocumentNameConflict": "documents.view",
   "system-documents.ts#listSystemDocumentHistoryFilterOptions": "documents.view",
   "system-documents.ts#getSystemDocumentRows": "documents.view",
   "system-documents.ts#getSystemDocumentSpecialists": "documents.view",
-  "system-documents.ts#getSystemDocumentDateContext": "documents.view",
+  "system-documents.ts#getSystemDocumentDateContext": "@workflowDocumentRead",
   "weld-import-api.ts#listWeldingJournalImportScope": "welding.view",
   "weld-import-api.ts#massFillWeldJoints": "welding.import",
   "weld-import-api.ts#replaceWeldJoints": "@replace",
@@ -266,6 +268,11 @@ export function getOperationPermissions(policy: string, value: unknown): Permiss
   }
   // Document areas are resolved against stored documents on the server.
   if (policy === '@documentEdit') return ['documents.view', 'documents.edit']
+  if (policy === '@workflowDocumentList') return [`${requireWorkflowDocumentArea(data.workflowArea)}.view`]
+  if (policy === '@workflowDocumentRead' || policy === '@workflowDocumentEdit') {
+    const area = workflowDocumentReferenceArea(policy === '@workflowDocumentEdit' ? data.reference : data)
+    return policy === '@workflowDocumentEdit' ? [`${area}.view`, `${area}.edit`] : [`${area}.view`]
+  }
   if (policy === '@templateRead') return []
   throw new Error('Неизвестная политика доступа.')
 }

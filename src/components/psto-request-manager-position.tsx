@@ -10,12 +10,14 @@ import { getPstoResultLabel } from '@/lib/report-badges'
 
 type PstoRequestManagerPositionProps = {
   row: WeldRow
+  readOnly?: boolean
   isCorrectionPending: boolean
   onClearPosition: (row: WeldRow) => void
 }
 
 export function PstoRequestManagerPosition({
   row,
+  readOnly = false,
   isCorrectionPending,
   onClearPosition,
 }: PstoRequestManagerPositionProps) {
@@ -31,7 +33,7 @@ export function PstoRequestManagerPosition({
           Результат: {getPstoResultLabel(row.pstoResult)}
         </ManagerRowJointHeading>
       </div>
-      <Button
+      {!readOnly ? <Button
         type="button"
         variant="outline"
         size="sm"
@@ -42,7 +44,7 @@ export function PstoRequestManagerPosition({
       >
         <Trash2 className="mr-1.5 h-3.5 w-3.5" />
         Очистить
-      </Button>
+      </Button> : null}
     </div>
   )
 }

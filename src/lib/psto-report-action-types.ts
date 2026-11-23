@@ -59,7 +59,6 @@ export type UsePstoReportActionsOptions = {
   filteredPstoResultRows: RowWithId[]
   managedPstoRequestName: string
   managedPstoRequestDate: string
-  managedPstoRequestNameDraft: string
   nextPstoDiagramName: string
   nextPstoRequestName: string
   nextPstoRequestNumber?: number
@@ -84,10 +83,8 @@ export type UsePstoReportActionsOptions = {
   setIsPstoRequestModalOpen: (value: boolean) => void
   setIsPstoResultManagerOpen: (value: boolean) => void
   setIsPstoResultModalOpen: (value: boolean) => void
-  setManagedPstoDiagramDrafts: Dispatch<SetStateAction<Record<number, string>>>
   setManagedPstoRequestName: (value: string) => void
   setManagedPstoRequestDate: (value: string) => void
-  setManagedPstoRequestNameDraft: (value: string) => void
   setMessage: (value: string) => void
   setPstoRequestDate: (value: string) => void
   setPstoRequestNaming: (value: RequestNamingState) => void

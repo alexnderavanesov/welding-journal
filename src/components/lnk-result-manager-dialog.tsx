@@ -1,6 +1,11 @@
+import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
+import { LNK_CONCLUSION_DOCUMENTS } from '@/lib/workflow-document-choices'
+import { WorkflowManagerViews, WorkflowDocumentLink, useWorkflowManagerView } from './workflow-manager-views'
+import { useDocumentPositionChange } from '@/lib/use-document-position-change'
+import { ConclusionPositionChangeHelp, ManagerEditPanel, ManagerEditSection, useDocumentJointCount } from './manager-edit-panel'
 import { DocumentConnectionsButton } from './document-connections-button'
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { CalendarClock, CheckSquare2, ClipboardCheck, FileSpreadsheet, Layers3, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { FileSpreadsheet, Layers3, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
@@ -18,7 +23,6 @@ import { LnkPendingResultBadge, LnkResultManagerSummary } from '@/components/lnk
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
-import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -26,18 +30,10 @@ import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
-import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
-import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
-import { useControlProcessSettings } from '@/lib/control-process-settings'
-import { useSystemIndexSettings } from '@/lib/system-index-settings'
-import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
 import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
-import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
-import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { useAccess } from '@/lib/security-context'
 import type { LayeredControlRemovalFeedback } from '@/lib/use-layered-control-removal'
 import {
   getSystemDocumentReferenceForField,
@@ -142,13 +138,23 @@ export function LnkResultManagerDialog({
   onRegistrySearchChange,
   onRegistryResultFilterChange,
 }: LnkResultManagerDialogProps) {
-  const { can } = useAccess()
+  const confirmPositionChange = useDocumentPositionChange()
+  const [isEditing, setIsEditing] = useState(false)
   const registryFilterDescription = registryScope === 'all'
     ? 'Поиск и фильтр результата отбирают стыки во всём реестре.'
     : 'Поиск и фильтры применяются только к выбранным стыкам.'
   const methodFilterDescription = registryScope === 'all'
     ? 'Вид контроля применяется к загруженной части.'
     : 'Вид контроля применяется только к выбранным стыкам.'
+  const documentReferences = useMemo(() => {
+    if (registryScope !== 'selected') return undefined
+    const methods = ALL_LNK_FIELD_METHODS.filter(method => method.code !== 'ТВМТ')
+    return rows.flatMap(row => methods.flatMap(method => {
+      const reference = getSystemDocumentReferenceForField(row, method.conclusionKey)
+      return reference ? [reference] : []
+    }))
+  }, [rows, registryScope])
+  const managerView = useWorkflowManagerView()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
@@ -156,9 +162,6 @@ export function LnkResultManagerDialog({
   const [selectedEntryKey, setSelectedEntryKey] = useState(
     () => initialEntryKey || entries[0]?.changeKey || '',
   )
-  const saveCheckSettings = useSaveCheckSettings()
-  const processSettings = useControlProcessSettings()
-  const systemIndexSettings = useSystemIndexSettings()
   const filteredEntries = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ru')
     return entries.filter(({ row, method }) => {
@@ -201,6 +204,11 @@ export function LnkResultManagerDialog({
     [filteredEntries, selectedEntryKey],
   )
   const activeSelectedEntryKey = selectedEntry?.changeKey ?? ''
+  const editingEntryKey = useRef('')
+  const handleEditingChange = useCallback((open: boolean) => {
+    editingEntryKey.current = open ? activeSelectedEntryKey : ''
+    setIsEditing(open)
+  }, [activeSelectedEntryKey])
   const selectedRow = selectedEntry?.row
   const selectedMethod = selectedEntry?.method
   const selectedResult = selectedEntry
@@ -259,16 +267,13 @@ export function LnkResultManagerDialog({
       : null,
     [selectedMethod, selectedRow],
   )
+  const { jointCount, onCompositionLoaded } = useDocumentJointCount(JSON.stringify(selectedDocumentReference))
   const openResultContextMenu = (event: MouseEvent<HTMLElement>, entry: LnkResultManagerEntryData) => {
     const point = getDialogMenuPoint(event)
     const { row, method, changeKey } = entry
     const currentResult = String(row[method.resultKey] ?? '').trim()
     const pendingResult = pendingResultChanges[changeKey]
     const conclusionName = String(row[method.conclusionKey] ?? '').trim()
-    const conclusionDraft = formatCustomDocumentName(conclusionDrafts[changeKey] ?? conclusionName)
-    const removalBlockReason = !can('lnk.delete')
-      ? 'Нет права удаления в ЛНК. Обратитесь к администратору.'
-      : getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
     const actionPending = isResultReplacementPending || isLayeredControlRemovalPending
     const documentReason = !conclusionName
       ? 'Заключение не указано'
@@ -287,59 +292,15 @@ export function LnkResultManagerDialog({
       sourceLabel: `результат ${method.code} · стык ${String(row.joint ?? row.id)}`,
       actions: [
         {
-          id: 'replace-result',
-          label: 'Изменить результат',
-          icon: CheckSquare2,
+          id: 'edit-entry',
+          label: 'Внести изменения',
+          icon: Pencil,
           disabled: actionPending,
-          onSelect: () => undefined,
-          children: LNK_RESULT_OPTIONS.map((option) => {
-            const blockReason = [
-              ...getLnkResultRestrictionReasons(row, method.code, option, {
-                systemIndexSettings,
-                pvkGoodOnly: processSettings.pvkGoodOnly,
-              }),
-              getUnofficialLnkGoodResultReason(row, option, currentResult, method.code),
-            ].filter(Boolean).join('\n') || undefined
-            return {
-              id: `replace-result-${option}`,
-              label: option,
-              disabled: actionPending || Boolean(blockReason),
-              title: blockReason ?? undefined,
-              onSelect: () => onReplaceResult(row, method.requestKey, option),
-            }
-          }),
-        },
-        {
-          id: 'change-conclusion-date',
-          label: 'Изменить дату заключения',
-          icon: CalendarClock,
-          disabled: metadataBlocked || !conclusionName || isConclusionCorrectionPending || isLayeredControlRemovalPending,
-          title: metadataBlocked ? 'Сначала сохраните или отмените изменения результатов.' : undefined,
           onSelect: () => setDateEditorTarget((current) => ({
-            entryKey: changeKey,
-            token: (current?.token ?? 0) + 1,
+            entryKey: changeKey, token: (current?.token ?? 0) + 1,
           })),
         },
-        {
-          id: 'rename-conclusion',
-          label: 'Переименовать заключение',
-          icon: Pencil,
-          disabled: metadataBlocked || isConclusionCorrectionPending || isLayeredControlRemovalPending || !conclusionDraft || conclusionDraft === conclusionName,
-          title: metadataBlocked ? 'Сначала сохраните или отмените изменения результатов.' : !conclusionDraft || conclusionDraft === conclusionName
-            ? 'Сначала введите новое название в карточке результата'
-            : undefined,
-          onSelect: () => onRenameConclusion(row, method.requestKey, conclusionDraft),
-        },
       ],
-      dangerActions: [{
-        id: 'delete-result',
-        label: pendingResult === null ? 'Будет удалён' : 'Удалить результат',
-        icon: Trash2,
-        danger: true,
-        disabled: pendingResult === null || !currentResult || actionPending || Boolean(removalBlockReason),
-        title: removalBlockReason || 'Удаление будет применено после сохранения и подтверждения.',
-        onSelect: () => onClearResult(row, method.requestKey),
-      }],
       openDocumentDisabledReason: documentReason,
       onOpenDocument: () => onOpenDocument(row, method.conclusionKey),
       onCopyDocumentName,
@@ -353,17 +314,30 @@ export function LnkResultManagerDialog({
       Загрузить ещё результаты
     </Button>
   ) : null
+  const resultSaveControls = (<LnkResultManagerFooter
+        pendingEntriesCount={pendingChangesCount}
+        isResultReplacementPending={isResultReplacementPending || isLayeredControlRemovalPending || isConclusionCorrectionPending || isRequestCorrectionPending}
+        onResetPendingChanges={onResetPendingChanges}
+        onSaveChanges={onSaveChanges}
+      />
+  )
+
   const content = (
     <>
       <DialogHeader
-        title="Редактирование результатов ЛНК"
-        subtitle="Подготовьте замены и удаления, затем сохраните изменения и проверьте общий список подтверждения."
+        title={registryScope === 'all' ? 'Все результаты ЛНК' : 'Результаты выбранных стыков ЛНК'}
+        subtitle="Выберите результат для просмотра. Чтобы изменить документ или выбранную позицию, нажмите «Редактировать»."
         onClose={onClose}
         actions={onStageChange ? <LnkControlStageSwitch value="primary" onChange={(stage) => {
           if (stage === 'beforeHeatTreatment') onStageChange()
         }} /> : null}
       />
 
+      <WorkflowManagerViews view={managerView} documents={{ choices: LNK_CONCLUSION_DOCUMENTS,
+        references: documentReferences,
+        disabled: metadataBlocked || isConclusionCorrectionPending || isLayeredControlRemovalPending,
+        disabledReason: pendingChangesCount > 0 ? 'Сначала сохраните или отмените изменения результатов на вкладке «Стыки».' : undefined,
+        onSaved: onDocumentDateSaved, onMessage, onRunRootCauseAction, onOpenJournalRows }}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-1 flex-col overflow-y-auto border-b border-slate-200 bg-slate-50/70 lg:overflow-visible lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
@@ -613,23 +587,15 @@ export function LnkResultManagerDialog({
                 </section>
               ) : null}
 
-              <section className="space-y-4">
-                <div>
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <ClipboardCheck className="h-4 w-4 text-sky-600" />
-                    Результат и заключение
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Замены и удаления пока только подготовлены. Нажмите «Сохранить изменения», чтобы проверить список и подтвердить. Удаление очистит результат, дату контроля и заключение только у выбранной позиции; остальные позиции общего документа сохранятся.
-                  </p>
-                </div>
-                <div
-                  className="rounded-md border border-slate-200 bg-slate-50/60 p-4"
-                  onContextMenu={(event) => {
-                    if (isNativeContextMenuTarget(event.target)) return
-                    openResultContextMenu(event, selectedEntry)
-                  }}
-                >
+              <div onContextMenu={(event) => {
+                if (!isNativeContextMenuTarget(event.target)) openResultContextMenu(event, selectedEntry)
+              }}>
+                <ManagerEditPanel key={selectedEntry.changeKey} title="Результат и заключение" onEditingChange={handleEditingChange}
+                  defaultOpen={editingEntryKey.current === selectedEntry.changeKey}
+                  requestToken={dateEditorTarget?.entryKey === selectedEntry.changeKey ? dateEditorTarget.token
+                    : rootCauseTarget?.rowId === selectedRow.id && rootCauseTarget.methodCode === selectedMethod.code
+                      ? `${rootCauseTarget.documentPart}:${rootCauseTarget.focus}` : undefined}
+                  summary={<div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
                   <LnkResultManagerSummary
                     row={selectedRow}
                     methodCode={selectedMethod.code}
@@ -640,30 +606,27 @@ export function LnkResultManagerDialog({
                     conclusionDate={selectedConclusionDate}
                   />
                   <DocumentConnectionsButton reference={selectedDocumentReference} />
-                  {selectedDocumentReference && (
-                    dateEditorTarget?.entryKey === selectedEntry.changeKey ||
-                    (rootCauseTarget?.focus === 'date' &&
-                      rootCauseTarget.rowId === selectedRow.id &&
-                      rootCauseTarget.methodCode === selectedMethod.code &&
-                      rootCauseTarget.documentPart === 'conclusion')
-                  ) ? (
-                    <div className="mt-4">
-                      <SystemDocumentDateEditor
-                        key={`${selectedEntry.changeKey}:${dateEditorTarget?.token ?? 0}`}
-                        reference={selectedDocumentReference}
-                        label={`Дата заключения ${selectedMethod.code}`}
-                        disabled={metadataBlocked || isConclusionCorrectionPending || isLayeredControlRemovalPending}
-                        autoFocus
-                        onMessage={onMessage}
-                        onRunRootCauseAction={onRunRootCauseAction}
-                        onSaved={() => {
-                          setDateEditorTarget(null)
-                          onDocumentDateSaved?.()
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                  </div>}>
+                  {selectedDocumentReference ? <WorkflowDocumentLink reference={selectedDocumentReference}
+                    onOpen={managerView.openDocument} onCompositionLoaded={onCompositionLoaded} focusDate={rootCauseTarget?.documentPart === 'conclusion' && rootCauseTarget?.focus === 'date'} /> : null}
+                  <ManagerEditSection title={`Редактирование результата стыка · ${String(selectedRow.joint ?? '-')} · ${selectedMethod.code}`}
+                    description="Изменения применяются только к выбранной позиции. Результаты остальных стыков сохраняются.">
+                    <LnkResultManagerActions
+                      row={selectedRow}
+                      method={selectedMethod}
+                      currentResult={selectedResult}
+                      pendingResult={selectedPendingResult === undefined ? '' : selectedPendingResult}
+                      isResultReplacementPending={isResultReplacementPending || isLayeredControlRemovalPending}
+                      onReplaceResult={onReplaceResult}
+                      onClearResult={onClearResult}
+                    />
+                  {(!selectedDocumentReference || (jointCount ?? 0) > 1) ? <details className="rounded-md border border-slate-200 bg-white p-3" open={!selectedConclusion || rootCauseTarget?.focus === 'name'}>
+                    <summary className="cursor-pointer text-sm font-medium text-slate-700">
+                      <span className="inline-flex items-center gap-2">Изменить заключение только этого стыка
+                        {selectedDocumentReference ? <ConclusionPositionChangeHelp /> : null}
+                      </span>
+                    </summary>
+                  <div>
                     {!selectedConclusion && selectedResult ? (
                       <section aria-label="Дозаполнение реквизитов результата" className="space-y-2">
                         <p className="text-xs text-slate-600">Сохраните название и дату вместе. Результат и история останутся без изменений.</p>
@@ -686,8 +649,9 @@ export function LnkResultManagerDialog({
                       </section>
                     ) : <ResultManagerDocumentEditor
                       value={conclusionDrafts[selectedEntry.changeKey] ?? selectedConclusion}
-                      placeholder="Наименование заключения для этого стыка"
-                      hint={metadataBlocked ? 'Сначала сохраните или отмените изменения результатов.' : 'Название меняется отдельно от даты документа.'}
+                      placeholder="Заключение только этого стыка"
+                      actionLabel="Изменить заключение этого стыка"
+                      hint={metadataBlocked ? 'Сначала сохраните или отмените изменения результатов.' : 'Другое название перенесёт только эту позицию в отдельное заключение или присоединит к существующему с той же датой. Остальные позиции останутся в прежнем документе.'}
                       disabled={metadataBlocked || isConclusionCorrectionPending || isLayeredControlRemovalPending}
                       canRename={Boolean(
                         !isConclusionCorrectionPending &&
@@ -697,18 +661,12 @@ export function LnkResultManagerDialog({
                         formatCustomDocumentName(conclusionDrafts[selectedEntry.changeKey] ?? selectedConclusion) !== selectedConclusion
                       )}
                       onChange={(value) => onConclusionDraftChange(selectedEntry.changeKey, value)}
-                      onRename={(value) => onRenameConclusion(selectedRow, selectedMethod.requestKey, value)}
+                      onRename={(value) => void confirmPositionChange({ previousName: selectedConclusion, nextName: value,
+                        position: `${selectedRow.line} · ${selectedRow.joint} · ${selectedMethod.code}`,
+                        save: () => onRenameConclusion(selectedRow, selectedMethod.requestKey, value) })}
                     />}
-                    <LnkResultManagerActions
-                      row={selectedRow}
-                      method={selectedMethod}
-                      currentResult={selectedResult}
-                      pendingResult={selectedPendingResult === undefined ? '' : selectedPendingResult}
-                      isResultReplacementPending={isResultReplacementPending || isLayeredControlRemovalPending}
-                      onReplaceResult={onReplaceResult}
-                      onClearResult={onClearResult}
-                    />
                   </div>
+                  </details> : null}
                   {selectedMethod.requestKey === 'pvkRequest' && selectedRow.layeredControlAssigned && onRemoveLayeredControl ? (
                     <section aria-label="Послойный контроль" className="mt-4 border-t border-slate-200 pt-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -734,19 +692,21 @@ export function LnkResultManagerDialog({
                   {selectedLayeredFeedback ? <p role={selectedLayeredFeedback.tone === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${selectedLayeredFeedback.tone === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>
                     {selectedLayeredFeedback.message}
                   </p> : null}
-                </div>
-              </section>
+                  {resultSaveControls}
+                  </ManagerEditSection>
+                </ManagerEditPanel>
+              </div>
             </div>
           )}
+          {pendingChangesCount > 0 && (!selectedEntry || !isEditing) ? (
+            <ManagerEditSection title="Подготовленные изменения результатов" description="Здесь сохраняются изменения результатов, подготовленные в этом окне, в том числе скрытые текущим фильтром.">
+              {resultSaveControls}
+            </ManagerEditSection>
+          ) : null}
         </main>
       </div>
 
-      <LnkResultManagerFooter
-        pendingEntriesCount={pendingChangesCount}
-        isResultReplacementPending={isResultReplacementPending || isLayeredControlRemovalPending || isConclusionCorrectionPending || isRequestCorrectionPending}
-        onResetPendingChanges={onResetPendingChanges}
-        onSaveChanges={onSaveChanges}
-      />
+      </WorkflowManagerViews>
       <DialogContextMenuLayer ref={contextMenuRef} />
     </>
   )

@@ -188,6 +188,15 @@ describe('audit provenance recorded with the operation', () => {
       expect(origin('weld_joints', {}, { weldDate: '2026-11-02' }, 'weldDate')).toBe('automatic')
     }
   })
+  it('attributes only explicitly renamed document fields to the user', () => {
+    const origin = createAuditOriginResolver('changeSystemDocumentDate', {
+      reference: { type: 'lnkConclusion', methodCode: 'ВИК' }, nextTitle: 'New', nextDate: '2026-11-02',
+    })
+    expect(origin('weld_joints', {}, { vikConclusion: 'New' }, 'vikConclusion')).toBe('user')
+    expect(origin('generated_documents', {}, { title: 'New' }, 'title')).toBe('user')
+    expect(origin('weld_joints', {}, { rkConclusion: 'New' }, 'rkConclusion')).toBe('automatic')
+    expect(origin('weld_joints', {}, { officiality: null }, 'officiality')).toBe('automatic')
+  })
   it('handles 200000 submitted rows with bounded lookups and only submitted writable values', () => {
     const records = Array.from({ length: 200_000 }, (_, i) => ({ id: i + 1, weldingJournalNote: String(i) }))
     const origin = createAuditOriginResolver('massFillWeldJoints', { records })

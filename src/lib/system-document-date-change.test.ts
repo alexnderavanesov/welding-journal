@@ -5,10 +5,22 @@ import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import {
   buildSystemDocumentDateChangePlan,
-  buildSystemDocumentDateChangePreview,
 } from '@/lib/system-document-date-change'
 
 describe('system document date change', () => {
+  it('allows an unchanged identity only for preview while still validating exact document membership', () => {
+    const input = {
+      reference: { type: 'lnkConclusion' as const, title: 'Заключение', date: '2026-08-09', methodCode: 'ВИК' },
+      nextDate: '2026-08-09', rows: [row(1, { vikConclusion: 'Заключение', vikConclusionDate: '2026-08-09' })],
+    }
+    expect(() => buildSystemDocumentDateChangePlan(input)).toThrow('Новая дата совпадает с текущей')
+    expect(buildSystemDocumentDateChangePlan({ ...input, allowUnchangedForPreview: true })).toMatchObject({
+      rowCount: 1, positionCount: 1, nextTitle: 'Заключение', nextDate: '2026-08-09',
+    })
+    expect(() => buildSystemDocumentDateChangePlan({ ...input, allowUnchangedForPreview: true,
+      rows: [row(1, { vikConclusion: 'Другой документ', vikConclusionDate: '2026-08-09' })],
+    })).toThrow()
+  })
   it('changes every matching position of a multi-row document and preserves its full name including the original date', () => {
     const sourceRows = [
       row(1, {
@@ -67,7 +79,7 @@ describe('system document date change', () => {
   })
 
   it('keeps a user-entered document name unchanged', () => {
-    const preview = buildSystemDocumentDateChangePreview({
+    const plan = buildSystemDocumentDateChangePlan({
       reference: {
         type: 'lnkConclusion',
         title: 'Заключение заказчика ABC',
@@ -81,12 +93,12 @@ describe('system document date change', () => {
       })],
     })
 
-    expect(preview).toMatchObject({
+    expect(plan).toMatchObject({
       nextTitle: 'Заключение заказчика ABC',
       rowCount: 1,
       positionCount: 1,
     })
-    expect(preview?.rows[0]).toMatchObject({
+    expect(plan.rows[0]).toMatchObject({
       vikConclusion: 'Заключение заказчика ABC',
       vikConclusionDate: '2026-08-10',
     })
@@ -119,8 +131,8 @@ describe('system document date change', () => {
     })
   })
 
-  it('previews every exact cycle position without replacing the real row shape', () => {
-    const preview = buildSystemDocumentDateChangePreview({
+  it('plans every exact cycle position without replacing the real row shape', () => {
+    const plan = buildSystemDocumentDateChangePlan({
       reference: {
         type: 'pstoConclusion',
         title: 'Общая диаграмма ПСТО',
@@ -146,8 +158,8 @@ describe('system document date change', () => {
       ],
     })
 
-    expect(preview).toMatchObject({ rowCount: 1, positionCount: 2 })
-    expect(preview?.rows[0]).toMatchObject({
+    expect(plan).toMatchObject({ rowCount: 1, positionCount: 2 })
+    expect(plan.rows[0]).toMatchObject({
       heatTreatmentDiagram: 'Общая диаграмма ПСТО',
       pstoDate: '2026-08-10',
       pstoRepeatCycles: [expect.objectContaining({
@@ -310,3 +322,46 @@ function row(id: number, overrides: Partial<WeldRow> = {}): WeldRow {
     ...overrides,
   } as WeldRow
 }
+
+it('renames a complete conclusion without changing its date, results, or unrelated methods', () => {
+  const source = [1, 2].map(id => row(id, {
+    vikConclusion: 'Общее', vikConclusionDate: '2026-08-09', vikResult: 'годен',
+    rkConclusion: 'Общее', rkConclusionDate: '2026-08-09', rkResult: 'ремонт',
+  }))
+  const plan = buildSystemDocumentDateChangePlan({
+    reference: { type: 'lnkConclusion', title: 'Общее', date: '2026-08-09', methodCode: 'ВИК' },
+    nextDate: '2026-08-09', nextTitle: 'Новое общее', rows: source,
+  })
+  expect(plan.rowCount).toBe(2)
+  expect(plan.positionCount).toBe(2)
+  expect(plan.nextReference).toMatchObject({ title: 'Новое общее', date: '2026-08-09' })
+  for (const result of plan.rows) expect(result).toMatchObject({
+    vikConclusion: 'Новое общее', vikConclusionDate: '2026-08-09', vikResult: 'годен',
+    rkConclusion: 'Общее', rkConclusionDate: '2026-08-09', rkResult: 'ремонт',
+  })
+  expect(source[0].vikConclusion).toBe('Общее')
+})
+
+it('renames only the exact before-TO and mixed primary/repeat positions of a shared document', () => {
+  const preRows = [1, 2].map(id => row(id, { preHeatTreatmentControls: [{ id: id * 10, weldJointId: id,
+    method: 'ВИК', conclusionName: 'До ТО', conclusionDate: '2026-08-09', result: 'годен' }] }))
+  const pre = buildSystemDocumentDateChangePlan({
+    reference: { type: 'lnkConclusion', title: 'До ТО', date: '2026-08-09', methodCode: 'ВИК', sourceKind: 'beforeHeatTreatment' },
+    nextDate: '2026-08-09', nextTitle: 'До ТО исправлено', rows: preRows,
+    sourcePositions: preRows.map(r => ({ kind: 'beforeHeatTreatment' as const, weldJointId: r.id, relationId: r.id * 10, methodCode: 'ВИК' })),
+  })
+  expect(pre.preHeatTreatmentControls.map(c => [c.conclusionName, c.result, c.conclusionDate])).toEqual([
+    ['До ТО исправлено', 'годен', '2026-08-09'], ['До ТО исправлено', 'годен', '2026-08-09'],
+  ])
+  const psto = buildSystemDocumentDateChangePlan({
+    reference: { type: 'pstoConclusion', title: 'Диаграмма', date: '2026-08-09', sourceKind: 'pstoCycle', cycleSequences: [1, 2] },
+    nextDate: '2026-08-09', nextTitle: 'Общая диаграмма',
+    rows: [row(1, { heatTreatmentDiagram: 'Диаграмма', pstoDate: '2026-08-09', pstoResult: 'проведено' }),
+      row(2, { heatTreatmentDiagram: 'Первичная', pstoDate: '2026-08-01', pstoRepeatCycles: [{ id: 22, weldJointId: 2, sequence: 2,
+        heatTreatmentDiagram: 'Диаграмма', pstoDate: '2026-08-09', pstoResult: 'проведено' }] })],
+    sourcePositions: [{ kind: 'pstoCycle', weldJointId: 1, relationId: 1, sequence: 1 }, { kind: 'pstoCycle', weldJointId: 2, relationId: 22, sequence: 2 }],
+  })
+  expect(psto.rows[0]).toMatchObject({ heatTreatmentDiagram: 'Общая диаграмма', pstoDate: '2026-08-09', pstoResult: 'проведено' })
+  expect(psto.rows[1].heatTreatmentDiagram).toBe('Первичная')
+  expect(psto.pstoRepeatCycles[0]).toMatchObject({ heatTreatmentDiagram: 'Общая диаграмма', pstoDate: '2026-08-09', pstoResult: 'проведено' })
+})

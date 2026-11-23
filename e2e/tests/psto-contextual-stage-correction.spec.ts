@@ -419,14 +419,16 @@ test('после переноса: переход из документа и и�
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
-  const manager = dialog(page, 'Редактирование результатов ЛНК до ТО')
+  const manager = dialog(page, 'Все результаты ЛНК до ТО')
   await manager.getByLabel('Вид контроля в реестре').selectOption('ВИК')
   await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill(SOURCE)
   const entry = manager.getByRole('button').filter({ hasText: `${SOURCE} · F881` })
   await expect(entry).toHaveCount(1)
   await expect(manager.getByRole('button').filter({ hasText: `${SOURCE} · F882` })).toHaveCount(0)
   await entry.click()
-  const nameInput = manager.getByRole('textbox', { name: 'Наименование заключения', exact: true })
+  await manager.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await manager.getByRole('button', { name: 'К документу', exact: true }).click()
+  const nameInput = manager.getByRole('textbox', { name: 'Название документа', exact: true })
   await expect(nameInput).toHaveValue('CTX-vik-CONCLUSION')
 
   const documents = () => withE2eDatabase(async db => (await db.query(`select d.id,d.title,d.row_count,d.source_metadata,d.specialists,
@@ -444,9 +446,9 @@ test('после переноса: переход из документа и и�
   // A name-only correction is a supported document edit; dates, the good
   // result, relation identity and the historical specialist pair stay intact.
   await nameInput.fill(correctedName)
-  await manager.getByRole('button', { name: 'Сохранить реквизиты', exact: true }).click()
-  await expect(page.getByText('Результат НК до ТО обновлен.', { exact: true })).toBeVisible()
-  await expect(manager.getByRole('button', { name: 'Сохранить реквизиты', exact: true })).toBeDisabled()
+  await manager.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).click()
+  await dialog(page, 'Сохранить изменения документа').getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+  await expect(page.getByText(/Реквизиты документа сохранены/)).toBeVisible()
   const movedAfter = await snapshot(fixture.moved.id)
   const controlFacts = (controls: StoredRow[]) => controls.map(({ updated_at: _updatedAt, ...facts }) => facts)
   expect(controlFacts(movedAfter.controls)).toEqual(controlFacts(movedBefore.controls).map(control =>

@@ -22,11 +22,8 @@ export type PstoReportModalSyncEffectsOptions = {
   heatTreatmentRows: WeldRow[]
   isPstoRowsContextReady: boolean
   isPstoRequestModalOpen: boolean
-  isPstoResultManagerOpen: boolean
   isPstoResultModalOpen: boolean
-  managedPstoResultRows: WeldRow[]
   pstoResultRequestOptions: RequestDocumentIdentity[]
-  setManagedPstoDiagramDrafts: Dispatch<SetStateAction<Record<number, string>>>
   setPstoResultDraft: Dispatch<SetStateAction<PstoResultDraftState>>
   setSelectedHeatTreatmentIds: SetNumberSet
 }
@@ -36,11 +33,8 @@ export function usePstoReportModalSyncEffects({
   heatTreatmentRows,
   isPstoRowsContextReady,
   isPstoRequestModalOpen,
-  isPstoResultManagerOpen,
   isPstoResultModalOpen,
-  managedPstoResultRows,
   pstoResultRequestOptions,
-  setManagedPstoDiagramDrafts,
   setPstoResultDraft,
   setSelectedHeatTreatmentIds,
 }: PstoReportModalSyncEffectsOptions) {
@@ -92,27 +86,8 @@ export function usePstoReportModalSyncEffects({
       return { ...current, requestName, requestDate, rowIds }
     })
   }, [heatTreatmentRows, isPstoResultModalOpen, isPstoRowsContextReady, pstoResultRequestOptions, setPstoResultDraft])
-
-  useEffect(() => {
-    if (!isPstoResultManagerOpen || !isPstoRowsContextReady) return
-    setManagedPstoDiagramDrafts((current) => {
-      const next = Object.fromEntries(
-        managedPstoResultRows.map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()]),
-      )
-      return areStringRecordsEqual(current, next) ? current : next
-    })
-  }, [isPstoResultManagerOpen, isPstoRowsContextReady, managedPstoResultRows, setManagedPstoDiagramDrafts])
 }
 
 function areNumberSetsEqual(left: ReadonlySet<number>, right: ReadonlySet<number>) {
   return left.size === right.size && [...left].every((value) => right.has(value))
-}
-
-function areStringRecordsEqual(
-  left: Readonly<Record<string | number, string>>,
-  right: Readonly<Record<string | number, string>>,
-) {
-  const leftEntries = Object.entries(left)
-  const rightKeys = Object.keys(right)
-  return leftEntries.length === rightKeys.length && leftEntries.every(([key, value]) => right[key] === value)
 }

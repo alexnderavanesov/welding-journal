@@ -13,9 +13,11 @@ import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { assertNoNewPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import {
   buildSystemDocumentDateChangePlan,
+  getSystemDocumentPrimaryFieldPairs,
   type SystemDocumentDateChangePlan,
 } from '@/lib/system-document-date-change'
 import {
+  isSystemDocumentNameForRows,
   isSystemDocumentSourceKind,
   isSystemDocumentType,
   type SystemDocumentReference,
@@ -31,7 +33,7 @@ import {
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
-import { updatePstoRepeatCycleRecords } from '@/server/psto-cycle-state'
+import { updatePstoRepeatDocumentFields } from '@/server/psto-cycle-state'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
   matchesSourcedSystemDocumentReference,
@@ -40,8 +42,7 @@ import {
   lockSystemDocumentIndexes,
 } from '@/server/system-document-index'
 import { lockLayeredControlDocumentsForWeldChange } from '@/server/layered-control-documents'
-import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
-import { updateWeldJointsInBatches } from '@/server/weld-persistence'
+import { readRequestConclusionSettings, type SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 import {
   assertExpectedInteractiveWeldVersions,
@@ -50,6 +51,11 @@ import {
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { prepareSpecialistDateChanges, confirmSpecialistDateChanges } from './specialist-date-validation'
+import { writeDocumentSpecialists } from './specialists'
+import { requireStoredWorkflowDocumentPermission } from './workflow-document-access'
+import { assertWholeWorkflowDocumentReference, workflowDocumentReferenceArea } from '@/lib/workflow-document-area'
+import { requireContextPermission } from './access-payload'
 
 export type SystemDocumentDateChangeResult = Pick<
   SystemDocumentDateChangePlan,
@@ -70,6 +76,7 @@ export async function changeSystemDocumentDate({
   data: SystemDocumentDateChangeData
 }) {
   const data = normalizeSystemDocumentDateChangeData(input)
+  requireContextPermission(`${workflowDocumentReferenceArea(data.reference)}.edit`)
   await assertSecurityScope('edit')
   const db = requireDb()
   return db.transaction(async (tx) => {
@@ -109,9 +116,18 @@ export async function changeSystemDocumentDate({
       await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
       tx,
     )
+    if (data.nextTitle !== undefined && data.nextTitle !== data.reference.title &&
+      (!data.reference.sourceKind || data.reference.sourceKind === 'pstoCycle') &&
+      (data.reference.type === 'lnkRequest' || data.reference.type === 'pstoRequest')) {
+      const settings = await readRequestConclusionSettings(tx)
+      if (isSystemDocumentNameForRows(currentRows, data.reference.type, data.reference.title, settings)) {
+        throw new Error('Системную заявку нельзя переименовать')
+      }
+    }
     const plan = buildSystemDocumentDateChangePlan({
       reference: toStoredReference(data.reference, document.id),
       nextDate: data.nextDate,
+      nextTitle: data.nextTitle,
       rows: currentRows,
       sourcePositions: metadata?.sourcePositions ?? [],
     })
@@ -130,6 +146,8 @@ export async function changeSystemDocumentDate({
     )
 
     await assertNoDocumentIdentityConflict(tx, document.id, document.type, plan.nextReference)
+    const specialists = await prepareSpecialistDateChanges(tx, plan.previousDate === plan.nextDate ? [] : [{ id: document.id, type: document.type, title: document.title, date: plan.nextDate, snapshot: document.specialists }])
+    await confirmSpecialistDateChanges(specialists, { id: document.id, updatedAt: document.updatedAt, snapshot: document.specialists, date: plan.nextDate, versions: data.expectedVersions }, data.specialistCorrectionConfirmation)
     await persistDateChangePlan(tx, plan, storedRows)
     await tx
       .update(generatedDocuments)
@@ -141,6 +159,7 @@ export async function changeSystemDocumentDate({
         updatedAt: new Date(),
       })
       .where(eq(generatedDocuments.id, document.id))
+    await writeDocumentSpecialists(tx, specialists.writes)
 
     await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, plan.touchedRowIds)
     const touchedRowIds = new Set(plan.touchedRowIds)
@@ -175,14 +194,16 @@ export function normalizeSystemDocumentDateChangeData(
       version: String(entry?.version ?? '').trim(),
     }))
     .filter((entry) => entry.id > 0)
-  return { reference, nextDate, expectedVersions }
+  return { reference, nextDate, expectedVersions, ...(value.nextTitle !== undefined ? { nextTitle: String(value.nextTitle).trim() } : {}), ...(value.specialistCorrectionConfirmation ? { specialistCorrectionConfirmation: String(value.specialistCorrectionConfirmation) } : {}) }
 }
 
 function normalizeReference(value: SystemDocumentReference | undefined): SystemDocumentReference {
   if (!value || !isSystemDocumentType(value.type)) throw new Error('Не указан тип документа')
+  assertWholeWorkflowDocumentReference(value)
   const title = String(value.title ?? '').trim()
   const date = String(value.date ?? '').trim().slice(0, 10)
   if (!title) throw new Error('Не указано текущее наименование документа')
+  if (value.sourceKind && !isSystemDocumentSourceKind(value.sourceKind)) throw new Error('Неизвестный этап системного документа.')
   const sourceKind = isSystemDocumentSourceKind(value.sourceKind) ? value.sourceKind : undefined
   const documentId = Math.floor(Number(value.documentId))
   return {
@@ -190,7 +211,7 @@ function normalizeReference(value: SystemDocumentReference | undefined): SystemD
     type: value.type,
     title,
     date,
-    ...(value.methodCode ? { methodCode: String(value.methodCode).trim() } : {}),
+    ...(value.methodCode ? { methodCode: String(value.methodCode).trim().toLocaleUpperCase('ru-RU') } : {}),
     ...(sourceKind ? { sourceKind } : {}),
     ...(value.cycleSequences?.length
       ? {
@@ -228,15 +249,16 @@ async function loadSystemDocument(
         .orderBy(asc(generatedDocuments.id))
   const candidates = forUpdate ? await query.for('update') : await query
   const document = candidates.find((candidate) => {
-    if (candidate.title !== reference.title || (candidate.periodFrom ?? '') !== reference.date) return false
+    if (candidate.type !== storageType || candidate.title !== reference.title || (candidate.periodFrom ?? '') !== reference.date) return false
     const metadata = parseSystemDocumentMetadata(candidate.sourceMetadata)
     return reference.sourceKind
       ? matchesSourcedSystemDocumentReference(candidate.sourceMetadata, reference)
-      : !metadata?.sourceKind
+      : !metadata?.sourceKind && !reference.cycleSequences?.length
   })
   if (!document) {
     throw new Error('Документ уже изменился или больше не существует. Обновите данные. Ничего не сохранено.')
   }
+  requireStoredWorkflowDocumentPermission(document.type, 'edit')
   return document
 }
 
@@ -348,7 +370,23 @@ async function persistDateChangePlan(
   const previousRows = new Map(storedRows.map((row) => [row.id, row]))
   const directIds = new Set(plan.directRowIds)
   const directRows = plan.rows.filter((row) => directIds.has(row.id))
-  await updateWeldJointsInBatches(tx, directRows, previousRows)
+  const isPstoProfile = plan.nextReference.sourceKind === 'pstoCycle' ||
+    plan.nextReference.sourceKind === 'pstoRepeat' ||
+    plan.nextReference.type === 'pstoRequest' ||
+    plan.nextReference.type === 'pstoConclusion'
+  const now = new Date()
+  const timestamps = isPstoProfile ? { pstoUpdatedAt: now, updatedAt: now } : { lnkUpdatedAt: now, updatedAt: now }
+  // A document edit must not normalize or rewrite unrelated weld fields.
+  // One batch per method (bounded by the method list), never one query per weld.
+  for (const { nameKey, dateKey } of getSystemDocumentPrimaryFieldPairs(plan.nextReference)) {
+    const ids = directRows.filter(row => {
+      const previous = previousRows.get(row.id) as WeldRow | undefined
+      return previous && (row[nameKey] !== previous[nameKey] || row[dateKey] !== previous[dateKey])
+    }).map(row => row.id)
+    if (ids.length) await tx.update(weldJoints)
+      .set({ [nameKey]: plan.nextTitle, [dateKey]: plan.nextDate, ...timestamps })
+      .where(buildNumberArrayMatch(weldJoints.id, ids))
+  }
 
   if (plan.preHeatTreatmentControls.length > 0) {
     const ids = plan.preHeatTreatmentControls.map((control) => control.id)
@@ -361,20 +399,18 @@ async function persistDateChangePlan(
       .where(buildNumberArrayMatch(preHeatTreatmentControls.id, ids))
   }
 
-  await updatePstoRepeatCycleRecords(tx, plan.pstoRepeatCycles)
+  if (plan.pstoRepeatCycles.length) {
+    const [fields] = getSystemDocumentPrimaryFieldPairs(plan.nextReference)
+    if (!fields) throw new Error('Не удалось определить реквизиты документа ПСТО/ТВМТ.')
+    await updatePstoRepeatDocumentFields(tx, plan.pstoRepeatCycles.map(cycle => cycle.id),
+      { [fields.nameKey]: plan.nextTitle, [fields.dateKey]: plan.nextDate }, now)
+  }
 
   const childOnlyIds = plan.touchedRowIds.filter((rowId) => !directIds.has(rowId))
-  const isPstoProfile = plan.nextReference.sourceKind === 'pstoCycle' ||
-    plan.nextReference.sourceKind === 'pstoRepeat' ||
-    plan.nextReference.type === 'pstoRequest' ||
-    plan.nextReference.type === 'pstoConclusion'
   if (childOnlyIds.length > 0) {
-    const now = new Date()
     await tx
       .update(weldJoints)
-      .set(isPstoProfile
-        ? { pstoUpdatedAt: now, updatedAt: now }
-        : { lnkUpdatedAt: now, updatedAt: now })
+      .set(timestamps)
       .where(buildNumberArrayMatch(weldJoints.id, childOnlyIds))
   }
 }

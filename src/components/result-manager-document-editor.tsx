@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 type ResultManagerDocumentEditorProps = {
+  actionLabel?: string
   value: string
   placeholder: string
   hint?: string
@@ -14,6 +15,7 @@ type ResultManagerDocumentEditorProps = {
 }
 
 export function ResultManagerDocumentEditor({
+  actionLabel = 'Переименовать',
   value,
   placeholder,
   hint,
@@ -37,12 +39,12 @@ export function ResultManagerDocumentEditor({
         />
         <Button type="button" variant="outline" size="sm" onClick={() => onRename(value)} disabled={!canRename} className="h-8">
           <Pencil className="mr-1.5 h-3.5 w-3.5" />
-          Переименовать
+          {actionLabel}
         </Button>
       </div>
       {canRename ? (
         <p className="text-[11px] font-medium leading-4 text-amber-700">
-          Новое название еще не сохранено. Для применения нажмите «Переименовать».
+          Новое название еще не сохранено. Для применения нажмите «{actionLabel}».
         </p>
       ) : null}
       {hint ? <p className="text-[11px] leading-4 text-slate-500">{hint}</p> : null}

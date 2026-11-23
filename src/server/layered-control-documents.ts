@@ -58,6 +58,7 @@ type ExistingLayeredAssignment = {
 }
 
 type LayeredControlDocumentWrite = {
+  previousDate?: string | null
   rowId: number
   type: LayeredControlDocumentType
   targetDocumentId: number | null
@@ -256,6 +257,7 @@ async function syncLayeredControlRowsInTransaction(
         rowId: row.id,
         type,
         targetDocumentId: existing?.documentId ?? null,
+        previousDate: existing?.periodFrom,
         title,
         fileName,
         mimeType: refreshTitlesOnly ? existing!.mimeType : XLSX_MIME_TYPE,
@@ -399,6 +401,18 @@ export async function persistLayeredControlDocumentWrites(
     .filter((write) => write.targetDocumentId != null && write.shouldUpdate)
     .map((write) => [write.targetDocumentId!, write])).values()]
   if (changedExistingWrites.length > 0) {
+    // Layered conclusions inherit their date from the weld. Check actual locked
+    // snapshots only when that date changes, including imports and rebuilds.
+    const dateChanges = changedExistingWrites.filter(write => write.previousDate !== undefined && write.previousDate !== write.periodFrom)
+    if (dateChanges.length) {
+      const documents = await tx.select({ id: generatedDocuments.id, type: generatedDocuments.type, title: generatedDocuments.title, snapshot: generatedDocuments.specialists })
+        .from(generatedDocuments).where(buildNumberArrayMatch(generatedDocuments.id, dateChanges.map(write => write.targetDocumentId!))).orderBy(asc(generatedDocuments.id)).for('update')
+      const dates = new Map(dateChanges.map(write => [write.targetDocumentId, write.periodFrom ?? '']))
+      const { prepareSpecialistDateChanges } = await import('./specialist-date-validation')
+      const { writeDocumentSpecialists } = await import('./specialists')
+      const checked = await prepareSpecialistDateChanges(tx, documents.map(document => ({ ...document, date: dates.get(document.id)! })))
+      await writeDocumentSpecialists(tx, checked.writes)
+    }
     await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(changedExistingWrites.map(write => write.targetDocumentId!))}::integer[])` }], () => tx.execute(sql`
       update "generated_documents" as document
       set

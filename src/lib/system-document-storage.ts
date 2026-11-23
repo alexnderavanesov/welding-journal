@@ -16,6 +16,7 @@ import {
 import {
     buildSystemDocumentSummaries,
     createSystemDocumentTemplateContext,
+    getSystemDocumentLookupReference,
     type SystemDocumentReference,
     type SystemDocumentSummary,
 } from '@/lib/system-document-types'
@@ -26,6 +27,7 @@ import {
     getSystemDocumentSpecialists,
     listSystemDocumentHistoryFilterOptions,
     listSystemDocumentHistoryGrid,
+    listWorkflowDocumentHistoryGrid,
     type RemoteSystemDocumentHistoryFilterOptionsRequest,
     type RemoteSystemDocumentHistoryGridRequest,
 } from '@/server/system-documents'
@@ -37,6 +39,10 @@ export function loadSystemDocumentHistoryGrid(request: RemoteSystemDocumentHisto
   return listSystemDocumentHistoryGrid({ data: request })
 }
 
+export function loadWorkflowDocumentHistoryGrid(request: RemoteSystemDocumentHistoryGridRequest & { workflowArea: 'lnk' | 'psto' }) {
+  return listWorkflowDocumentHistoryGrid({ data: request })
+}
+
 export function loadSystemDocumentHistoryFilterOptions(
   request: RemoteSystemDocumentHistoryFilterOptionsRequest,
 ) {
@@ -44,11 +50,11 @@ export function loadSystemDocumentHistoryFilterOptions(
 }
 
 export function loadSystemDocumentRows(reference: SystemDocumentReference) {
-  return getSystemDocumentRows({ data: reference })
+  return getSystemDocumentRows({ data: getSystemDocumentLookupReference(reference) })
 }
 
 export function loadSystemDocumentDateContext(reference: SystemDocumentReference) {
-  return getSystemDocumentDateContext({ data: reference })
+  return getSystemDocumentDateContext({ data: getSystemDocumentLookupReference(reference) })
 }
 
 export async function createCurrentSystemDocumentBlob({
@@ -87,7 +93,7 @@ export async function createCurrentSystemDocumentBlob({
 
   const specialists = currentSummary?.specialists !== undefined ? currentSummary.specialists
     : reference.specialists !== undefined ? reference.specialists
-    : reference.type.endsWith('Conclusion') ? await getSystemDocumentSpecialists({ data: reference }) : null
+    : reference.type.endsWith('Conclusion') ? await getSystemDocumentSpecialists({ data: getSystemDocumentLookupReference(reference) }) : null
 
   return createWeldingJournalBlobFromTemplate(currentTemplate, currentRows, {
     welderStamps,

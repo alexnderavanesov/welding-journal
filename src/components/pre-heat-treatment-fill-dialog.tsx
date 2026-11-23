@@ -111,7 +111,7 @@ export function PreHeatTreatmentFillDialog({ rowIds, chainRootId, markRowIds, on
         </table></div>}
         {pages > 1 ? <div className="flex items-center gap-3"><Button type="button" variant="outline" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Назад</Button><span className="text-sm">{currentPage + 1} / {pages}</span><Button type="button" variant="outline" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>Далее</Button></div> : null}
         <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Состав создаваемых документов · {data.groups.length}</summary><div className="mt-3"><PreHeatTreatmentDocumentTable rows={data.groups.map(group => ({ key: group.key, joint: group.items.map(item => item.joint).join(', '), method: [...new Set(group.positions.map(position => position.methodCode))].join(', '), kind: group.action, name: group.name, date: group.date, result: group.action === 'result' ? 'Годен' : null }))} /></div></details>
-        <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Специалисты новых заключений</summary><div className="mt-3 space-y-4">{PRE_HEAT_TREATMENT_LNK_METHODS.filter(method => data.groups.some(group => group.action === 'result' && group.positions[0]?.methodCode === method.code)).map(method => <FillSpecialists key={method.code} method={method.code} value={options.specialists?.[method.code] ?? data.specialists[method.code] ?? {}} onChange={selection => setOptions(current => ({ ...current, specialists: { ...current.specialists, [method.code]: selection } }))} />)}</div></details>
+        <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Специалисты новых заключений</summary><div className="mt-3 space-y-4">{PRE_HEAT_TREATMENT_LNK_METHODS.filter(method => data.groups.some(group => group.action === 'result' && group.positions[0]?.methodCode === method.code)).map(method => <FillSpecialists key={method.code} method={method.code} dates={[...new Set(data.groups.filter(group => group.action === 'result' && group.positions[0]?.methodCode === method.code).map(group => group.date))]} value={options.specialists?.[method.code] ?? data.specialists[method.code] ?? {}} onChange={selection => setOptions(current => ({ ...current, specialists: { ...current.specialists, [method.code]: selection } }))} />)}</div></details>
         {data.existing.length ? <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Существующие сведения — сохраняются</summary><div className="mt-3"><PreHeatTreatmentDocumentTable rows={preHeatTreatmentFactRows(data.existing.map(item => ({ ...item, requestDate: item.date })), data.issues.filter(issue => !issue.itemKey))} /></div></details> : null}
       </> : null}
     </fieldset>
@@ -122,8 +122,8 @@ export function PreHeatTreatmentFillDialog({ rowIds, chainRootId, markRowIds, on
   </LargeDialogShell>
 }
 
-function FillSpecialists({ method, value, onChange }: { method: string; value: SpecialistSelection; onChange: (value: SpecialistSelection) => void }) {
+function FillSpecialists({ method, dates, value, onChange }: { method: string; dates: string[]; value: SpecialistSelection; onChange: (value: SpecialistSelection) => void }) {
   const profile = getSpecialistDocumentProfile('lnkConclusion', method)!
-  const options = useSpecialistOptions(profile)
+  const options = useSpecialistOptions(profile, undefined, dates.map(date => ({ date, methods: profile.methods })))
   return <div className="grid gap-3 sm:grid-cols-[100px_1fr_1fr]"><span className="text-sm font-semibold">{method}</span>{(['first', 'second'] as const).map((role, index) => <SpecialistSelect key={role} label={profile.labels[index]} value={value[role]} profile={profile} options={options} density="compact" onChange={id => onChange({ ...value, [role]: id })} />)}</div>
 }

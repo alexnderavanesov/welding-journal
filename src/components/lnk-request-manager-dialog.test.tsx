@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render as baseRender, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LnkRequestManagerDialog } from '@/components/lnk-request-manager-dialog'
@@ -50,7 +51,6 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
     allRows: [row],
     requestRows: [row],
     requestMethods: [LNK_METHODS[0]],
-    requestNameDraft: openRequest.name,
     isManagerPending: false,
     isCorrectionPending: false,
     canOpenDocument: () => true,
@@ -62,8 +62,6 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
     onOpenDocument,
     onOpenJournalRows,
     onCopyDocumentName: vi.fn(),
-    onRequestNameDraftChange: vi.fn(),
-    onRenameRequest: vi.fn(),
     onClearPosition: vi.fn(),
     onDeleteRequest: vi.fn(),
     ...overrides,
@@ -83,15 +81,14 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
 
 describe('LnkRequestManagerDialog', () => {
   it('offers stage viewing only for the active request context without invoking mutation actions', () => {
-    const onStageChange = vi.fn(), onRenameRequest = vi.fn(), onDeleteRequest = vi.fn(), onClearPosition = vi.fn()
-    const { rerenderDialog } = renderDialog({ onRenameRequest, onDeleteRequest, onClearPosition })
+    const onStageChange = vi.fn(), onDeleteRequest = vi.fn(), onClearPosition = vi.fn()
+    const { rerenderDialog } = renderDialog({ onDeleteRequest, onClearPosition })
     expect(screen.queryByRole('group', { name: 'Этап контроля ЛНК' })).not.toBeInTheDocument()
     rerenderDialog({ onStageChange })
     expect(screen.getByRole('group', { name: 'Этап контроля ЛНК' })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'До ТО' }))
     expect(onStageChange).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Изменить этап контроля' })).not.toBeInTheDocument()
-    expect(onRenameRequest).not.toHaveBeenCalled()
     expect(onDeleteRequest).not.toHaveBeenCalled()
     expect(onClearPosition).not.toHaveBeenCalled()
   })
@@ -108,7 +105,7 @@ describe('LnkRequestManagerDialog', () => {
     const { onChangeRequest } = renderDialog()
     const dialog = screen.getByRole('dialog')
 
-    expect(screen.getByRole('heading', { name: 'Редактирование заявок ЛНК' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Все заявки ЛНК' })).toBeInTheDocument()
     expect(dialog).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getAllByText('Можно дополнить').length).toBeGreaterThan(0)
 
@@ -156,14 +153,14 @@ describe('LnkRequestManagerDialog', () => {
       requestOptions: [request],
       requestRows: [{ ...row, vikRequestDate: openRequest.date, rkRequestDate: openRequest.date }],
       requestMethods: [vikMethod, rkMethod],
-      requestNameDraft: fixedRequest.name,
     })
 
+    openEditors()
     expect(screen.getByRole('button', { name: 'ВИК' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'РК' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Добавить позиции' }))
     expect(onAddPositions).toHaveBeenCalledWith(request)
-    fireEvent.click(screen.getByRole('button', { name: 'Дополнительные действия с заявкой' }))
+    openEditors()
     expect(screen.getByRole('button', { name: 'Удалить выбранную заявку' })).toBeDisabled()
     expect(screen.getByText(/Удаление недоступно: по стыку F2, РК/)).toBeInTheDocument()
   })
@@ -172,6 +169,7 @@ describe('LnkRequestManagerDialog', () => {
     const onClearPosition = vi.fn()
     renderDialog({ onClearPosition })
 
+    openEditors()
     fireEvent.click(screen.getByRole('button', { name: 'ВИК' }))
 
     expect(onClearPosition).toHaveBeenCalledWith(
@@ -255,7 +253,6 @@ describe('LnkRequestManagerDialog', () => {
       allRows: [loadedRow],
       requestRows: [loadedRow],
       requestMethods: [rkMethod],
-      requestNameDraft: fixedRequest.name,
     })
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Открыть заявку' })).toBeVisible())
@@ -263,3 +260,19 @@ describe('LnkRequestManagerDialog', () => {
 
   })
 })
+
+function openEditors() {
+  for (const button of screen.queryAllByRole('button', { name: 'Редактировать' })) fireEvent.click(button)
+}
+
+vi.mock('@/lib/use-document-position-change', () => ({ useDocumentPositionChange: () => ({ save }: { save: () => void }) => save() }))
+vi.mock('@/components/system-document-date-editor', () => ({ SystemDocumentDateEditor: ({ label, mode }: { label: string; mode?: string }) => <div data-testid={mode === 'name' ? 'document-name-editor' : 'document-date-editor'}>{label}</div> }))
+
+const render = (ui: import('react').ReactNode, options?: import('@testing-library/react').RenderOptions) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>, ...options })
+}
+vi.mock('@/lib/use-system-document-context', () => ({
+  useSystemDocumentContext: () => ({ data: { rows: [{ id: 1 }, { id: 2 }], sourcePositions: [] }, isPending: false, isError: false }),
+}))
+vi.mock('@/lib/system-document-storage', () => ({ loadWorkflowDocumentHistoryGrid: async () => ({ rows: [], total: 0 }) }))

@@ -41,6 +41,112 @@ async function filterValue(page: Page, column: Locator, value: string) {
   await filter.getByRole('button', { name: 'Применить', exact: true }).click()
 }
 
+type RevealTraceHost = Window & { __programRevealTrace?: { done: Promise<unknown>; stop: (reason: string) => void } }
+
+async function startProgramRevealTrace(page: Page) {
+  if (process.env.PROGRAM_REVEAL_TRACE !== '1') return async () => {}
+  await page.evaluate(() => {
+    const host = window as RevealTraceHost
+    host.__programRevealTrace?.stop('replaced')
+    const started = performance.now()
+    const data = { samples: [] as Array<Record<string, unknown>>, calls: [] as Array<Record<string, unknown>>,
+      intersections: [] as Array<Record<string, unknown>>, stopReason: '', milliseconds: 0, droppedCalls: 0 }
+    const originalTo = window.scrollTo, originalInto = Element.prototype.scrollIntoView
+    let frame = 0, timeout = 0, stopped = false, targetSeen: number | undefined, tick = 0
+    let observed: Element | null = null
+    let resolve!: (value: unknown) => void
+    const done = new Promise<unknown>(finish => { resolve = finish })
+    const rect = (element: Element | null) => {
+      if (!element) return null
+      const { top, right, bottom, left, width, height } = element.getBoundingClientRect()
+      return { top, right, bottom, left, width, height }
+    }
+    const identity = (element: Element | null) => element ? {
+      tag: element.tagName, grid: element.getAttribute('data-program-grid'), row: element.getAttribute('row-id'),
+      label: element.getAttribute('aria-label'), class: element.getAttribute('class'),
+    } : null
+    const observer = new IntersectionObserver(entries => {
+      if (data.intersections.length < 40) for (const entry of entries) data.intersections.push({
+        at: performance.now() - started, ratio: entry.intersectionRatio, intersecting: entry.isIntersecting,
+        target: rect(entry.target), intersection: entry.intersectionRect.toJSON(),
+      })
+    }, { threshold: [0, 0.01, 1] })
+    const call = (method: string, args: unknown[], element?: Element) => {
+      if (data.calls.length >= 100) { data.droppedCalls++; return undefined }
+      const entry = { at: performance.now() - started, method, target: identity(element ?? null),
+        args: args.map(value => value && typeof value === 'object' ? Object.fromEntries(
+          ['top', 'left', 'block', 'inline', 'behavior'].filter(key => key in value).map(key => [key, (value as Record<string, unknown>)[key]]),
+        ) : value), beforeScrollY: window.scrollY, afterScrollY: 0,
+        stack: new Error().stack?.split('\n').slice(2, 9).join('\n') }
+      data.calls.push(entry)
+      return entry
+    }
+    const tracedTo = function (this: Window, ...args: unknown[]) {
+      const entry = call('scrollTo', args)
+      const result = Reflect.apply(originalTo, this, args)
+      if (entry) entry.afterScrollY = window.scrollY
+      return result
+    } as typeof window.scrollTo
+    const tracedInto = function (this: Element, ...args: unknown[]) {
+      const entry = call('scrollIntoView', args, this)
+      const result = Reflect.apply(originalInto, this, args)
+      if (entry) entry.afterScrollY = window.scrollY
+      return result
+    }
+    const stop = (reason: string) => {
+      if (stopped) return
+      stopped = true; cancelAnimationFrame(frame); clearTimeout(timeout); observer.disconnect()
+      if (window.scrollTo === tracedTo) window.scrollTo = originalTo
+      if (Element.prototype.scrollIntoView === tracedInto) Element.prototype.scrollIntoView = originalInto
+      data.stopReason = reason; data.milliseconds = performance.now() - started; resolve(data)
+    }
+    host.__programRevealTrace = { done, stop }
+    window.scrollTo = tracedTo; Element.prototype.scrollIntoView = tracedInto
+    const sample = () => {
+      if (stopped) return
+      try {
+        const workspace = document.querySelector('[data-testid="program-joint-workspace"][aria-label="Стыки клейма V179 · STAMP-WINDOW"]')
+        const target = workspace?.querySelector('[data-joint="F179001"] button') ?? null
+        if (target && targetSeen == null) targetSeen = performance.now()
+        if (target && target !== observed) { observer.disconnect(); observer.observe(target); observed = target }
+        // One lightweight sample every second RAF, for one second after target mount.
+        // A missing target is bounded by the hard five-second deadline below.
+        if (++tick % 2 === 0 && data.samples.length < 100) {
+          const ancestors = []
+          for (let element = target ?? workspace; element; element = element.parentElement) {
+            if (!element.matches('.program-detail-motion, .ag-grid-viewport, .ag-full-width-row, .program-line-workspace')) continue
+            const css = getComputedStyle(element)
+            ancestors.push({ ...identity(element), rect: rect(element), overflowX: css.overflowX, overflowY: css.overflowY,
+              motion: element.getAttribute('data-program-motion'), height: (element as HTMLElement).style.height,
+              transition: css.transition, inert: (element as HTMLElement).inert })
+          }
+          const grids = Array.from(document.querySelectorAll<HTMLElement>('[data-program-grid]')).map(grid => {
+            const viewport = grid.querySelector<HTMLElement>('.ag-grid-viewport')
+            return { kind: grid.dataset.programGrid, rect: rect(grid), height: grid.style.height,
+              viewport: rect(viewport), scrollTop: viewport?.scrollTop, clientHeight: viewport?.clientHeight, scrollHeight: viewport?.scrollHeight }
+          })
+          data.samples.push({ at: performance.now() - started, path: location.pathname, scrollY: window.scrollY,
+            documentHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight,
+            workspace: rect(workspace), target: rect(target), active: identity(document.activeElement), grids, ancestors })
+        }
+        if (targetSeen != null && performance.now() - targetSeen >= 1000) { stop('one-second-after-target'); return }
+        frame = requestAnimationFrame(sample)
+      } catch (error) { data.samples.push({ error: String(error) }); stop('probe-error') }
+    }
+    timeout = window.setTimeout(() => stop('five-second-limit'), 5000)
+    frame = requestAnimationFrame(sample)
+  })
+  return async () => {
+    const data = await page.evaluate(async () => {
+      const host = window as RevealTraceHost, trace = host.__programRevealTrace
+      if (!trace) return { unavailable: 'Page navigation removed the probe' }
+      try { return await trace.done }
+      finally { trace.stop('finally'); delete host.__programRevealTrace }
+    }).catch(error => ({ unavailable: String(error) }))
+    await test.info().attach('program-reveal-trace.json', { body: JSON.stringify(data, null, 2), contentType: 'application/json' })
+  }
+}
+
 test('large stamp lists render a bounded window and keep native End/Home navigation', async ({ page }) => {
   test.setTimeout(90000)
   const grid = await prepare(page)
@@ -113,13 +219,16 @@ test('dispatcher navigation mounts the requested far stamp without a calculation
   const search = dispatcher.getByRole('textbox', { name: 'Поиск задач диспетчера', exact: true })
   await search.fill('V179')
   await search.press('Enter')
-  await dispatcher.getByRole('button', { name: 'Назначить контроль', exact: true }).first().click()
-  await expect(page).toHaveURL(/\/line-program$/)
-  const workspace = page.getByRole('region', { name: `Стыки клейма V179 · ${line}`, exact: true })
-  await expect(workspace).toBeFocused()
-  await expect(workspace.getByRole('button', { name: 'F179001', exact: true })).toBeInViewport()
-  await expect(page.getByRole('button', { name: 'Клеймо V179', exact: true })).toHaveAttribute('aria-expanded', 'true')
-  expect(await page.locator('[data-program-grid="stamps"]').getByTestId('line-program-stamp').count()).toBeLessThan(60)
+  const finishTrace = await startProgramRevealTrace(page)
+  try {
+    await dispatcher.getByRole('button', { name: 'Назначить контроль', exact: true }).first().click()
+    await expect(page).toHaveURL(/\/line-program$/)
+    const workspace = page.getByRole('region', { name: `Стыки клейма V179 · ${line}`, exact: true })
+    await expect(workspace).toBeFocused()
+    await expect(workspace.getByRole('button', { name: 'F179001', exact: true })).toBeInViewport()
+    await expect(page.getByRole('button', { name: 'Клеймо V179', exact: true })).toHaveAttribute('aria-expanded', 'true')
+    expect(await page.locator('[data-program-grid="stamps"]').getByTestId('line-program-stamp').count()).toBeLessThan(60)
+  } finally { await finishTrace() }
 })
 
 test('compact percentage task fetches the current complete joint before stamp correction', async ({ page }) => {

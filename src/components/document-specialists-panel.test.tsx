@@ -16,7 +16,7 @@ it('shares one filtered registry request for 1000 documents, bounds rendering, a
     settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, rows: Array.from({ length: 1000 }, (_, id) => ({ id, projectTitle: 'P', subtitleCode: 'S', line: `L${id}` } as WeldRow)) })
   const view = render(<QueryClientProvider client={client}><DocumentSpecialistsPanel plan={plan} naming={naming} onChange={vi.fn()} /></QueryClientProvider>)
   await waitFor(() => expect(list).toHaveBeenCalledTimes(1))
-  expect(list.mock.calls[0]).toEqual([{ data: { search: '', kind: 'inspector', methods: ['ВИК'] } }])
+  expect(list.mock.calls[0]).toEqual([{ data: { search: '', kind: 'inspector', methods: ['ВИК'], requirements: [{ date: '2026-10-12', methods: ['ВИК'] }] } }])
   expect(screen.getAllByRole('combobox')).toHaveLength(102)
   expect(screen.getAllByRole('row')).toHaveLength(51)
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument()

@@ -31,9 +31,7 @@ type ReportSwitchResetInput = {
   setLnkRequestNaming: SetState<RequestNamingState>
   setLnkRequestSearch: SetState<string>
   setLnkResultDraft: SetState<LnkResultDraftState>
-  setManagedPstoDiagramDrafts: SetState<Record<number, string>>
   setManagedPstoRequestName: SetState<string>
-  setManagedPstoRequestNameDraft: SetState<string>
   setPreservedLnkOrderIds: SetState<number[] | null>
   setPstoRequestNaming: SetState<RequestNamingState>
   setPstoRequestSearch: SetState<string>
@@ -65,9 +63,7 @@ export function useReportSwitchReset({
   setLnkRequestNaming,
   setLnkRequestSearch,
   setLnkResultDraft,
-  setManagedPstoDiagramDrafts,
   setManagedPstoRequestName,
-  setManagedPstoRequestNameDraft,
   setPreservedLnkOrderIds,
   setPstoRequestNaming,
   setPstoRequestSearch,
@@ -107,10 +103,8 @@ export function useReportSwitchReset({
       setIsPstoRequestModalOpen(false)
       setIsPstoRequestManagerOpen(false)
       setManagedPstoRequestName('')
-      setManagedPstoRequestNameDraft('')
       setIsPstoResultModalOpen(false)
       setIsPstoResultManagerOpen(false)
-      setManagedPstoDiagramDrafts({})
       setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
       setIsPstoShowMenuOpen(false)
     }

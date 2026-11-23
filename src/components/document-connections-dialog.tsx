@@ -6,7 +6,7 @@ import { LargeDialogShell } from './large-dialog-shell'
 import { Button } from './ui/button'
 import { useProgramDocumentPreview } from './line-program-document-link'
 import { getDocumentConnections } from '@/server/document-connections'
-import { getSystemDocumentLabel, type SystemDocumentReference } from '@/lib/system-document-types'
+import { getSystemDocumentLabel, getSystemDocumentLookupReference, type SystemDocumentReference } from '@/lib/system-document-types'
 import { formatDisplayDate } from '@/lib/date-format'
 import { useAccess } from '@/lib/security-context'
 import { useContainedDialogFocus } from '@/lib/use-contained-dialog-focus'
@@ -15,8 +15,9 @@ export function DocumentConnectionsDialog({ reference, onClose }: { reference: S
   const [trail, setTrail] = useState([reference])
   const [page, setPage] = useState(0)
   const current = trail.at(-1)!
+  const lookup = getSystemDocumentLookupReference(current)
   const { can } = useAccess()
-  const query = useQuery({ queryKey: ['document-connections', current, page], queryFn: () => getDocumentConnections({ data: { reference: current, page } }), placeholderData: keepPreviousData, staleTime: 0, retry: false })
+  const query = useQuery({ queryKey: ['document-connections', lookup, page], queryFn: () => getDocumentConnections({ data: { reference: lookup, page } }), placeholderData: keepPreviousData, staleTime: 0, retry: false })
   const { openDocument, preview } = useProgramDocumentPreview()
   const panelRef = useContainedDialogFocus(onClose, false, !preview)
   const data = query.data

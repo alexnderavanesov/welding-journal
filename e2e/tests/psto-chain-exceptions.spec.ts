@@ -493,8 +493,10 @@ test('пагинация и фильтры охватывают все стык�
   await panel.getByRole('button', { name: 'Закрыть фильтр' }).click()
   await expect(page.getByText('из 220 стыков', { exact: true })).toBeVisible()
   await filterPstoExceptions(page, 'Выбор цепочки для исключения ПСТО', 'joint', 'PAGE-220')
-  await expect(page.getByText('из 1 стыков', { exact: true })).toBeVisible()
-  await expect(page.getByRole('grid', { name: 'Выбор цепочки для исключения ПСТО' })).toContainText('PAGE-220')
+  const candidates = page.getByRole('grid', { name: 'Выбор цепочки для исключения ПСТО' })
+  await expect(candidates.locator('.ag-row[row-id]')).toHaveCount(1)
+  await expect(candidates).toContainText('PAGE-220')
+  await expect(page.getByRole('button', { name: 'Следующая страница стыков', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Выбрать цепочку', exact: true }).click()
   await expect(page.getByText('Стыков: 1', { exact: true })).toBeVisible()
   // An uninitialised mixed line must not be guessed from its single displayed row.
@@ -554,7 +556,10 @@ test('единая таблица линий: фильтры до пагинац
   await page.getByRole('button', { name: 'Следующая страница линий' }).click()
   await expect(page.getByText('26-50', { exact: true })).toBeVisible()
   await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', 'PAGE-L60')
-  await expect(page.getByText('из 1 линий', { exact: true })).toBeVisible()
+  const lines = page.getByRole('grid', { name: 'Линии программы ПСТО' })
+  await expect(lines.locator('.ag-row[row-id]')).toHaveCount(1)
+  await expect(lines).toContainText('PAGE-L60')
+  await expect(page.getByRole('button', { name: 'Следующая страница линий', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeEnabled()
   // A documented cancellation of future work is valid even when no PSTO
   // has been performed. Removing an erroneous assignment remains separate.

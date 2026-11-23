@@ -308,14 +308,15 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expectSignature('system:lnkConclusionVik', '2026-08-13')
 
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
-  await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Все результаты ЛНК' })).toBeVisible()
   await page.getByRole('dialog').getByLabel('Вид контроля в реестре', { exact: true }).selectOption('vikRequest')
   await page.getByRole('dialog').getByPlaceholder('Стык, линия, заявка или заключение').fill('E2E-L1')
   await page.getByRole('button', { name: new RegExp(`E2E-L1 · ${JOINT}`) }).click()
-  await page.getByRole('dialog').getByRole('group', { name: 'Изменить на:', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Результат выбранного стыка', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await confirmLnkResultChanges(page)
-  await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Все результаты ЛНК' })).toBeHidden()
   await expectWeld({
     vik_result: 'годен',
     vik_conclusion_date: '2026-08-13',
@@ -331,6 +332,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   const primaryTvmtCard = page
     .getByRole('heading', { name: 'Заключение ТВМТ' })
     .locator('xpath=ancestor::article')
+  await primaryTvmtCard.getByRole('button', { name: 'Редактировать', exact: true }).click()
   await primaryTvmtCard.getByRole('combobox').selectOption({ label: 'годен' })
   await page.getByRole('button', { name: 'Удалить последующие циклы и сохранить' }).click()
   await expect(page.getByRole('heading', { name: 'Исправить ТВМТ и удалить последующие циклы' })).toBeVisible()
@@ -1233,7 +1235,7 @@ async function expectRequestOnlyHistory(page: Page, sequence: number, date: stri
     const history = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'История ПСТО и ТВМТ', exact: true }) })
     await expect(history.getByRole('tab', { name: sequence === 1 ? 'Основной цикл' : `Повтор #${sequence}`, exact: true })).toHaveAttribute('aria-selected', 'true')
     const request = history.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Заявка ПСТО', exact: true }) })
-    await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue(requestName)
+    await expect(request.getByText(requestName, { exact: true })).toBeVisible()
     await expect(request.getByText(`Дата: ${date}`, { exact: true })).toBeVisible()
     await expect(history.getByRole('heading', { name: 'Результат ПСТО', exact: true })).toHaveCount(0)
     if (entry === 'registry') {
@@ -1246,7 +1248,7 @@ async function expectRequestOnlyHistory(page: Page, sequence: number, date: stri
       // Wait for the server-filtered response, not just the immediate local filter.
       const result = await deserializeRpcResponse(await (await loaded).text()) as { result?: Array<{ joint: string }> }
       expect(result.result?.map(row => row.joint)).toEqual([JOINT])
-      await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue(requestName)
+      await expect(request.getByText(requestName, { exact: true })).toBeVisible()
       await expect(history.getByText('Найдено: 1', { exact: true })).toBeVisible()
     }
     await history.getByRole('button', { name: 'Закрыть', exact: true }).click()

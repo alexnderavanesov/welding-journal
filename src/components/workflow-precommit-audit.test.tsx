@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render as baseRender, screen, within } from '@testing-library/react'
+import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -15,6 +16,17 @@ import { useCancelPendingWorkflowAction, WorkflowActionMenuItem, WorkflowActionS
 import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useWorkflowRootCauseEscapeKey } from '@/lib/use-workflow-root-cause-escape-key'
+
+// Full-document loading/confirmation have separate tests; this suite verifies drafts.
+vi.mock('@/components/system-document-date-editor', () => ({ SystemDocumentDateEditor: ({ onCompositionLoaded }: { onCompositionLoaded?: (count: number) => void }) => {
+  useEffect(() => { onCompositionLoaded?.(2) }, [onCompositionLoaded])
+  return null
+} }))
+vi.mock('@/lib/use-document-position-change', () => ({ useDocumentPositionChange: () => ({ save }: { save: () => void }) => save() }))
+function openResultEditor() {
+  const button = screen.queryByRole('button', { name: 'Редактировать' })
+  if (button) fireEvent.click(button)
+}
 
 // Acceptance source: document-required-names-plan-2026-10-11.md, menu context
 // cancellation; user requirement: the first Escape dismisses only the tooltip.
@@ -362,28 +374,30 @@ describe('staged result editor presentation', () => {
   it.each(['primary', 'preTO'] as const)('%s keeps factual rows, all hidden choices and an open editor after reset', domain => {
     const onSave = vi.fn(), onClose = vi.fn(), onCorrect = vi.fn()
     render(<Editor domain={domain} onSave={onSave} onClose={onClose} onCorrect={onCorrect} />)
-    const pickerLabel = domain === 'primary' ? 'Изменить на:' : 'Результат'
+    openResultEditor()
+    const pickerLabel = 'Результат выбранного стыка'
     const picker = screen.getByRole('group', { name: pickerLabel })
     fireEvent.click(within(picker).getByRole('button', { name: 'годен' }))
-    expect(screen.getByText('Подготовлено изменений: 1')).toBeVisible()
+    expect(screen.getByText('Подготовлено изменений результатов: 1')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: /L · S2/ }))
+    openResultEditor()
     fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
     const factualRow = screen.getByRole('button', { name: /L · S2/ })
     expect(factualRow).toHaveTextContent('годен')
     expect(factualRow).toHaveTextContent('К-2')
     expect(factualRow).toHaveTextContent('Будет удалён')
-    expect(screen.getByText('Подготовлено изменений: 2')).toBeVisible()
+    expect(screen.getByText('Подготовлено изменений результатов: 2')).toBeVisible()
     expect(onSave).not.toHaveBeenCalled()
     expect(onCorrect).not.toHaveBeenCalled()
     fireEvent.change(screen.getByRole('combobox', { name: 'Вид контроля в реестре' }), {
       target: { value: domain === 'primary' ? 'rkRequest' : 'РК' },
     })
     expect(screen.queryByRole('button', { name: /L · S2/ })).not.toBeInTheDocument()
-    expect(screen.getByText('Подготовлено изменений: 2')).toBeVisible()
+    expect(screen.getByText('Подготовлено изменений результатов: 2')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
     expect(onSave).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить изменения' }))
-    expect(screen.queryByText('Подготовлено изменений: 2')).not.toBeInTheDocument()
+    expect(screen.queryByText('Подготовлено изменений результатов: 2')).not.toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
     fireEvent.change(screen.getByRole('combobox', { name: 'Вид контроля в реестре' }), { target: { value: '' } })
@@ -394,17 +408,31 @@ describe('staged result editor presentation', () => {
   it('preTO retains separately edited document text across selection without including it in the result save', () => {
     const onCorrect = vi.fn(), onSave = vi.fn()
     render(<Editor domain="preTO" onSave={onSave} onClose={vi.fn()} onCorrect={onCorrect} />)
-    fireEvent.change(screen.getByLabelText('Наименование заключения'), { target: { value: 'Неприменённое имя' } })
+    openResultEditor()
+    fireEvent.click(screen.getByText('Изменить заключение только этого стыка'))
+    fireEvent.change(screen.getByLabelText('Заключение только этого стыка'), { target: { value: 'Неприменённое имя' } })
     fireEvent.click(screen.getByRole('button', { name: /L · S2/ }))
+    openResultEditor()
     fireEvent.click(screen.getByRole('button', { name: /L · S1/ }))
-    expect(screen.getByLabelText('Наименование заключения')).toHaveValue('Неприменённое имя')
+    openResultEditor()
+    fireEvent.click(screen.getByText('Изменить заключение только этого стыка'))
+    expect(screen.getByLabelText('Заключение только этого стыка')).toHaveValue('Неприменённое имя')
     fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
-    expect(screen.getByRole('button', { name: 'Сохранить реквизиты' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Изменить заключение этого стыка' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
     expect(onSave).toHaveBeenCalledOnce()
     expect(onCorrect).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить изменения' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить реквизиты' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить заключение этого стыка' }))
     expect(onCorrect).toHaveBeenCalledWith(expect.objectContaining({ result: 'ремонт', conclusionName: 'Неприменённое имя' }))
   })
 })
+
+const render = (ui: import('react').ReactNode, options?: import('@testing-library/react').RenderOptions) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>, ...options })
+}
+vi.mock('@/lib/use-system-document-context', () => ({
+  useSystemDocumentContext: () => ({ data: { rows: [{ id: 1 }, { id: 2 }], sourcePositions: [] }, isPending: false, isError: false }),
+}))
+vi.mock('@/lib/system-document-storage', () => ({ loadWorkflowDocumentHistoryGrid: async () => ({ rows: [], total: 0 }) }))

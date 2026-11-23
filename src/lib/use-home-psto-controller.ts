@@ -19,7 +19,7 @@ export function useHomePstoController() {
   const [isPstoLineProgramOpen, setIsPstoLineProgramOpen] = useState(false)
   const [isPstoWorkflowMenuOpen, setIsPstoWorkflowMenuOpen] = useState(false)
 
-  const { setManagedPstoDiagramDrafts, setPstoResultDraft } = modal
+  const { setPstoResultDraft } = modal
   const [pstoResultRegistrySearch, setPstoResultRegistrySearch] = useState('')
   const [pstoResultRegistryLimit, setPstoResultRegistryLimit] = useState(WORKFLOW_REGISTRY_PAGE_SIZE)
   const [pstoWorkflowRequestSearch, setPstoWorkflowRequestSearch] = useState('')
@@ -46,7 +46,6 @@ export function useHomePstoController() {
   const closePstoResultManager = () => {
     setIsPstoResultRegistryAll(false)
     setIsPstoResultManagerOpen(false)
-    setManagedPstoDiagramDrafts({})
     setPstoResultRegistrySearch('')
     setPstoResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
   }
@@ -55,7 +54,6 @@ export function useHomePstoController() {
     setPstoResultRegistrySearch('')
     setPstoResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
     setPstoResultDraft((current) => ({ ...current, rowIds: new Set() }))
-    setManagedPstoDiagramDrafts({})
     setIsPstoResultManagerOpen(true)
   }
 

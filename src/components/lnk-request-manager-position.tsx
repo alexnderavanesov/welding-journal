@@ -11,6 +11,7 @@ type LnkRequestMethod = (typeof LNK_METHODS)[number]
 type LnkRequestManagerPositionProps = {
   row: WeldRow
   methods: LnkRequestMethod[]
+  readOnly?: boolean
   isCorrectionPending: boolean
   onClearPosition: (row: WeldRow, requestKey: LnkRequestMethod['requestKey']) => void
 }
@@ -18,6 +19,7 @@ type LnkRequestManagerPositionProps = {
 function LnkRequestManagerPositionComponent({
   row,
   methods,
+  readOnly = false,
   isCorrectionPending,
   onClearPosition,
 }: LnkRequestManagerPositionProps) {
@@ -29,6 +31,7 @@ function LnkRequestManagerPositionComponent({
       <div className="flex flex-wrap justify-end gap-1.5">
         {methods.map((method) => {
           const blockReason = getLnkRequestPositionRemovalBlockReason(row, method.requestKey)
+          if (readOnly) return <span key={method.requestKey} className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">{method.code}</span>
           return (
             <button
               key={method.requestKey}
@@ -49,6 +52,7 @@ function LnkRequestManagerPositionComponent({
 }
 
 export const LnkRequestManagerPosition = memo(LnkRequestManagerPositionComponent, (previous, next) => (
+  previous.readOnly === next.readOnly &&
   previous.row === next.row &&
   previous.methods === next.methods &&
   previous.isCorrectionPending === next.isCorrectionPending &&

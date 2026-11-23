@@ -11,7 +11,6 @@ export function usePstoRequestCorrectionMutation({
   setMessage,
   highlightChangedRows,
   setManagedPstoRequestName,
-  setManagedPstoRequestNameDraft,
 }: UsePstoReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -34,7 +33,6 @@ export function usePstoRequestCorrectionMutation({
       )
       if (removedRequestName && !hasRemainingRequestPositions) {
         setManagedPstoRequestName('')
-        setManagedPstoRequestNameDraft('')
         setMessage(`Заявка ${removedRequestName} удалена, так как в ней не осталось стыков`)
       } else {
         setMessage('Позиция заявки ПСТО удалена')

@@ -1,3 +1,5 @@
+import { requireDb } from '@/db'
+import { rebuildSystemDocumentIndexInTransaction } from '@/server/system-document-index'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
@@ -26,6 +28,9 @@ test('history searches beyond its first batch and keeps unperformed primary/repe
       values($1,2,'HISTORY-REPEAT-ONLY','2026-09-03')`, [repeat.id])
     return result.rows as Array<{ id: number; joint: string; psto_request: string | null }>
   })
+  // Direct SQL fixtures bypass the normal document creation workflow. Populate
+  // the disposable registry before checking its independent document pages.
+  await requireDb().transaction(tx => rebuildSystemDocumentIndexInTransaction(tx, 'pstoRequest'))
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => {
@@ -53,7 +58,8 @@ test('history searches beyond its first batch and keeps unperformed primary/repe
   const foundOutside = loaded(outside.psto_request!)
   await search.fill(outside.psto_request!)
   expect((await foundOutside).map(row => row.id)).toEqual([outside.id])
-  await expect(history.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue(outside.psto_request!)
+  await expect(history.getByText(outside.psto_request!, { exact: true }).last()).toBeVisible()
+  await expect(history.getByRole('textbox', { name: 'Наименование заявки только этого стыка', exact: true })).toHaveCount(0)
 
   await search.clear()
   await expect(history.getByText(`Стыков в области: ${size}`, { exact: true })).toBeVisible()
@@ -67,9 +73,26 @@ test('history searches beyond its first batch and keeps unperformed primary/repe
   await search.fill('HISTORY-REPEAT-ONLY')
   expect((await repeat).map(row => row.id)).toEqual([rows[size + 1].id])
   await expect(history.getByRole('tab', { name: 'Повтор #2', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(history.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue('HISTORY-REPEAT-ONLY')
+  await expect(history.getByText('HISTORY-REPEAT-ONLY', { exact: true }).last()).toBeVisible()
   await history.screenshot({ path: info.outputPath('request-without-result.png') })
   expect(calls.length).toBeLessThanOrEqual(6)
+  expect(errors).toEqual([])
+  // The Documents tab searches the full document registry, independently of
+  // the last joint search (which currently contains only the repeat request).
+  const documentReads: Array<{ startRow: number; endRow: number; search?: string }> = []
+  page.on('request', request => {
+    if (rpcName(request.url()).startsWith('listWorkflowDocumentHistoryGrid_')) documentReads.push((deserializeRpcPayload(request.postData()!) as { data: { startRow: number; endRow: number; search?: string } }).data)
+  })
+  await history.getByRole('tab', { name: 'Документы', exact: true }).click()
+  const documents = history.getByRole('tabpanel', { name: 'Документы', exact: true })
+  await expect(documents.getByRole('button', { name: 'Следующая страница документов' })).toBeEnabled()
+  await documents.getByPlaceholder('Поиск документов').fill(outside.psto_request!)
+  await expect(documents.getByRole('complementary').getByRole('button', { name: new RegExp(outside.psto_request!) })).toBeVisible()
+  await documents.getByRole('complementary').getByRole('button', { name: new RegExp(outside.psto_request!) }).click()
+  await expect(documents.getByRole('region', { name: 'Полный состав документа' })).toContainText(outside.joint)
+  expect(documentReads.length).toBeGreaterThan(0)
+  expect(documentReads.length).toBeLessThanOrEqual(2)
+  expect(documentReads.every(request => request.endRow - request.startRow === 50)).toBe(true)
   expect(errors).toEqual([])
   // Viewing history must not manufacture a result or a date of execution.
   const facts = await withE2eDatabase(async db => (await db.query(`select count(*)::int as executed from weld_joints

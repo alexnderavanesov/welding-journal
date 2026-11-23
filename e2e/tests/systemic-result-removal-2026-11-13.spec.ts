@@ -1,5 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { inArray } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import * as schema from '../../src/db/schema'
+import { preHeatTreatmentControls, weldJoints } from '../../src/db/schema'
+import { WELD_TABLE_SELECT } from '../../src/server/weld-server-shared'
+import { syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
+import { syncPreHeatTreatmentDocumentsInTransaction } from '../../src/server/pre-heat-treatment-system-documents'
 import { inviteAccount, completeAccountLink } from '../../src/server/account-management'
 import { latestE2eToken, resetE2eAccountFixtureLimits } from '../authentication'
 import { withE2eDatabase } from '../database'
@@ -37,6 +44,16 @@ async function seed(stage: 'primary' | 'beforeHeatTreatment', project: string, l
     else await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,
       conclusion_name,conclusion_date,defect_description) select id,'ВИК','DELETE-ONLY-REQUEST','2026-01-02','годен',
       'DELETE-ONLY-CONCLUSION','2026-01-03','ДНО' from weld_joints where id=any($1::int[])`, [ids])
+    // Raw fixtures bypass the ordinary workflow's document synchronization.
+    // Materialize the same complete documents before testing their real UI.
+    await drizzle(db, { schema }).transaction(async tx => {
+      const rows = await tx.select(WELD_TABLE_SELECT).from(weldJoints).where(inArray(weldJoints.id, ids))
+      await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
+      if (stage === 'beforeHeatTreatment') {
+        const controls = await tx.select().from(preHeatTreatmentControls).where(inArray(preHeatTreatmentControls.weldJointId, ids))
+        await syncPreHeatTreatmentDocumentsInTransaction(tx, rows, controls)
+      }
+    })
     return ids
   })
 }
@@ -56,11 +73,12 @@ async function openManager(page: Page, stage: 'primary' | 'beforeHeatTreatment',
   if (stage === 'beforeHeatTreatment') await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' })
     .getByRole('button', { name: 'До ТО', exact: true }).click()
   const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
-    name: stage === 'primary' ? 'Редактирование результатов ЛНК' : 'Редактирование результатов ЛНК до ТО', exact: true,
+    name: stage === 'primary' ? 'Все результаты ЛНК' : 'Все результаты ЛНК до ТО', exact: true,
   }) })
   await manager.getByLabel('Вид контроля в реестре').selectOption(stage === 'primary' ? 'vikRequest' : 'ВИК')
   await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill(line)
   await manager.getByRole('button').filter({ hasText: `${line} · F1` }).click()
+  await manager.getByRole('button', { name: 'Редактировать', exact: true }).click()
   return manager
 }
 
@@ -93,13 +111,11 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
         await expect(manager.getByText('Нет права удаления в ЛНК. Обратитесь к администратору.', { exact: true })).toBeVisible()
         page.on('dialog', async dialog => { alerts.push(dialog.message()); await dialog.accept() })
         const correctedName = 'EDIT-ONLY-CORRECTED-CONCLUSION'
-        if (stage === 'primary') {
-          await manager.getByPlaceholder('Наименование заключения для этого стыка').fill(correctedName)
-          await manager.getByRole('button', { name: 'Переименовать', exact: true }).click()
-        } else {
-          await manager.getByLabel('Наименование заключения', { exact: true }).fill(correctedName)
-          await manager.getByRole('button', { name: 'Сохранить реквизиты', exact: true }).click()
-        }
+        await manager.getByRole('button', { name: 'К документу', exact: true }).click()
+        await manager.getByLabel('Название документа', { exact: true }).fill(correctedName)
+        await manager.getByRole('button', { name: 'Сохранить изменения документа', exact: true }).click()
+        await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Сохранить изменения документа', exact: true }) })
+          .getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
         await expect.poll(facts).toEqual({ ...before, conclusion: correctedName })
         expect(alerts.filter(message => message.includes('Недостаточно прав'))).toEqual([])
         return

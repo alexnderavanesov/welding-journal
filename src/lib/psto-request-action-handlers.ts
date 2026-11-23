@@ -15,7 +15,6 @@ export function createPstoRequestActionHandlers({
   filteredAvailablePstoRequestRows,
   managedPstoRequestName,
   managedPstoRequestDate,
-  managedPstoRequestNameDraft,
   nextPstoRequestName,
   nextPstoRequestNumber,
   requestConclusionSettings,
@@ -31,7 +30,6 @@ export function createPstoRequestActionHandlers({
   setIsPstoRequestModalOpen,
   setManagedPstoRequestName,
   setManagedPstoRequestDate,
-  setManagedPstoRequestNameDraft,
   setMessage,
   setPstoRequestDate,
   setPstoRequestNaming,
@@ -104,23 +102,12 @@ export function createPstoRequestActionHandlers({
     ) ?? createRequestDocumentIdentity(requestName, requestDate)
     setManagedPstoRequestName(request?.name ?? '')
     setManagedPstoRequestDate(request?.date ?? '')
-    setManagedPstoRequestNameDraft(request?.name ?? '')
     setIsPstoRequestManagerOpen(true)
   }
 
   function changeManagedPstoRequest(request: RequestDocumentIdentity) {
     setManagedPstoRequestName(request.name)
     setManagedPstoRequestDate(request.date)
-    setManagedPstoRequestNameDraft(request.name)
-  }
-
-  function renameManagedPstoRequest() {
-    pstoRequestManagerMutation.mutate({
-      action: 'rename',
-      requestName: managedPstoRequestName,
-      requestDate: managedPstoRequestDate,
-      nextRequestName: managedPstoRequestNameDraft,
-    })
   }
 
   async function deleteManagedPstoRequest(requestOverride?: RequestDocumentIdentity) {
@@ -197,7 +184,6 @@ export function createPstoRequestActionHandlers({
     openCreatePstoRequestModal,
     openCreatePstoRequestModalForRow,
     openPstoRequestManager,
-    renameManagedPstoRequest,
     submitCreatePstoRequest,
     toggleAllPstoRequestRows,
     togglePstoRequestRow,

@@ -362,13 +362,16 @@ const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selectio
     const finishReveal = () => { lastReveal.current = selection.reveal; cleanup() }
     const cancelReveal = finishReveal
     const targetMissing = !!selection.focusedJoint && !rows.some(row => row.id === selection.focusedJoint)
-    if (selection.focusedJoint) for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, cancelReveal, { passive: true })
+    for (const name of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(name, cancelReveal, { passive: true })
     const revealJoint = (remaining = 8) => {
-      if (!active || !selection.focusedJoint || !api || api.isDestroyed()) return
-      const node = api.getRowNode(String(selection.focusedJoint))
+      if (!active || !api || api.isDestroyed()) return
+      // Revealing a whole stamp must also reach its first displayed joint.
+      // Native scrollIntoView can stop inside an ancestor's virtual viewport
+      // before the document reaches the workspace; focus alone is not success.
+      const node = selection.focusedJoint ? api.getRowNode(String(selection.focusedJoint)) : api.getDisplayedRowAtIndex(0)
       if (node?.rowIndex == null || node.rowTop == null) return
       const grid = section.current?.querySelector<HTMLElement>('[data-program-grid="joints"]')
-      const bounds = grid?.querySelector<HTMLElement>(`.ag-row[row-id="${selection.focusedJoint}"]`)?.getBoundingClientRect()
+      const bounds = grid?.querySelector<HTMLElement>(`.ag-row[row-id="${node.id}"]`)?.getBoundingClientRect()
       if (bounds && bounds.top >= 80 && bounds.bottom <= window.innerHeight - 20) {
         // Wait for the nested detail/auto-height measurements to settle too.
         if (++stableFrames >= 3) { finishReveal(); return }
@@ -388,7 +391,7 @@ const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selectio
       if (!active) return
       if (remaining > 1) { focus(remaining - 1); return }
       section.current?.scrollIntoView?.({ block: 'start' }); section.current?.focus({ preventScroll: true })
-      if (!selection.focusedJoint || targetMissing) finishReveal()
+      if (!rows.length || targetMissing) finishReveal()
       else revealJoint()
     }) }
     if (!rows.length) { setRevealMessage(selection.focusedJoint ? 'Выбранного стыка больше нет в этой линии.' : ''); focus(); return cleanup }

@@ -153,9 +153,9 @@ test('ПСТО: ссылка текущего цикла открывает ег
   const history = page.getByRole('dialog')
   const request = history.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Заявка ПСТО', exact: true }) })
   await expect(history.getByRole('tab', { name: 'Повтор #2', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue('ПСТО-ТЕКУЩАЯ')
+  await expect(request.getByText('ПСТО-ТЕКУЩАЯ', { exact: true })).toBeVisible()
   await history.getByRole('tab', { name: 'Основной цикл', exact: true }).click()
-  await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue('ПСТО-S800002')
+  await expect(request.getByText('ПСТО-S800002', { exact: true })).toBeVisible()
 })
 
 test('ПСТО: скрытие всех сохраняет обязательные поля, группы и текущий экспорт', async ({ page }) => {

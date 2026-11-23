@@ -3,7 +3,6 @@ import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { hasAnyPstoCycle } from '@/lib/psto-cycle'
 import {
-  buildManagedPstoDiagramDrafts,
   resolvePstoResultDraftAfterBulkToggle,
   resolvePstoResultDraftAfterRequestChange,
   resolvePstoResultDraftAfterRowIdsChange,
@@ -33,7 +32,6 @@ export function createPstoResultActionHandlers({
   defaultConclusionNaming,
   setIsPstoResultManagerOpen,
   setIsPstoResultModalOpen,
-  setManagedPstoDiagramDrafts,
   setMessage,
   setPstoResultDraft,
   setPstoResultRequestSearch,
@@ -84,7 +82,6 @@ export function createPstoResultActionHandlers({
       ...current,
       rowIds: new Set(selectedRows.map((row) => row.id)),
     }))
-    setManagedPstoDiagramDrafts(buildManagedPstoDiagramDrafts(selectedRows))
     setIsPstoResultManagerOpen(true)
   }
 

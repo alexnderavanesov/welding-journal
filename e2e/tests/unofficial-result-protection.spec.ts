@@ -21,7 +21,7 @@ const stored = (id: number) => withE2eDatabase(async db => (await db.query('sele
 async function openManager(page: Page) {
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
-  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК', exact: true }) })
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК', exact: true }) })
   // The registry initially loads 500 joints; use its ordinary server search
   // instead of assuming this fixture belongs to the first page on a 200k DB.
   await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(lineName)
@@ -30,6 +30,7 @@ async function openManager(page: Page) {
   await expect(target).toHaveCount(1)
   await expect(target).toBeVisible()
   await target.click()
+  await dialog.getByRole('button', { name: 'Редактировать', exact: true }).click()
   return dialog
 }
 
@@ -227,9 +228,10 @@ test('НК до ТО: предупреждение и запрет удален�
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
-  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК до ТО', exact: true }) })
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК до ТО', exact: true }) })
   await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(joint)
   await dialog.getByRole('button').filter({ hasText: 'UG-PRE-UZK-C' }).click()
+  await dialog.getByRole('button', { name: 'Редактировать', exact: true }).click()
   await expect(dialog.getByRole('button', { name: 'Удалить результат', exact: true })).toBeDisabled()
   await expect(dialog.getByText(/последний негодный результат/)).toBeVisible()
   expect(writes).toEqual([])

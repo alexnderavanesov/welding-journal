@@ -28,6 +28,8 @@ export function DialogRowPagination({
   onPageSizeChange,
   itemLabel = 'стыков',
 }: DialogRowPaginationProps) {
+  if (totalCount <= DIALOG_ROW_PAGE_SIZE_OPTIONS[0] && pageCount <= 1) return null
+
   return (
     <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-600">
       <div className="flex items-center gap-2">

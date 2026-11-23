@@ -463,6 +463,8 @@ export type RequestDocumentManagerData = {
 }
 
 export type SystemDocumentDateChangeData = {
+  nextTitle?: string
+  specialistCorrectionConfirmation?: string
   reference: SystemDocumentReference
   nextDate: string
   expectedVersions: WeldRowVersionTarget[]

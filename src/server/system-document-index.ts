@@ -61,6 +61,7 @@ import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/li
 import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocumentHistoryGridResult, withDocumentHistoryGridSearch } from './document-history-grid'
 import { systemDocumentGridValue } from '@/lib/document-history-values'
 import { DOCUMENT_JOINTS_REVISION, documentJointCompositionColumn, documentJointCompositionSearch, needsDocumentJointCompositionFilter, withDocumentJointCompositionFilter } from './document-joint-composition'
+import { assertWholeWorkflowDocumentReference, workflowDocumentReferenceArea, workflowDocumentStorageTypes, type WorkflowDocumentArea } from '@/lib/workflow-document-area'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -195,7 +196,10 @@ type IndexedSystemDocumentHistoryRequest = {
   limit: number
   columnFilters: Record<string, string>
 }
-type IndexedSystemDocumentHistoryGridRequest = Omit<IndexedSystemDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest
+type IndexedSystemDocumentHistoryGridRequest = Omit<IndexedSystemDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest & {
+  /** Server-normalized working-modal scope; generic document readers omit it. */
+  workflowArea?: WorkflowDocumentArea
+}
 
 export async function loadIndexedSystemDocumentHistory({
   type,
@@ -214,6 +218,10 @@ export async function loadIndexedSystemDocumentHistory({
 export async function loadIndexedSystemDocumentHistoryGrid(
   request: IndexedSystemDocumentHistoryGridRequest,
 ): Promise<DocumentHistoryGridResult<SystemDocumentSummary>> {
+  if (request.workflowArea) {
+    const { requireWorkflowDocumentView } = await import('./workflow-document-access')
+    requireWorkflowDocumentView(request.workflowArea)
+  }
   return requireDb().transaction(async tx => {
     await lockSystemDocumentIndex(tx, request.type)
     await ensureSystemDocumentIndexInitializedInTransaction(tx, request.type)
@@ -223,7 +231,9 @@ export async function loadIndexedSystemDocumentHistoryGrid(
 }
 
 export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemDocumentHistoryGridRequest, output = false) {
-  const storageTypes = getSystemDocumentStorageTypes(request.type)
+  const storageTypes = request.workflowArea
+    ? workflowDocumentStorageTypes(request.type, request.workflowArea)
+    : getSystemDocumentStorageTypes(request.type)
   const sortExpressions = Object.fromEntries(SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
   Object.assign(sortExpressions, { rowCount: sql`"rowCount"`, date: sql`nullif("date", '')::date` })
   const fields = [...new Set([...request.rowGroupCols, ...request.sortModel.map(item => item.colId)])]
@@ -359,8 +369,11 @@ export async function loadSystemDocumentRows(data: SystemDocumentReference): Pro
 export async function loadSystemDocumentDateContext(
   data: SystemDocumentReference,
 ): Promise<SystemDocumentDateContext> {
+  assertWholeWorkflowDocumentReference(data)
+  const { requireWorkflowDocumentView } = await import('./workflow-document-access')
+  requireWorkflowDocumentView(workflowDocumentReferenceArea(data))
   return requireDb().transaction(async db => {
-    const { rows, metadata } = await loadSystemDocumentRowSource(db, data)
+    const { rows, metadata } = await loadSystemDocumentRowSource(db, data, true)
     const hydratedRows = await attachDuplicateControlRelations(
       await attachHeatTreatmentControlRelations(rows, db),
       db,
@@ -375,17 +388,44 @@ export async function loadSystemDocumentDateContext(
 async function loadSystemDocumentRowSource(
   db: Pick<ReturnType<typeof requireDb>, 'select'>,
   data: SystemDocumentReference,
+  requireWorkflowIdentity = false,
 ) {
   const expectedStorageType = systemDocumentStorageType(getSystemDocumentTemplateId(data))
   let sourceMetadata: unknown = null
-  const sourcedDocumentId = !data.documentId && data.sourceKind
+  const sourcedDocumentId = !requireWorkflowIdentity && !data.documentId && data.sourceKind
     ? await findSourcedSystemDocumentId(db, data, expectedStorageType)
     : undefined
-  const documentId = data.documentId ?? sourcedDocumentId
-  if (data.sourceKind && !documentId && data.sourceKind !== 'pstoCycle') {
+  let documentId = data.documentId ?? sourcedDocumentId
+  if (requireWorkflowIdentity) {
+    // Working views must resolve the actual document before reading members.
+    // A forged ID, method, stage or cycle cannot turn another document into a
+    // permitted one. The ordinary export reader retains its legacy fallback.
+    const candidates = await db.select({ id: generatedDocuments.id, type: generatedDocuments.type,
+      title: generatedDocuments.title, periodFrom: generatedDocuments.periodFrom,
+      sourceMetadata: generatedDocuments.sourceMetadata }).from(generatedDocuments)
+      .where(and(eq(generatedDocuments.type, expectedStorageType), documentId
+        ? eq(generatedDocuments.id, documentId)
+        : and(eq(generatedDocuments.title, data.title), sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${data.date}`)))
+      .orderBy(asc(generatedDocuments.id))
+    const document = candidates.find(candidate => candidate.type === expectedStorageType &&
+      candidate.title === data.title && (candidate.periodFrom ?? '') === data.date &&
+      (data.sourceKind
+        ? matchesSourcedSystemDocumentReference(candidate.sourceMetadata, data)
+        : !parseSystemDocumentMetadata(candidate.sourceMetadata)?.sourceKind && !data.cycleSequences?.length))
+    if (document) {
+      const { requireStoredWorkflowDocumentPermission } = await import('./workflow-document-access')
+      requireStoredWorkflowDocumentPermission(document.type, 'view')
+      documentId = document.id
+      sourceMetadata = document.sourceMetadata
+    } else if (documentId || data.sourceKind || data.cycleSequences?.length || candidates.length) {
+      return { rows: [] as WeldRow[], metadata: null }
+    }
+    // Legacy primary links can precede index materialization. Without an ID
+    // or source/cycle, exact own-area row fields still provide their count;
+    // they never replace a mismatching stored or sourced document identity.
+  } else if (data.sourceKind && !documentId && data.sourceKind !== 'pstoCycle') {
     return { rows: [] as WeldRow[], metadata: null }
-  }
-  if (documentId) {
+  } else if (documentId) {
     // Shared metadata can contain every document position. Fetch it once in the
     // same snapshot as the welds, never repeat the whole payload on each row.
     const [document] = await db.select({ sourceMetadata: generatedDocuments.sourceMetadata })
@@ -2640,15 +2680,16 @@ function buildSystemDocumentWhere(reference: SystemDocumentReference): SQL {
 type DocumentReferenceColumns = { title: SQLWrapper & { name: string }; date: SQLWrapper }
 
 function getDocumentReferenceColumns(reference: SystemDocumentReference): DocumentReferenceColumns[] {
+  const methodCode = String(reference.methodCode ?? '').trim().toLocaleUpperCase('ru-RU')
   if (reference.type === 'lnkRequest') {
-    const requestMethods = reference.methodCode === 'ТВМТ'
+    const requestMethods = methodCode === 'ТВМТ'
       ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
       : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
     return requestMethods.map(method => ({ title: weldJoints[method.requestKey], date: weldJoints[method.requestDateKey] }))
   }
 
   if (reference.type === 'lnkConclusion') {
-    const method = LNK_METHODS.find((candidate) => candidate.code === reference.methodCode)
+    const method = LNK_METHODS.find((candidate) => candidate.code === methodCode)
     return method ? [{ title: weldJoints[method.conclusionKey], date: weldJoints[method.conclusionDateKey] }] : []
   }
 
