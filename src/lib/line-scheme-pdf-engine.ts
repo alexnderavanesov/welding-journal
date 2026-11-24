@@ -1,8 +1,7 @@
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import rendererUrl from 'pdfjs-dist/build/pdf.renderer.min.mjs?url'
 
-// Imported only from the lazy drawing component. The engine is evaluated in a
-// browser effect, never in SSR or when viewing the journal / scheme registry.
+// Loaded on a drawing click or when the viewer mounts following an upload.
 export async function loadSchemePdfEngine() {
   const pdf = await import('pdfjs-dist')
   pdf.GlobalWorkerOptions.workerSrc = workerUrl

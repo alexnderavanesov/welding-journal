@@ -70,6 +70,13 @@ try {
       where table_schema = 'public' and table_name = 'weld_joints'
     `)
     const columnNames = columnsResult.rows.map(({ column_name }) => column_name)
+    const closureColumns = ['boq', 'ks3', ...['test', 'pi', 'psto', 'vik', 'rk', 'uzk', 'pvk', 'tvmt']
+      .flatMap(prefix => [prefix + '_boq', prefix + '_ks3'])].filter(column => columnNames.includes(column))
+    if (closureColumns.length) {
+      const predicate = closureColumns.map(column => `nullif(btrim("${column}"), '') is not null`).join(' or ')
+      const found = await client.query('select 1 from public.weld_joints where ' + predicate + ' limit 1')
+      if (found.rowCount) throw new Error('В прежних полях кода работ или КС3 обнаружены данные. Выпуск остановлен до удаления колонок.')
+    }
     const latestMigrationWhen = await loadLatestMigrationWhen()
     const migrationState = getLegacyWeldMigrationState(latestMigrationWhen, migrationMilestones)
     assertLegacyWeldSchemaMatchesMigrationState(columnNames, migrationState)

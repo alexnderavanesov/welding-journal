@@ -221,7 +221,7 @@ describe('JointHistoryOverview', () => {
       />,
     )
 
-    expect(screen.getByText('Внести результат основного НК')).toBeInTheDocument()
+    expect(screen.getByText('Внести результат НК')).toBeInTheDocument()
     expect(screen.getByText('Требует действия')).toBeInTheDocument()
     expect(screen.getByText('СП: 1')).toBeInTheDocument()
     expect(screen.queryByText('Дозаполнить результат ЛНК')).not.toBeInTheDocument()
@@ -390,7 +390,7 @@ describe('JointHistoryOverview', () => {
     )
 
     expect(screen.getByText('НК до ТО не годен')).toBeInTheDocument()
-    expect(screen.getByText('Основной этап НК')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'НК' })).toBeInTheDocument()
     expect(screen.queryByText('Основной НК')).not.toBeInTheDocument()
     expect(screen.getAllByText('нет потребности')).toHaveLength(3)
     expect(screen.getByText('ПСТО не требуется: НК до ТО имеет негодный результат')).toBeInTheDocument()
@@ -401,6 +401,7 @@ describe('JointHistoryOverview', () => {
   it.each([null, 'отменен'])('keeps captions inside the sections and preserves old document links (%s)', pstoRequired => {
     const row = { preHeatTreatmentRequired: true, id: 81, joint: 'F81', weldDate: '2026-09-01', pstoRequired,
       preHeatTreatmentControls: [{ id: 81, weldJointId: 81, method: 'ВИК', requestName: 'Старая заявка ВИК', conclusionName: 'Старое заключение ВИК', result: 'годен' }],
+      vikConclusion: 'Старое заключение ВИК',
       pstoRequest: 'Старая заявка ПСТО',
     } as WeldRow
     const onOpenDocument = vi.fn()
@@ -413,11 +414,16 @@ describe('JointHistoryOverview', () => {
       expect(within(section).getByText(label)).toBeInTheDocument()
       expect(within(section).queryByText('Нет данных')).not.toBeInTheDocument()
     }
-    for (const name of ['Старая заявка ВИК', 'Старое заключение ВИК', 'Старая заявка ПСТО']) {
-      fireEvent.click(screen.getByRole('button', { name }))
+    fireEvent.click(screen.getByRole('button', { name: 'Старая заявка ВИК' }))
+    expect(onOpenDocument).toHaveBeenLastCalledWith(row, 'preVikRequest')
+    for (const [stage, field] of [['НК до ТО', 'preVikConclusion'], ['НК', 'vikConclusion']] as const) {
+      const section = screen.getByRole('heading', { name: stage }).closest('section')!
+      fireEvent.click(within(section).getByRole('button', { name: 'Старое заключение ВИК' }))
+      expect(onOpenDocument).toHaveBeenLastCalledWith(row, field)
     }
-    expect(onOpenDocument).toHaveBeenCalledTimes(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Старая заявка ПСТО' }))
     expect(onOpenDocument).toHaveBeenLastCalledWith(expect.objectContaining({ id: 81, pstoRequest: 'Старая заявка ПСТО' }), 'pstoRequest')
+    expect(onOpenDocument).toHaveBeenCalledTimes(4)
   })
 
   it('updates the empty captions and settings without adding anything above the two sections', () => {

@@ -7,6 +7,7 @@ import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation
 import { assertWeldImportRowLimit, compactWeldWritePayload } from '@/lib/weld-import-limits'
 
 export function useWeldImportMutation({
+  checkStampsOnServer,
   welderStamps,
   welderStampSuspensions,
   weldFormStampSelectOptions,
@@ -16,16 +17,17 @@ export function useWeldImportMutation({
   const queryClient = useQueryClient()
 
   const importMutation = useMutation({
-    mutationFn: async (records: WeldInput[]) => {
+    mutationFn: async ({ records, importId }: { records: WeldInput[]; importId: string }) => {
       assertWeldImportRowLimit(records.length)
       const preparedRecords = prepareImportedWeldRecords({
         records,
+        checkStampsOnServer,
         weldFormStampSelectOptions,
         welderStamps,
         welderStampSuspensions,
       })
       return importWeldJoints({
-        data: { records: preparedRecords.map((record) => compactWeldWritePayload(record)) },
+        data: { importId, records: preparedRecords.map((record) => compactWeldWritePayload(record)) },
       })
     },
     onSuccess: (result) => {

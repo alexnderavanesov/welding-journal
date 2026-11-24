@@ -65,7 +65,7 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow, onSelect }: J
           <ChainStatusGroup title="ПСТО и ТВМТ" items={pstoTvmtItems} />
         ) : null}
         {mainLnkItems.length > 0 ? (
-          <ChainStatusGroup title="Основной этап НК" items={mainLnkItems} />
+          <ChainStatusGroup title="НК" items={mainLnkItems} />
         ) : null}
         {duplicateItems.length > 0 ? (
           <ChainStatusGroup title="Дубль-контроль" items={duplicateItems} />

@@ -53,6 +53,18 @@ describe('buildStatisticsServerResult', () => {
     expect(first.generalStateRowIds.backlogWaitingRepair).toEqual([82])
   })
 
+  it('combines projects and intersects subtitles without counting the same-named line in another project', () => {
+    const rows = [
+      makeRow(1, { projectTitle: 'A', subtitleCode: 'Shared' }), makeRow(2, { projectTitle: 'B', subtitleCode: 'Shared' }),
+      makeRow(3, { projectTitle: 'B', subtitleCode: 'Private' }), makeRow(4, { projectTitle: 'C', subtitleCode: 'Shared' }),
+    ]
+    const result = buildStatisticsServerResult({ rows, welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+      request: { tab: 'lineSummary', projectFilter: ['b', 'A', 'a'], selectedSubtitles: ['SHARED'] } })
+    expect(result.lineSummary.total).toBe(2)
+    expect(result.lineSummary.rows.map(row => row.projectTitle).sort()).toEqual(['A', 'B'])
+    expect(result.subtitleOptions.map(option => option.label)).toEqual(['Private', 'Shared'])
+  })
+
   it('filters current physical representatives without discarding stable predecessor context', () => {
     const input = [makeRow(1, { joint: 'S1' }), makeRow(2, { joint: 'S1R1', weldDate: '' })]
     const states = captureProgramChainStates(input)

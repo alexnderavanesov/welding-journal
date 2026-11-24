@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test, type Request } from '@playwright/test'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { deserializeRpcPayload, deserializeRpcResponse, serializeRpcData, rpcName } from '../rpc'
@@ -33,11 +34,11 @@ test('statistics packed transport retains the complete sparse drilldown beyond t
     await page.goto('/statistics')
     await page.getByRole('main').getByRole('button', { name: 'ЛНК', exact: true }).click()
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+    await selectStatisticsProjects(page, project)
     const response = page.waitForResponse(value => {
       if (!value.url().includes('/_serverFn/') || !/^getStatisticsServerResult(?:_|$)/.test(rpcName(value.url()))) return false
       const payload = deserializeRpcPayload(value.request().postData()!) as { data: StatisticsRpcRequest }
-      return payload.data.tab === 'lnk' && payload.data.projectFilter === project.toLowerCase() && payload.data.from === '' && payload.data.to === ''
+      return payload.data.tab === 'lnk' && Array.isArray(payload.data.projectFilter) && payload.data.projectFilter.length === 1 && payload.data.projectFilter[0] === project.toLowerCase() && payload.data.from === '' && payload.data.to === ''
     })
     await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('all')
     const wire = await response

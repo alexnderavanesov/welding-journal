@@ -69,7 +69,7 @@ describe('createReportSummaryBarProps', () => {
     expect(props.acceptedWdiTotalText).toBe('Недоступно')
     expect(getReportSummaryText(props)).toBe(summaryStatus === 'pending' ? 'Идёт подсчёт…'
       : summaryStatus === 'error' ? 'Не удалось подсчитать итоги'
-      : 'Стыков на ЛНК: Недоступно · Доступно для основной заявки: Недоступно')
+      : 'Стыков на ЛНК: Недоступно · Доступно для заявки НК: Недоступно')
     expect(getReportSummaryText({ ...props, activeReport: 'heatTreatment' })).toContain('Выбрано: 7')
   })
 
@@ -84,6 +84,6 @@ describe('createReportSummaryBarProps', () => {
     expect(props.weldingRowCount).toBe(0)
     expect(props.acceptedWdiTotalText).toBe('0')
     expect(getReportSummaryText(props)).toBe('Записей: 0 · WDI годных: 0')
-    expect(getReportSummaryText({ ...props, activeReport: 'lnk' })).toBe('Стыков на ЛНК: 0 · Доступно для основной заявки: 0')
+    expect(getReportSummaryText({ ...props, activeReport: 'lnk' })).toBe('Стыков на ЛНК: 0 · Доступно для заявки НК: 0')
   })
 })

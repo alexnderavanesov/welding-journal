@@ -33,7 +33,7 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
   }))
   const transferRowIds = new Set(decisions.filter(decision => decision.disposition !== 'keepPrimary').map(decision => decision.rowId))
   const specialists = useSpecialistTransferConfirmation([...transferRowIds], target)
-  const directionLabel = target === 'primary' ? 'НК до ТО → основной' : 'основной НК → до ТО'
+  const directionLabel = target === 'primary' ? 'НК до ТО → НК' : 'НК → НК до ТО'
   return <LargeDialogShell onEscape={onClose} escapeDisabled={pending} maxWidthClassName="max-w-[940px]" maxHeightClassName="max-h-[92vh]" overlayClassName="z-[90] bg-slate-950/35">
     <DialogHeader title={preview.isChainMove ? `Перенос цепочки ${preview.rootJoint}` : 'Перенос стыка на другую линию'}
       subtitle="Проверьте состав переноса и этапы контроля" closeDisabled={pending} onClose={onClose} />
@@ -45,8 +45,8 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
       </div>
       <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
         <p className="flex items-center gap-2 font-semibold"><GitBranch aria-hidden="true" className="h-4 w-4" />Перенос с сохранением истории</p>
-        <p className="mt-1">Назначение ПСТО будет взято с целевой линии. По умолчанию НК до ТО остаётся НК до ТО, основной НК — основным. ПСТО, ТВМТ и повторные циклы сохраняются.</p>
-        <p className="mt-1">{preview.targetState === 'assigned' ? 'Для новых работ сохраняются требования к предыдущим этапам. Основной НК не заменяет НК до ТО.' : 'Если оставить исходный этап, НК до ТО останется видимым в документах и не заполнит основной НК.'}</p>
+        <p className="mt-1">Назначение ПСТО будет взято с целевой линии. По умолчанию документы сохраняют свой этап: «НК» или «НК до ТО». ПСТО, ТВМТ и повторные циклы сохраняются.</p>
+        <p className="mt-1">{preview.targetState === 'assigned' ? 'Для новых работ сохраняются требования к предыдущим этапам. Для этапа «НК до ТО» нужен отдельный комплект.' : 'Если оставить исходный этап, в документах этот комплект по-прежнему будет показан на этапе «До ТО».'}</p>
         {correctionRows.length > 0 ? <p className="mt-1">Для каждого стыка можно перенести весь комплект: {directionLabel}. Все методы, заявки, результаты и заключения переносятся вместе, с исходными датами и названиями. Целевой этап должен быть пустым; проверяются хронология и зависимости заявки ПСТО. Причина запрета показана у варианта переноса.</p> : null}
         {preview.isChainMove ? <p className="mt-1">Вместе с базовым стыком переносится вся цепочка. Проект, шифр и номера стыков не меняются. При любой ошибке изменения не сохранятся.</p> : null}
       </div>
@@ -55,11 +55,11 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
         <SummaryCell label="Позиций НК до ТО" value={preview.preControlCount} tone="sky" />
         <SummaryCell label="Повторных циклов" value={preview.repeatCycleCount} />
       </div>
-      {correctionRows.length > 0 ? <p role="status" className="mt-4 text-sm font-medium text-slate-700">Стыков: {target === 'primary' ? 'перенос НК в основной' : 'перенос НК до ТО'} — {transferRowIds.size} · сохранить этапы — {preview.rows.length - transferRowIds.size}</p> : null}
+      {correctionRows.length > 0 ? <p role="status" className="mt-4 text-sm font-medium text-slate-700">Стыков: {directionLabel} — {transferRowIds.size} · сохранить этапы — {preview.rows.length - transferRowIds.size}</p> : null}
       <div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {preview.rows.map(row => <div key={row.rowId} className="px-4 py-3 text-sm">
           <p className="font-semibold text-slate-900">{row.joint || `#${row.rowId}`}</p>
-          <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · {row.primaryMethods.length ? `Основной НК: ${row.primaryMethods.join(', ')} · ` : ''}{row.preMethods.length ? `До ТО: ${row.preMethods.join(', ')} · ` : ''}{transferRowIds.has(row.rowId) ? `Весь ${directionLabel}` : 'Этапы сохраняются'}</p>
+          <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · {row.primaryMethods.length ? `НК: ${row.primaryMethods.join(', ')} · ` : ''}{row.preMethods.length ? `НК до ТО: ${row.preMethods.join(', ')} · ` : ''}{transferRowIds.has(row.rowId) ? `Весь ${directionLabel}` : 'Этапы сохраняются'}</p>
           {correctionRowIds.has(row.rowId) ? <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId)} disabled={pending} onChange={move => {
             setSelection(current => {
               const rowIds = new Set(current.preview === preview ? current.rowIds : [])
@@ -104,8 +104,8 @@ export function PstoStageCorrectionChoice({ row, moveSelected, disabled, onChang
             aria-describedby={blocked ? `${id}-reason` : undefined}
             onChange={() => onChange(move)} className="mt-1 h-3.5 w-3.5 shrink-0 accent-sky-600" />
           <span>{move
-            ? toPrimary ? 'Весь НК до ТО → основной' : 'Весь основной НК → до ТО'
-            : toPrimary ? 'Оставить НК до ТО' : 'Оставить основной НК'}</span>
+            ? toPrimary ? 'Весь НК до ТО → НК' : 'Весь НК → НК до ТО'
+            : toPrimary ? 'Оставить НК до ТО' : 'Оставить НК'}</span>
         </label>
       })}
     </div>

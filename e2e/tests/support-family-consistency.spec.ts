@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test } from '@playwright/test'
 import { sql } from 'drizzle-orm'
 import { requireDb } from '../../src/db'
@@ -63,7 +64,7 @@ test('support-only lines and statistics include legacy spellings, with the same 
   await page.goto('/statistics')
   await page.getByRole('button', { name: 'Опоры', exact: true }).click()
   await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+  await selectStatisticsProjects(page, project)
   await expect(page.getByTestId('support-statistics').getByRole('button', { name: /^Физические опоры/ }).first()).toContainText(`${supports.length} шт.`)
   await expect(page.getByTestId('support-welder-statistics').locator('[row-id="FAMILY-STAMP"] [col-id="total"]')).toHaveText(String(supports.length))
 })

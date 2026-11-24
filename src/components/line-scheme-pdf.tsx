@@ -18,7 +18,7 @@ import { LineSchemeDimensions } from './line-scheme-dimensions'
 import { LineSchemePointTooltip, SCHEME_POINT_DETAILS_EVENT } from './line-scheme-point-tooltip'
 
 type Props = {
-  revision: SchemeRevision; page: number; onPage: (page: number) => void; points: SchemePoint[];
+  revision: SchemeRevision; page: number; rotation: number; rotationDisabled: boolean; onRotation?: (angle: number) => void; onPage: (page: number) => void; points: SchemePoint[];
   editable: boolean; placing: boolean; placingLeader: boolean; selectedIds: Set<string>;
   controlsTarget: HTMLElement | null;
   focusPoint?: { rootId: number; physicalId: number | null; sequence: number } | null;
@@ -37,6 +37,13 @@ export const LineSchemePdf = memo(function LineSchemePdf(props: Props) {
   const [camera, setCamera] = useState<PdfCamera | null>(null)
   const frame = useRef<HTMLDivElement>(null)
   const view = useRef<PdfView | null>(null)
+  const [temporaryRotations, setTemporaryRotations] = useState<Record<string, number>>({})
+  const rotation = props.onRotation ? props.rotation : temporaryRotations[props.page] ?? props.rotation
+  const turn = () => {
+    const next = pdfTurn(rotation + 90)
+    if (props.onRotation) props.onRotation(next)
+    else setTemporaryRotations(previous => ({ ...previous, [props.page]: next }))
+  }
   useEffect(() => {
     let disposed = false, task: PDFDocumentLoadingTask | undefined
     profileSchemePdf('open')
@@ -54,9 +61,9 @@ export const LineSchemePdf = memo(function LineSchemePdf(props: Props) {
   const document = loaded?.id === props.revision.id ? loaded.document : null
   const retry = () => setAttempt(value => value + 1)
   return <div ref={frame} className="line-scheme-pdf">
-    {document && <LineSchemeViewControls frame={frame} target={props.controlsTarget} camera={camera} page={props.page}>{camera && <PdfToolbar {...props} camera={camera} />}</LineSchemeViewControls>}
+    {document && <LineSchemeViewControls frame={frame} target={props.controlsTarget} camera={camera} page={props.page} onRotate={turn} rotationDisabled={props.rotationDisabled}>{camera && <PdfToolbar {...props} camera={camera} onRotate={turn} />}</LineSchemeViewControls>}
     {error ? <PdfError onRetry={retry} /> : document
-      ? <PdfSheet key={`${props.revision.id}:${props.page}:${attempt}`} {...props} document={document} view={view} onCamera={setCamera} onRetry={retry} />
+      ? <PdfSheet key={`${props.revision.id}:${props.page}:${attempt}`} {...props} rotation={rotation} document={document} view={view} onCamera={setCamera} onRetry={retry} />
       : <div className="p-8 text-sm text-slate-500" role="status">Открываем PDF…</div>}
     {!props.measuring && !props.placingLeader && <LineSchemePointTooltip frame={frame} points={props.points} />}
   </div>
@@ -79,10 +86,11 @@ function PdfSheet(props: Props & { document: PDFDocumentProxy; view: RefObject<P
     if (!page || !stage.current || !space.current || !sheet.current || !drawing.current) return
     let disposed = false
     const surface = mountSchemePdfPage(page, stage.current, space.current, sheet.current, drawing.current,
-      () => { if (!disposed) setReady(true) }, () => { if (!disposed) setError(true) }, props.view.current, props.page === 1 ? props.revision.id : undefined)
+      () => { if (!disposed) setReady(true) }, () => { if (!disposed) setError(true) }, { scale: 1, mode: 'fit-page', ...props.view.current, rotation: props.rotation }, props.page === 1 ? props.revision.id : undefined)
     setCamera(surface.camera); props.onCamera(surface.camera)
     return () => { disposed = true; const last = surface.camera.getSnapshot(); props.view.current = { ...last, rotation: pdfTurn(last.rotation - page.rotate) }; props.onCamera(null); surface.destroy() }
   }, [page, props.onCamera])
+  useLayoutEffect(() => { camera?.setPageRotation(props.rotation) }, [camera, props.rotation])
   return <>
     <div ref={stage} className="line-scheme-pdf-stage" aria-label="Чертёж PDF" tabIndex={-1}
       onContextMenu={event => {
@@ -111,7 +119,7 @@ function PdfSheet(props: Props & { document: PDFDocumentProxy; view: RefObject<P
     {error && <div className="line-scheme-load-note" style={{ pointerEvents: 'auto' }}><PdfError onRetry={props.onRetry} /></div>}
   </>
 }
-function PdfToolbar(props: Props & { camera: PdfCamera }) {
+function PdfToolbar(props: Props & { camera: PdfCamera; onRotate: () => void }) {
   const { camera } = props, view = useSyncExternalStore(camera.subscribe, camera.getSnapshot)
   return <>
     <div className="line-scheme-tool-group">
@@ -121,7 +129,7 @@ function PdfToolbar(props: Props & { camera: PdfCamera }) {
     </div>
     <div className="line-scheme-tool-group"><Button variant="ghost" size="icon" aria-label="Уменьшить PDF" onClick={() => camera.zoom(1 / 1.2)}><Minus size={15} /></Button><span className="w-11 text-center tabular-nums">{Math.round(view.scale * 100)}%</span><Button variant="ghost" size="icon" aria-label="Увеличить PDF" onClick={() => camera.zoom(1.2)}><Plus size={15} /></Button></div>
     <div className="line-scheme-tool-group"><Button variant="ghost" size="sm" onClick={() => camera.fit('fit-page')}><Scan size={15} /> Весь лист</Button><Button variant="ghost" size="sm" onClick={() => camera.fit('fit-width')}><MoveHorizontal size={15} /> По ширине</Button></div>
-    <Button variant="ghost" size="icon" aria-label="Повернуть" title="Повернуть на 90°" onClick={() => camera.rotate()}><RotateCw size={16} /></Button>
+    <Button variant="ghost" size="icon" aria-label="Повернуть" title="Повернуть на 90°" disabled={props.rotationDisabled} onClick={props.onRotate}><RotateCw size={16} /></Button>
   </>
 }
 function normalizedPoint(context: PdfCamera, event: { clientX: number; clientY: number }) {

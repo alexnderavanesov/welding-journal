@@ -19,7 +19,7 @@ import { WeldLineProgramFields, WeldLayeredControlField } from '@/components/wel
 import { WeldLineProgramImpact } from '@/components/weld-line-program-impact'
 import { isTConnectionType } from '@/lib/connection-type'
 
-export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
+export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'testing' | 'closures'
 const EMPTY_FIELD_STATUS_KEYS = new Set<WeldFieldKey>()
 
 type WeldFormEditableField = WeldField & { key: WeldFieldKey }
@@ -45,6 +45,7 @@ type WeldFormSectionsProps = {
   fieldRefs: RefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
   onToggleSection: (section: string) => void
   setDraft: Dispatch<SetStateAction<WeldInput>>
+  showClosures?: boolean
   activeTab: WeldFormTab
   onActiveTabChange: (tab: WeldFormTab) => void
   fieldStatusKeys?: ReadonlySet<WeldFieldKey>
@@ -65,6 +66,7 @@ export function WeldFormSections({
   fieldRefs,
   onToggleSection,
   setDraft,
+  showClosures,
   activeTab,
   onActiveTabChange,
   fieldStatusKeys = EMPTY_FIELD_STATUS_KEYS,
@@ -74,7 +76,7 @@ export function WeldFormSections({
   const supportHidden = new Set(['d2', 't2', 'wdi', 'hasRk', 'stamp1Z', 'stamp1ZFact'])
   fieldsByGroup = fieldsByGroup.map(group => ({ ...group, fields: group.fields.filter(field => support ? !supportHidden.has(field.key) : field.key !== 'weldLength') })).filter(group => group.fields.length)
   const controlAvailabilityFields = fieldsByGroup.flatMap(({ fields }) => fields.filter((field) => yesEmptyFieldKeys.has(field.key)))
-  const workClosureFieldsByGroup = fieldsByGroup
+  const testFieldsByGroup = fieldsByGroup
     .filter((group) => secondaryWeldFormSectionNames.has(group.section))
     .map((group) => ({
       ...group,
@@ -102,7 +104,7 @@ export function WeldFormSections({
   const jointStatusCount = countGroupFieldStatuses(regularFieldsByGroup, fieldStatusKeys)
   const controlStatusCount = countFieldStatuses(controlAvailabilityFields, fieldStatusKeys)
   const weldingMaterialStatusCount = countGroupFieldStatuses(weldingMaterialFieldsByGroup, fieldStatusKeys)
-  const workClosureStatusCount = countGroupFieldStatuses(workClosureFieldsByGroup, fieldStatusKeys)
+  const testStatusCount = countGroupFieldStatuses(testFieldsByGroup, fieldStatusKeys)
   const shortStatusLabel = fieldStatusLabel === 'Заполнено' ? 'зап.' : 'изм.'
 
   return (
@@ -139,15 +141,16 @@ export function WeldFormSections({
               onClick={() => onActiveTabChange('weldingMaterials')}
             />
           ) : null}
-          {workClosureFieldsByGroup.length > 0 ? (
+          {testFieldsByGroup.length > 0 ? (
             <WeldFormTabButton
-              active={activeTab === 'workClosure'}
-              label="Испытания и закрытие"
-              statusCount={workClosureStatusCount}
+              active={activeTab === 'testing'}
+              label="Испытания"
+              statusCount={testStatusCount}
               statusLabel={shortStatusLabel}
-              onClick={() => onActiveTabChange('workClosure')}
+              onClick={() => onActiveTabChange('testing')}
             />
           ) : null}
+          {showClosures && <WeldFormTabButton active={activeTab === 'closures'} label="Закрытие работ" statusCount={0} statusLabel="" onClick={() => onActiveTabChange('closures')} />}
         </div>
       </div>
 
@@ -225,9 +228,9 @@ export function WeldFormSections({
           ))}
         </div>
       ) : null}
-      {activeTab === 'workClosure' ? (
+      {activeTab === 'testing' ? (
         <div className="space-y-8">
-          {workClosureFieldsByGroup.map(({ section, fields }) => (
+          {testFieldsByGroup.map(({ section, fields }) => (
             <section key={section}>
               <WeldFormSectionHeader
                 section={section}

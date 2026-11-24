@@ -34,6 +34,9 @@ export default defineConfig({
     // Generated HTML reports must not reload the open application when tests,
     // builds or local file synchronization update their artifacts.
     watch: {
+      // Pass polling to Vite itself so its macOS watcher and dependency bundler
+      // both honor an explicitly polling local development session.
+      ...(process.env.CHOKIDAR_USEPOLLING === 'true' ? { usePolling: true, interval: 1200 } : {}),
       ignored: ['**/outputs/**', '**/test-results/**', '**/test-results [0-9]*/**', '**/playwright-report/**', '**/.output/**'],
     },
   },

@@ -526,6 +526,20 @@
       "when": 1795095289623,
       "tag": "0074_milky_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795427097630,
+      "tag": "0075_spooky_echo",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795505364514,
+      "tag": "0076_old_cerebro",
+      "breakpoints": true
     }
   ]
 }

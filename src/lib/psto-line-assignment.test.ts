@@ -120,18 +120,12 @@ describe('PSTO line assignment', () => {
       pstoRequest: null,
       pstoRequestDate: null,
       pstoResult: 'ожидает заявку',
-      pstoBoq: 'да',
-      pstoKs3: 'КС3-ПСТО',
-      tvmtBoq: 'BoQ-ТВМТ',
-      tvmtKs3: 'КС3-ТВМТ',
+      workClosureSummary: 'да',
     }))).toBe(false)
     expect(hasPstoLifecycleData(makeRequestOnlyRow({
       pstoRequest: null,
       pstoRequestDate: null,
-      pstoBoq: 'BoQ-ПСТО',
-      pstoKs3: 'КС3-ПСТО',
-      tvmtBoq: 'BoQ-ТВМТ',
-      tvmtKs3: 'КС3-ТВМТ',
+      workClosureSummary: 'BoQ-ПСТО',
     }))).toBe(false)
   })
 
@@ -349,8 +343,7 @@ describe('PSTO line assignment', () => {
       tvmtResult: null,
       tvmtConclusionDate: null,
       tvmtConclusion: null,
-      pstoBoq: 'BoQ-ПСТО',
-      pstoKs3: 'КС3-ПСТО',
+      workClosureSummary: 'BoQ-ПСТО',
     }))).toBe(true)
   })
 

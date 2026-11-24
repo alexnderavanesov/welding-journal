@@ -43,7 +43,7 @@ describe('JointChainCard', () => {
       finalStatus: 'ожидает НК',
     } as unknown as WeldRow
 
-    const { container } = render(
+    render(
       <JointChainCard
         row={row}
         index={0}
@@ -54,7 +54,7 @@ describe('JointChainCard', () => {
 
     expect(screen.getByText('ПСТО и ТВМТ')).toBeInTheDocument()
     expect(screen.getByText('Цикл 2: ожидает ТВМТ')).toBeInTheDocument()
-    expect(screen.getByText('Основной этап НК')).toBeInTheDocument()
+    expect(screen.getByText('НК')).toBeInTheDocument()
     const stageBadge = screen.getByText('ВИК: ожидает НК')
     expect(stageBadge).toBeInTheDocument()
     expect(screen.getByText('Итог по стыку')).toBeInTheDocument()
@@ -64,9 +64,9 @@ describe('JointChainCard', () => {
     expect(finalBadge).toHaveClass('inline-flex', 'min-h-6', 'px-2', 'leading-4')
     expect(screen.queryByText('ПСТО: проведено')).not.toBeInTheDocument()
 
-    const content = container.textContent ?? ''
-    expect(content.indexOf('ПСТО и ТВМТ')).toBeLessThan(content.indexOf('Основной этап НК'))
-    expect(content.indexOf('Основной этап НК')).toBeLessThan(content.indexOf('Итог по стыку'))
+    const nk = screen.getByText('НК')
+    expect(screen.getByText('ПСТО и ТВМТ')).toAppearBefore(nk)
+    expect(nk).toAppearBefore(screen.getByText('Итог по стыку'))
   })
 
   it('marks every downstream stage as not needed after rejected pre-TO control', () => {

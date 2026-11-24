@@ -11,7 +11,11 @@ import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 
-import type { requireDb } from '@/db'
+import { requireDb } from '@/db'
+import type { ImportStampInput, ImportStampIssue } from '@/lib/import-stamp-review'
+import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
+import { formatWelderStampFieldKeyLabel } from '@/lib/welder-stamp-format'
+import { normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import {
   appSettings,
   welderStampSuspensions,
@@ -50,6 +54,8 @@ import {
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
 import {
+  formatOfficialStampIssueForSave,
+  getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
   shouldValidateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
@@ -129,6 +135,23 @@ export type ServerWeldValidationContext = {
 
 export type PstoLineAssignmentState = PstoLinePolicy & { basis?: string }
 
+function getQualificationSettings(settingsByKey: ReadonlyMap<string, unknown>, otherSettings: OtherSettings) {
+  return {
+    saveCheckSettings: settingsByKey.has(PROJECT_SETTING_KEYS.saveCheck)
+      ? normalizeSaveCheckSettings(
+          settingsByKey.get(PROJECT_SETTING_KEYS.saveCheck),
+          { officialDlsFallback: otherSettings.requireDlsForOfficialStamps },
+        )
+      : {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          officialDls: otherSettings.requireDlsForOfficialStamps,
+        },
+    dataListSettings: settingsByKey.has(PROJECT_SETTING_KEYS.dataList)
+      ? normalizeDataListSettings(settingsByKey.get(PROJECT_SETTING_KEYS.dataList))
+      : DEFAULT_DATA_LIST_SETTINGS,
+  }
+}
+
 export async function loadServerWeldValidationContext(
   db: ValidationDb,
   lineScopeRows: readonly Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>[],
@@ -204,18 +227,7 @@ export async function loadServerWeldValidationContext(
     controlProcessSettings: settingsByKey.has(PROJECT_SETTING_KEYS.controlProcesses)
       ? normalizeControlProcessSettings(settingsByKey.get(PROJECT_SETTING_KEYS.controlProcesses))
       : DEFAULT_CONTROL_PROCESS_SETTINGS,
-    saveCheckSettings: settingsByKey.has(PROJECT_SETTING_KEYS.saveCheck)
-      ? normalizeSaveCheckSettings(
-          settingsByKey.get(PROJECT_SETTING_KEYS.saveCheck),
-          { officialDlsFallback: otherSettings.requireDlsForOfficialStamps },
-        )
-      : {
-          ...DEFAULT_SAVE_CHECK_SETTINGS,
-          officialDls: otherSettings.requireDlsForOfficialStamps,
-        },
-    dataListSettings: settingsByKey.has(PROJECT_SETTING_KEYS.dataList)
-      ? normalizeDataListSettings(settingsByKey.get(PROJECT_SETTING_KEYS.dataList))
-      : DEFAULT_DATA_LIST_SETTINGS,
+    ...getQualificationSettings(settingsByKey, otherSettings),
     otherSettings,
     systemIndexSettings: settingsByKey.has(PROJECT_SETTING_KEYS.systemIndex)
       ? normalizeSystemIndexSettings(settingsByKey.get(PROJECT_SETTING_KEYS.systemIndex))
@@ -238,6 +250,48 @@ export async function loadServerWeldValidationContext(
       },
     ]))),
   }
+}
+
+/** Evaluate supplied worksheet facts without returning welder cards, permits or suspensions. */
+export async function reviewImportStampQualifications(records: ImportStampInput[]): Promise<ImportStampIssue[]> {
+  const stamps = [...new Set(records.flatMap(row => OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => normalizeStampForCompare(row[key]))).filter(Boolean))]
+  if (!stamps.length) return []
+  return requireDb().transaction(async tx => {
+    const settingsRows = await tx.select({ key: appSettings.key, value: appSettings.value }).from(appSettings)
+      .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.saveCheck, PROJECT_SETTING_KEYS.dataList, PROJECT_SETTING_KEYS.other]))
+    const settings = new Map(settingsRows.map(row => [row.key, parseStoredValue(row.value)]))
+    const { saveCheckSettings, dataListSettings } = getQualificationSettings(settings, normalizeOtherSettings(settings.get(PROJECT_SETTING_KEYS.other)))
+    const cards = await tx.select().from(welderStamps).where(inArray(sql`upper(btrim(${welderStamps.naksStamp}))`, stamps))
+    const cardsByStamp = new Map<string, WelderStampRecord[]>()
+    for (const card of cards) {
+      const key = normalizeStampForCompare(card.naksStamp)
+      const entries = cardsByStamp.get(key) ?? []
+      entries.push(toWelderStampRecord(card))
+      cardsByStamp.set(key, entries)
+    }
+    const suspensions = saveCheckSettings.officialSuspension ? await tx.select({
+      id: welderStampSuspensions.id, naksStamp: welderStampSuspensions.naksStamp,
+      suspendedFrom: welderStampSuspensions.suspendedFrom, suspendedTo: welderStampSuspensions.suspendedTo,
+    }).from(welderStampSuspensions).where(inArray(sql`upper(btrim(${welderStampSuspensions.naksStamp}))`, stamps)) : []
+    const options = { saveCheckSettings, materialGroups: dataListSettings.materialGroups, weldingTypes: dataListSettings.weldingTypes,
+      suspensions: suspensions.map(s => ({ ...s, naksStamp: s.naksStamp ?? '', suspendedFrom: s.suspendedFrom ?? '', suspendedTo: s.suspendedTo ?? '' })) }
+    return records.flatMap((row, index) => {
+      const keys = new Set(OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(field => normalizeStampForCompare(row[field])))
+      const matches = [...keys].flatMap(key => cardsByStamp.get(key) ?? [])
+      const issues = getOfficialStampCompatibilityIssues(row, matches, options).map(issue =>
+        ({ index, fieldKey: issue.fieldKey, message: formatOfficialStampIssueForSave(issue) }))
+      // The Excel registry selector also checks the spelling of the entered code.
+      for (const fieldKey of OFFICIAL_WELDER_STAMP_FIELD_KEYS) {
+        const value = String(row[fieldKey] ?? '').trim()
+        if (value && saveCheckSettings.officialRegistry && !matches.some(card => card.naksStamp.trim() === value) &&
+            !issues.some(issue => issue.fieldKey === fieldKey)) {
+          issues.push({ index, fieldKey, message: formatSaveCheckBlockReason('officialRegistry',
+            `Поле "${formatWelderStampFieldKeyLabel(fieldKey)}" должно быть выбрано из реестра клейм. Значение "${value}" не найдено.`) })
+        }
+      }
+      return issues
+    })
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export function getPstoLineValidationScopeIdentities(
@@ -380,7 +434,7 @@ function applyPstoLineAssignments({
         record,
         index,
         importMode,
-        details: 'стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка с сохранением всех этапов контроля. Основной НК не заменяет НК до ТО. Удаление ошибочных документов выполняется отдельно.',
+        details: 'стык переносится на линию с ПСТО, но у него уже есть данные ВИК/РК/УЗК/ПВК на этапе «НК». Выполните перенос через карточку стыка с сохранением всех этапов контроля. Для этапа «НК до ТО» нужен отдельный комплект. Удаление ошибочных документов выполняется отдельно.',
       })
     }
     if (

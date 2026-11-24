@@ -41,6 +41,21 @@ try {
       await tx.execute(sql`insert into psto_repeat_cycles (weld_joint_id, sequence, psto_result) values (${firstId}, 2, 'годен')`)
       const docs = await tx.execute(sql`insert into generated_documents (type, title, file_name, mime_type, row_count, source_metadata) values ('lnk-rk', 'SAVED-DOCUMENT', 'saved.pdf', 'application/pdf', 1, '{"history":"keep"}') returning id`)
       await tx.execute(sql`insert into generated_document_weld_joints (document_id, weld_joint_id) values (${docs.rows[0].id}, ${firstId})`)
+      // Real indexed documents must follow the line too. One document per
+      // weld exercises query growth across both memberships and parents.
+      const systemDocs = await tx.execute(sql`insert into generated_documents (type,title,file_name,mime_type,row_count,document_number,source_metadata)
+        select 'system:lnkConclusionRk', 'RENAME-SYSTEM-' || id, 'keep.xlsx', 'application/octet-stream', 1, id,
+          jsonb_build_object('projects',array[project_title], 'subtitleCodes',array[subtitle_code], 'lines',array[line],
+            'methodCode','РК','methodCodes',array['РК'],'history','keep')::text
+        from weld_joints where project_title=${identity.projectTitle} returning id`)
+      const systemDocIds = systemDocs.rows.map(row => Number(row.id))
+      await tx.execute(sql`insert into generated_document_weld_joints(document_id,weld_joint_id)
+        select id,document_number from generated_documents where id=any(${sql.param(systemDocIds)}::int[])`)
+      const systemHistory = async () => (await tx.execute(sql`select id,
+        to_jsonb(d) - array['source_metadata','updated_at'] as data,
+        source_metadata::jsonb - array['projects','subtitleCodes','lines'] as history
+        from generated_documents d where id=any(${sql.param(systemDocIds)}::int[]) order by id`)).rows
+      const systemHistoryBefore = await systemHistory()
       const history = async () => (await tx.execute(sql`select
         (select jsonb_agg(d) from duplicate_controls d where weld_joint_id=${firstId}) as duplicates,
         (select jsonb_agg(d) from pre_heat_treatment_controls d where weld_joint_id=${firstId}) as pre,
@@ -61,6 +76,10 @@ try {
       const after = (await tx.execute(sql`select to_jsonb(w) - array['project_title','subtitle_code','line','line_program_id','updated_at','welding_updated_at'] as data from weld_joints w where project_title=${target.projectTitle} order by id`)).rows
       assert.deepEqual(after, before, 'Only identity/registry/version fields may change')
       assert.deepEqual(await history(), historyBefore, 'Results, cycles and documents must remain byte-for-byte equal')
+      assert.deepEqual(await systemHistory(), systemHistoryBefore, 'Renaming may only refresh derived document identities')
+      assert.equal((await tx.execute(sql`select count(*)::integer n from generated_documents where id=any(${sql.param(systemDocIds)}::int[])
+        and source_metadata::jsonb @> jsonb_build_object('projects',array[${target.projectTitle}::text],
+          'subtitleCodes',array[${target.subtitleCode}::text], 'lines',array[${target.line}::text])`)).rows[0].n, size)
       assert.equal((await tx.execute(sql`select count(*)::integer as n from weld_joints where line_program_id=${saved.id}`)).rows[0].n, size)
       assert.equal((await tx.execute(sql`select key from dispatcher_accepted_warnings where key=${oldKey}`)).rows.length, 0)
       assert.equal((await tx.execute(sql`select key from dispatcher_accepted_warnings where key=${newKey}`)).rows.length, 1)
@@ -75,6 +94,7 @@ try {
       assert.equal((await tx.select().from(weldJoints).where(eq(weldJoints.id, firstId)))[0].line, recased.line)
       assert.equal((await tx.execute(sql`select key from dispatcher_accepted_warnings where key=${newKey}`)).rows.length, 1)
       assert.deepEqual(await history(), historyBefore)
+      assert.deepEqual(await systemHistory(), systemHistoryBefore)
       throw rollback
     }), (error) => error === rollback)
   }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatc
 import { getActiveReportFromPath } from '@/lib/app-report-routes'
 import type { ActiveReport } from '@/lib/home-state'
 import { getPageScrollPosition, restorePageScrollPosition, type PageScrollPosition } from '@/lib/page-scroll-position'
+import { migrateClosureColumnFilters } from './work-closures'
 import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
 import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 import { getRuleSettingsTarget } from '@/lib/rule-settings-navigation'
@@ -295,7 +296,7 @@ function getReportNavigationSnapshot(historyState: unknown): ReportNavigationSna
 }
 
 function restoreReportFilters(saved: Record<string, string>): WeldFilters {
-  const filters = migrateLegacyWeldFieldRecordKeys(saved)
+  const filters = migrateClosureColumnFilters(migrateLegacyWeldFieldRecordKeys(saved))
   const value = filters.dispatcherTasks
   if (!value) return filters
   const renameHistoryRule = (code: string) => code.trim().toUpperCase() === 'СП-12' ? 'СП-11' : code

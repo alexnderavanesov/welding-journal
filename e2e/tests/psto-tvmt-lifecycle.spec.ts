@@ -128,13 +128,13 @@ test('переключение этапа ЛНК сохраняет оболоч
   const stageSwitchButtons = stageWorkflowDialog
     .getByRole('group', { name: 'Этап контроля ЛНК' })
     .getByRole('button')
-  await expect(stageSwitchButtons).toHaveText(['До ТО', 'Основной'])
+  await expect(stageSwitchButtons).toHaveText(['НК до ТО', 'НК'])
 
-  await stageWorkflowDialog.getByRole('button', { name: 'Основной', exact: true }).click()
+  await stageWorkflowDialog.getByRole('button', { name: 'НК', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК', exact: true })).toBeVisible()
   await expect(page.locator('[data-e2e-stage-shell="stable"]')).toHaveCount(1)
 
-  await stageWorkflowDialog.getByRole('button', { name: 'До ТО', exact: true }).click()
+  await stageWorkflowDialog.getByRole('button', { name: 'НК до ТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
   await expect(page.locator('[data-e2e-stage-shell="stable"]')).toHaveCount(1)
 })
@@ -281,7 +281,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expectRepeatCycle({ sequence: 2, tvmt_result: 'годен', tvmt_conclusion_date: '2026-08-11' })
   await expectSignature('system:tvmtConclusion', '2026-08-11')
 
-  await runNextAction(page, 'Создать заявку основного НК')
+  await runNextAction(page, 'Создать заявку НК')
   await expect(page).toHaveURL(/\/lnk$/)
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-12')
@@ -290,7 +290,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expectWeld({ vik_request_date: '2026-08-12', vik_result: 'ожидает НК' })
 
-  await runNextAction(page, 'Внести результат основного НК')
+  await runNextAction(page, 'Внести результат НК')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК' })).toBeVisible()
   await chooseOptionByLabel(page, 'Метод контроля', 'ВИК')
   await fillDate(page, 'Дата контроля', '2026-08-13')
@@ -607,7 +607,7 @@ test('позднее назначение ПСТО сохраняет факти
     conclusion_date: '2026-08-01',
   })
   const completedRow = await pstoActionRow(page, LATE_ASSIGNMENT_JOINT)
-  await expect(completedRow.getByText('Создать заявку основного НК', { exact: true })).toHaveCount(0)
+  await expect(completedRow.getByText('Создать заявку НК', { exact: true })).toHaveCount(0)
   await revealPstoColumn(page, 'dispatcherTasks')
   const tasks = completedRow.locator('[col-id="dispatcherTasks"]')
   await expect(tasks).toBeVisible()
@@ -865,7 +865,7 @@ async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cance
     if (expectsPreview) {
       await expect(dialog).toBeVisible()
       await expect(dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
-      await expect(dialog.getByRole('button', { name: /Перенести.*НК|Оставить основной/ })).toHaveCount(0)
+      await expect(dialog.getByRole('button', { name: /Перенести.*НК|Оставить НК/ })).toHaveCount(0)
     } else {
       await expect.poll(() => calls.filter(name => name.startsWith('getPstoWeldLineMovePreview_')).length).toBe(1)
       await expect(dialog).toHaveCount(0)

@@ -18,7 +18,7 @@ export function getLayeredControlSaveError(
 export function getLayeredControlContextActionBlockReason(row: WeldRow) {
   if (!isActiveOfficialWeld(row)) return EXCLUDED_CONTROL_ASSIGNMENT_REASON
   if (String(row.pvkResult ?? '').trim().toLowerCase() !== 'годен') {
-    return 'Сначала внесите собственный основной результат ПВК «годен». Заранее назначить послойный контроль можно в карточке или программе линии.'
+    return 'Сначала внесите результат ПВК стыка «годен». Заранее назначить послойный контроль можно в карточке или программе линии.'
   }
   return getLayeredControlSaveError({ ...row, hasVik: 'да', hasPvk: 'да', layeredControlAssigned: true }, row)
 }
@@ -53,11 +53,11 @@ export function getLayeredControlSaveIssues(
   }
   if (previous?.layeredControlAssigned && isCompletedLineProgramResult(previous.pvkResult) &&
     !isCompletedLineProgramResult(current.pvkResult)) {
-    add('Сначала уберите послойный контроль отдельной командой, затем удалите основной результат ПВК.', 'pvkResult')
+    add('Сначала уберите послойный контроль отдельной командой, затем удалите результат ПВК стыка.', 'pvkResult')
   }
   if (pvkGoodOnly) {
     if (isRejectedLineProgramResult(current.pvkResult) && current.pvkResult !== previous?.pvkResult) {
-      add('Включена настройка «ПВК — только годен»: негодный основной результат ПВК недоступен.', 'pvkResult')
+      add('Включена настройка «ПВК — только годен»: негодный результат ПВК стыка недоступен.', 'pvkResult')
     }
     const previousControls = new Map((previous?.preHeatTreatmentControls ?? []).map((control) => [control.method, control.result]))
     if ((current.preHeatTreatmentControls ?? []).some((control) => control.method === 'ПВК' &&

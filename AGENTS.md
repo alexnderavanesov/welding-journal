@@ -103,6 +103,10 @@
 
 ## Full pre-commit audit
 
+- Excel import and data replacement were checked in the 2026-11-24 local pre-commit audit at the user's request. The checked settings, qualifications, permissions, retry behavior and persisted outcomes are in [the audit report](docs/precommit-audit-2026-11-24.md). The agreed scope remains recorded in [the audit plan](docs/precommit-audit-2026-10-01.md).
+
+- Next large systemic audit (user decision, 2026-11-23): review one-time scripts and release data steps after intervening releases, and remove those confirmed obsolete. Account for supported upgrades and restoration of older backups. The scope and document-line example are in [the audit plan](docs/precommit-audit-2026-10-01.md). Carry this item forward until that audit.
+
 - Deferred systemic-audit item (user decision, 2026-11-10): investigate the line-program reading-position shift in WebKit after reversing table density in another tab with multiple expanded stamp branches during the next separately requested systemic audit. Determine whether the cause is application/integration or browser; fix a verified application/integration cause with regression coverage and no Chrome regression, and check whether the shared mechanism affects ordinary workflows. A Safari/WebKit cause is not established. Preserve the failing assertion and evidence in `docs/precommit-line-schemes-audit-2026-11-10.md`; agreed future scope is in `docs/precommit-audit-2026-10-01.md`. Do not continue this investigation now or launch an audit merely because this item is recorded.
 
 - User reminder request (2026-11-04): before the next pre-commit check, remind the user about checking speed and smoothness in **all tables and sections**, including nested/modal tables. They reported a very slight subjective slowdown; it is not yet a measured regression. Record the reminder in `docs/precommit-audit-2026-10-01.md`. This request is to remember and discuss the check before starting it, not to launch performance tests, a systemic audit or speculative optimizations now; it does not reopen the completed October audit or the unreproduced SQL anomaly.

@@ -13,7 +13,7 @@ describe('explicit layered control', () => {
     expect(getLayeredControlContextActionBlockReason({ ...good, connectionType: 'С17' })).toContain('только для У')
     expect(getLayeredControlContextActionBlockReason({ ...good, uzkResult: 'ремонт' })).toContain('нельзя сохранить')
     expect(getLayeredControlContextActionBlockReason({ ...good, duplicateControls: [{ id: 1, weldJointId: 1, method: 'УЗК', result: 'годен', controlDate: '', conclusion: '', conclusionDate: '' }] })).toContain('дубль-контролем')
-    expect(getLayeredControlContextActionBlockReason(base)).toContain('основной результат')
+    expect(getLayeredControlContextActionBlockReason(base)).toContain('результат ПВК стыка')
     expect(buildLayeredControlAssignment(base, true).layeredControlAssigned).toBe(true)
   })
   it('does not introduce RK on T joints, while leaving unchanged historical RK intact', () => {

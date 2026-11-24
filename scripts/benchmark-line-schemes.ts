@@ -57,14 +57,41 @@ try {
     points: await measure(async () => { const data = await readSchemePointPage({ revisionId, page: 1 }); assert.equal(data.points.length, 500); assert.equal(data.next, null) }),
   })
   const small = await reads()
+  const sorting = process.env.E2E_SCHEME_SORT_SCALE === '1'
+  const sortTimings = async () => {
+    const search = 'E2E scheme scale'
+    const timings: Record<string, number[]> = {}
+    for (const field of ['default', 'line', 'placedCount', 'total'] as const) {
+      timings[field] = []
+      for (let sample = 0; sample < 2; sample++) {
+        const start = performance.now()
+        const data = await readSchemeLines({ search, sort: field === 'default' ? undefined : { field, direction: 'desc' } })
+        assert.equal(data.total, 400)
+        timings[field].push(Math.round(performance.now() - start))
+      }
+    }
+    return timings
+  }
+  let mediumSort: Awaited<ReturnType<typeof sortTimings>> | undefined
+  const mediumJoints = 500 + 399 * 30
   await withE2eDatabase(async client => {
     await client.query(`insert into line_programs(project_title,subtitle_code,line,psto_assignment) select 'E2E scheme scale others','SC','other-'||n,'unassigned' from generate_series(1,399) n`)
+  })
+  const addScaleJoints = (first: number, last: number) => withE2eDatabase(async client => {
     await client.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,officiality,revision_actuality,connection_type,weld_date,has_vik,psto_required)
-      select l.id,l.project_title,l.subtitle_code,l.line,'S'||n,'действующий','актуальная','С',date '2026-11-01','Да','Нет' from line_programs l cross join generate_series(1,500) n where l.project_title='E2E scheme scale others'`)
-    await client.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id) select id,'primary',id from weld_joints where project_title='E2E scheme scale others'`)
-    assert.equal(Number((await client.query("select count(*) from weld_joints where project_title like 'E2E scheme scale %'")).rows[0].count), 200000)
+      select l.id,l.project_title,l.subtitle_code,l.line,'S'||n,'действующий','актуальная','С',date '2026-11-01','Да','Нет' from line_programs l cross join generate_series($1::int,$2::int) n where l.project_title='E2E scheme scale others'`, [first, last])
+    await client.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id) select id,'primary',id from weld_joints where project_title='E2E scheme scale others' on conflict do nothing`)
     await client.query('analyze weld_joints'); await client.query('analyze weld_joint_program_states')
   })
+  if (sorting) {
+    await addScaleJoints(1, 30)
+    mediumSort = await sortTimings()
+    await addScaleJoints(31, 500)
+  } else await addScaleJoints(1, 500)
+  await withE2eDatabase(async client => {
+    assert.equal(Number((await client.query("select count(*) from weld_joints where project_title like 'E2E scheme scale %'")).rows[0].count), 200000)
+  })
+  const largeSort = sorting ? await sortTimings() : undefined
   const large = await reads()
   for (const key of ['list', 'joints', 'points'] as const) {
     assert.deepEqual(large[key].sqlStatements, small[key].sqlStatements, `${key}: unrelated joints must not increase SQL count`)
@@ -97,5 +124,5 @@ try {
       changes: { upsert: next.map(point => ({ ...point, id: randomUUID(), page: 2, x: .2, y: .3 })), remove: [] } })
     return { onePoint, move500Points, add500PointsMs: Math.round(performance.now() - start) }
   })
-  console.log(JSON.stringify({ scale: { joints: 200000, lines: 400, targetLine: 500, visiblePagePoints: 500, archivedRevisions: 20, totalMarkers: 10500, finalLargeLine: 20000, finalJoints: 219500 }, small, large, registry, largeSingleLine, saves }))
+  console.log(JSON.stringify({ scale: { joints: 200000, lines: 400, targetLine: 500, visiblePagePoints: 500, archivedRevisions: 20, totalMarkers: 10500, finalLargeLine: 20000, finalJoints: 219500 }, small, large, registry, ...(sorting ? { sort: { mediumJoints, mediumSort, largeSort } } : {}), largeSingleLine, saves }))
 } finally { await closeDatabase(); pg.Client.prototype.query = originalQuery }

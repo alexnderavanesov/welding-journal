@@ -26,7 +26,7 @@ export function splitActivityOrigins(rows: ActivityRecord[]) {
   return groups
 }
 const entityLabels: Record<string, string> = {
-  weld_joints: 'Стык', generated_documents: 'Документ', generated_document_weld_joints: 'Связь документа со стыком',
+  work_closures: 'Закрытие работ', weld_joints: 'Стык', generated_documents: 'Документ', generated_document_weld_joints: 'Связь документа со стыком',
   pre_heat_treatment_controls: 'НК до ТО', psto_repeat_cycles: 'Цикл ПСТО / ТВМТ', duplicate_controls: 'Дублирующий контроль',
   line_programs: 'Программа линии', psto_chain_exceptions: 'Исключение ПСТО', welder_stamps: 'Клеймо сварщика',
   welder_stamp_suspensions: 'Приостановка клейма', specialists: 'Специалист', technology_cards: 'Технологическая карта',

@@ -1,7 +1,6 @@
 import { and, asc, eq, gt, ilike, inArray, sql } from 'drizzle-orm'
-import { appSettings, technologyCardNames, technologyCards, weldJoints, type TechnologyCard } from '@/db/schema'
-import { normalizeDataListSettings } from '@/lib/data-list-settings'
-import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import { technologyCardNames, technologyCards, weldJoints, type TechnologyCard } from '@/db/schema'
+import { readServerDataLists as readTechnologyCardSettings } from './data-list-settings-policy'
 import { createTechnologyCardMatcher } from '@/lib/technology-card-matching'
 import type { TechnologyCardIssue, TechnologyCardRecord, TechnologyCardWeld } from '@/lib/technology-card-types'
 import { validateTechnologyCard } from '@/lib/technology-card-validation'
@@ -65,10 +64,7 @@ export function assertTechnologyCardRevision(actual: number, expected: unknown) 
   }
 }
 
-export async function readTechnologyCardSettings(tx: Transaction) {
-  const [row] = await tx.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.dataList)).limit(1)
-  return normalizeDataListSettings(row ? JSON.parse(row.value) : undefined)
-}
+export { readTechnologyCardSettings }
 
 async function prepareRegistryMutation(tx: Transaction) {
   await lockWeldValidationSettings(tx)

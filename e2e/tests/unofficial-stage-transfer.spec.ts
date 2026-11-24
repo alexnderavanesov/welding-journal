@@ -82,7 +82,7 @@ for (const officiality of ['действующий', 'неофициальный
     await expect(page.getByTestId('context-action-menu')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
     await page.keyboard.press('Escape')
-    await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+    await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК до ТО', exact: true }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(line)
     await expect(dialog.getByText('STAGE-PRE-VIK-C', { exact: true }).first()).toBeVisible()
@@ -103,7 +103,7 @@ for (const officiality of ['действующий', 'неофициальный
     // a data transfer and must show the stored pre-TO request itself.
     await expect(dialog.getByRole('group', { name: 'Этап контроля ЛНК' })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
-    await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+    await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК до ТО', exact: true }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByPlaceholder('Название, дата, стык или линия').fill(line)
     await expect(dialog.getByText('STAGE-PRE-VIK-R', { exact: true }).first()).toBeVisible()

@@ -87,12 +87,9 @@ test('physical totals, dates and chain results stay in their columns; error take
   const cell = (await group(page, 'SUMMARY-REPAIR').locator('[col-id="wdi"]').boundingBox())!
   expect(Math.abs(header.x - cell.x)).toBeLessThan(1)
   expect(Math.abs(header.width - cell.width)).toBeLessThan(1)
-  const alignment = await group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="wdi"]').evaluate(el => ({
-    textOffset: el.querySelector('span')!.getBoundingClientRect().left - el.getBoundingClientRect().left,
-    alignment: getComputedStyle(el).justifyContent,
-  }))
-  expect(alignment.alignment).toBe('flex-start')
-  expect(alignment.textOffset).toBeLessThan(1)
+  const textOffset = await group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="wdi"]').evaluate(el =>
+    el.querySelector('span')!.getBoundingClientRect().left - el.getBoundingClientRect().left)
+  expect(Math.abs(textOffset)).toBeLessThan(1)
   await page.screenshot({ path: info.outputPath('group-summaries.png') })
   expect(errors).toEqual([])
 })

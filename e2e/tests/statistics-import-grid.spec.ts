@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { resizeFilterPopup } from '../filter-popup'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import * as XLSX from 'xlsx'
@@ -62,7 +63,7 @@ test('statistics and import: large lists, preserved details and bounded renderin
     await page.goto('/statistics')
     await page.getByRole('button', { name: 'Сварщики', exact: true }).click()
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+    await selectStatisticsProjects(page, project)
     await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('custom')
     await page.getByLabel('Период с', { exact: true }).fill('2026-09-01')
     const start = performance.now()
@@ -87,6 +88,8 @@ test('statistics and import: large lists, preserved details and bounded renderin
     expect(calls.filter(x => x.startsWith('getStatisticsServerResult_'))).toHaveLength(beforeScroll)
     {
       const resize = welders.locator('.ag-header-cell[col-id="stamp"] .ag-header-cell-resize')
+      await resize.scrollIntoViewIfNeeded()
+      await expect(resize).toBeInViewport()
       const grip = (await resize.boundingBox())!
       await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
       await page.mouse.down()
@@ -147,7 +150,7 @@ test('statistics and import: large lists, preserved details and bounded renderin
     await expect(lines.getByText('Категория', { exact: true })).toBeVisible()
     await expect(lines.getByText('Контроль, %', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Параметры', exact: true })).toHaveCount(0)
-    await expect(page.getByRole('combobox', { name: 'Проект', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Проект Все проекты', exact: true })).toBeVisible()
     await expect(page.getByText('Линии с наибольшим остатком', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('textbox', { name: 'Поиск по линии, проекту или шифру' })).toHaveCount(0)
     const beforeLineSearch = calls.filter(x => x.startsWith('getStatisticsServerResult_')).length

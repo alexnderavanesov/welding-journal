@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { useWeldReportViewState } from '@/lib/use-weld-report-view-state'
+import { getWeldTableViewSections } from '@/lib/weld-table-sections'
 import { DEFAULT_JOURNAL_APPEARANCE } from '@/lib/welding-journal-grid-state'
 import { JournalGridToolbar } from './welding-journal-grid-toolbar'
 
@@ -12,17 +13,30 @@ const sections = [
 const required = new Set(['line']), collapsed = new Set<string>()
 const filtersChanged = vi.fn(), sortChanged = vi.fn()
 
-function Toolbar() {
-  const view = useWeldReportViewState({ storageKey: 'column-choice-test', sections, alwaysVisibleFieldKeys: required,
+function Toolbar({ withNextStep = false } = {}) {
+  const viewSections = withNextStep
+    ? getWeldTableViewSections([sections[0], { section: 'Спул', fields: [FIELD_BY_KEY.get('spool')!] }, sections[1]], ['Следующий шаг'])
+    : sections
+  const view = useWeldReportViewState({ storageKey: 'column-choice-test', sections: viewSections, alwaysVisibleFieldKeys: required,
     defaultCollapsedSections: collapsed, columnFilters: { line: 'keep' }, sort: null,
     onColumnFiltersChange: filtersChanged, onSortChange: sortChanged })
-  return <JournalGridToolbar settingsLabel="Настройка вида" sections={sections} extraSections={[]}
+  return <JournalGridToolbar settingsLabel="Настройка вида" sections={viewSections}
     alwaysVisible={required} view={view} openColumnsRequest={1} appearance={DEFAULT_JOURNAL_APPEARANCE}
     onAppearanceChange={vi.fn()} onResetLayout={vi.fn()} hasFilters={false} onClearFilters={vi.fn()} />
 }
 
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks() })
 afterEach(cleanup)
+
+it('places the next-step toggle directly after the spool section and keeps it searchable', () => {
+  render(<Toolbar withNextStep />)
+  const spool = screen.getByRole('checkbox', { name: 'Раздел: Спул' }).closest('details')!
+  const nextStep = screen.getByRole('checkbox', { name: 'Следующий шаг' })
+  expect(spool.nextElementSibling).toContainElement(nextStep)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Найти столбец или раздел' }), { target: { value: 'шаг' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Следующий шаг' }))
+  expect(nextStep).not.toBeChecked()
+})
 
 it('enables only the chosen column after hiding its section, then saves that exact choice', () => {
   const first = render(<Toolbar />)

@@ -1,3 +1,5 @@
+import { closureDimension } from '@/lib/work-closure-columns'
+import { WorkClosureColumnFilter } from './work-closure-filter'
 import { useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useGridFilterDisplay, type CustomFilterDisplayProps } from 'ag-grid-react'
@@ -20,6 +22,8 @@ export const JOURNAL_SERVER_FILTER = { component: JournalGridFilter, doesFilterP
 function JournalGridFilter(props: CustomFilterDisplayProps) {
   const table = useJournalFilter()
   const key = props.column.getColId() as WeldFieldKey
+  const dimension = closureDimension(key)
+  if (dimension) return <WorkClosureColumnFilter {...props} dimension={dimension} />
   // Preserve the full year/month/day tree and exact time leaves. Ordinary
   // high-cardinality lists use bounded remote pages in every server-backed report.
   return (table.report === 'weldingJournal' || table.deferModelChanges) && FIELD_BY_KEY.get(key)?.kind !== 'date' && !DATE_TIME_WELD_FIELD_KEYS.has(key)

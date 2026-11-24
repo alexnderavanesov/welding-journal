@@ -81,7 +81,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     const picture = page.getByRole('dialog').filter({ has: pictureHeading })
     // Early primary entry is now always permissive. Completed primary work
     // stays visible; the explicit backfill action is offered by SP-06 below.
-    await expect(picture).toContainText('Результаты основного НК внесены')
+    await expect(picture).toContainText('Результаты НК внесены')
     await expect(picture).toContainText('СП-06 остаётся')
     await expect(picture.getByText('ожидает заявку до ТО', { exact: true })).toBeVisible()
     await expect(picture).not.toContainText('Работа по стыку завершена')

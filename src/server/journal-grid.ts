@@ -1,3 +1,4 @@
+import { projectClosureRow, selectClosurePositions } from './work-closure-query'
 import { getReportTaskPublicationCacheIdentity } from './report-task-publication-cache-key'
 import { journalControlValueSql } from './journal-display-sql'
 import { createJournalCountCache } from './journal-count-cache'
@@ -242,12 +243,14 @@ export async function readJournalLeafRows(context: JournalReadContext, ids?: num
     : narrowPage && request.sort && !(request.sort.fieldKey === 'line' && request.sort.direction === 'asc')
       && ['projectTitle', 'subtitleCode', 'line', 'weldDate', 'finalStatus'].includes(request.sort.fieldKey)
       ? sql`${weldJoints.id} in ${journalOrderedPageIds(where, order, request.end)}` : where
-  const query = (context.db ?? requireDb()).select(WELD_TABLE_SELECT).from(weldJoints)
+  const query = (context.db ?? requireDb()).select({
+    ...WELD_TABLE_SELECT, ...(journalReport(request.report) === 'weldingJournal' ? selectClosurePositions(request.columnFilters) : {}),
+  }).from(weldJoints)
     .where(ids ? and(where, buildNumberArrayMatch(weldJoints.id, ids)) : pageWhere)
     .orderBy(...(ids ? [sql`array_position(${sql.param(ids)}::int[], ${weldJoints.id})`]
       : getReportOrderBy(journalReport(request.report), request.sort ?? undefined, context.settings)))
   const rows = await (ids ? query : query.limit(request.end - request.start).offset(request.start))
-  const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, context.settings), { dispatcherState: context.dispatcher, db: context.db })
+  const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows.map(row => projectClosureRow(row, 'grid')), context.settings), { dispatcherState: context.dispatcher, db: context.db })
   const report = journalReport(request.report)
   const prepared = prepareJournalPageRows(report === 'weldingJournal' ? hydrated
     : buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)

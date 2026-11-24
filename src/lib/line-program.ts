@@ -88,7 +88,7 @@ export function asSupportLineProgram(line: LineProgramRecord): LineProgramRecord
 }
 
 /** Pure validation, shared by imports and interactive writes. All conflicting fields are retained. */
-export function getLineProgramMetadataConflicts(record: WeldInput, line: LineProgramProperties, previous?: WeldInput) {
+export function getLineProgramMetadataConflicts(record: WeldInput, line: Pick<LineProgramProperties, 'category' | 'groupName' | 'weldControlPercent'>, previous?: WeldInput) {
   return (['category', 'groupName', 'weldControlPercent'] as const).filter((field) => {
     const supplied = record[field]
     if (supplied == null || String(supplied).trim() === '') return false

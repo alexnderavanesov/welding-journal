@@ -913,7 +913,7 @@ test('wheel scrolling remains monotonic through the heading and across loaded bl
   expect(metrics.up.end).toBeLessThanOrEqual(1)
 })
 
-test('only joint and next-step cells show styled tips, dismissed on scroll and Escape', async ({ page }, info) => {
+test('joint and next-step cells show styled tips, dismissed on scroll and Escape', async ({ page }, info) => {
   const first = page.locator('.ag-row[row-index="0"]')
   await first.locator('[col-id="joint"]').hover()
   const tip = page.getByRole('tooltip')

@@ -69,9 +69,9 @@ test('status batches keep null-safe stale-value protection and roll back atomica
   let ids: number[] = []
   await expect(requireDb().transaction(async tx => {
     const rows = await tx.insert(weldJoints).values([
-      { projectTitle: 'E2E status arrays', finalStatus: null, boq: 'preserved' },
-      { projectTitle: 'E2E status arrays', finalStatus: 'годен', boq: 'preserved' },
-      { projectTitle: 'E2E status arrays', finalStatus: 'ожидает НК', boq: 'preserved' },
+      { projectTitle: 'E2E status arrays', finalStatus: null, isometry: 'preserved' },
+      { projectTitle: 'E2E status arrays', finalStatus: 'годен', isometry: 'preserved' },
+      { projectTitle: 'E2E status arrays', finalStatus: 'ожидает НК', isometry: 'preserved' },
     ]).returning()
     ids = rows.map(row => row.id)
     await persistCalculatedFinalStatuses(tx, [

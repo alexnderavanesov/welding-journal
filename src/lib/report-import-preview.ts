@@ -66,6 +66,7 @@ export type ReportImportPreviewError = {
   message: string
   id?: number
   fieldKeys?: WeldFieldKey[]
+  invalidStampFields?: WeldFieldKey[]
 }
 
 export type ReportImportRecord = WeldInput & { id?: number; deleteRequested?: boolean }
@@ -78,23 +79,27 @@ export type ReportImportPreview = {
   errors: ReportImportPreviewError[]
   skippedRows: number
   expectedRowVersions?: WeldRowVersionTarget[]
+  validRecordRowNumbers: number[]
   recordRowNumbers?: number[]
 }
 
+/** Keep the write payload and optimistic versions aligned with their worksheet rows. */
+export function excludeImportPreviewRows(preview: ReportImportPreview, errors: ReportImportPreviewError[], invalid: ReadonlySet<number>): ReportImportPreview {
+  const keep = (_: unknown, i: number) => !invalid.has(preview.validRecordRowNumbers[i])
+  return { ...preview, errors, validRecords: preview.validRecords.filter(keep),
+    validRecordRowNumbers: preview.validRecordRowNumbers.filter(keep),
+    expectedRowVersions: preview.expectedRowVersions?.filter(keep) }
+}
+
 type ReportImportPreviewValidationOptions = {
+  checkStampsOnServer?: boolean
   activeReport: ImportableReport
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }
 
-type BuildReportImportPreviewOptions = {
-  activeReport: ImportableReport
-  file: File
-  weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
-  welderStamps: WelderStampRecord[]
-  welderStampSuspensions: WelderStampSuspensionRecord[]
-}
+type BuildReportImportPreviewOptions = ReportImportPreviewValidationOptions & { file: File }
 
 type BuildReportMassFillPreviewOptions = BuildReportImportPreviewOptions & {
   rows: WeldRow[]
@@ -104,6 +109,7 @@ type BuildReportMassFillPreviewOptions = BuildReportImportPreviewOptions & {
 export async function buildReportImportPreview({
   activeReport,
   file,
+  checkStampsOnServer,
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -115,10 +121,11 @@ export async function buildReportImportPreview({
   const ignoredFieldKeys = getReportImportIgnoredFieldKeys(activeReport, preparationSettings)
   const fields = getReportImportPreviewFields(activeReport)
 
-  const { validRecords, errors } = validateReportImportRecords(
+  const { validRecords, errors, validRecordRowNumbers } = validateReportImportRecords(
     records,
     {
       activeReport,
+      checkStampsOnServer,
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
@@ -140,6 +147,7 @@ export async function buildReportImportPreview({
     validRecords,
     errors,
     skippedRows: parsed.skippedRows,
+    validRecordRowNumbers,
     recordRowNumbers: parsed.recordRowNumbers,
   }
 }
@@ -149,6 +157,7 @@ export async function buildReportMassFillPreview({
   file,
   rows,
   pstoLinePolicies = [],
+  checkStampsOnServer,
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -159,6 +168,7 @@ export async function buildReportMassFillPreview({
     file,
     rows,
     pstoLinePolicies,
+    checkStampsOnServer,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
@@ -170,6 +180,7 @@ export async function buildReportReplaceDataPreview({
   file,
   rows,
   pstoLinePolicies = [],
+  checkStampsOnServer,
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -180,6 +191,7 @@ export async function buildReportReplaceDataPreview({
     file,
     rows,
     pstoLinePolicies,
+    checkStampsOnServer,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
@@ -192,6 +204,7 @@ async function buildExistingRowsImportPreview({
   file,
   rows,
   pstoLinePolicies = [],
+  checkStampsOnServer,
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -219,6 +232,7 @@ async function buildExistingRowsImportPreview({
   const pstoPoliciesByLine = new Map(pstoLinePolicies.map(policy => [policy.key, policy]))
   const records: ReportImportRecord[] = []
   const validRecords: ReportImportRecord[] = []
+  const validRecordRowNumbers: number[] = []
   const errors: ReportImportPreviewError[] = []
   const expectedRowVersions: WeldRowVersionTarget[] = []
   const recordRowNumbers: number[] = []
@@ -256,6 +270,7 @@ async function buildExistingRowsImportPreview({
       const deletedRecord = { ...existingRow, id: existingRow.id, deleteRequested: true } as ReportImportRecord
       records.push(deletedRecord)
       recordRowNumbers.push(rowNumber)
+      validRecordRowNumbers.push(rowNumber)
       validRecords.push(deletedRecord)
       expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
       return
@@ -379,6 +394,7 @@ async function buildExistingRowsImportPreview({
       previousRows: [existingRow],
       skipManualJointNameValidation: true,
       skipLnkResultRuleValidation: true,
+      checkStampsOnServer,
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
@@ -422,6 +438,7 @@ async function buildExistingRowsImportPreview({
       return
     }
 
+    validRecordRowNumbers.push(rowNumber)
     validRecords.push(preparedUpdates)
     expectedRowVersions.push({
       id: existingRow.id,
@@ -431,16 +448,25 @@ async function buildExistingRowsImportPreview({
     })
   })
 
-  return {
-    fileName: file.name,
-    fields,
-    records,
-    validRecords,
-    errors,
-    skippedRows,
-    expectedRowVersions,
-    recordRowNumbers,
+  const preview = {
+    fileName: file.name, fields, records, validRecords, errors, skippedRows, expectedRowVersions, recordRowNumbers, validRecordRowNumbers,
   }
+  const rowsByTarget = new Map<number, number[]>()
+  validRecords.forEach((row, index) => {
+    const numbers = rowsByTarget.get(row.id!) ?? []
+    numbers.push(validRecordRowNumbers[index])
+    rowsByTarget.set(row.id!, numbers)
+  })
+  const conflicts = new Set<number>()
+  for (const [id, numbers] of rowsByTarget) {
+    if (numbers.length < 2) continue
+    for (const rowNumber of numbers) {
+      conflicts.add(rowNumber)
+      errors.push({ rowNumber, id, title: getRecordTitle(rowsById.get(id)!), fieldKeys: ['id'],
+        message: `Для стыка с ID ${id} указано несколько действий. Оставьте в файле одну строку для этого стыка.` })
+    }
+  }
+  return conflicts.size ? excludeImportPreviewRows(preview, errors.sort((a, b) => a.rowNumber - b.rowNumber), conflicts) : preview
 }
 
 function getImportPstoLineMoveBlockReason(
@@ -479,7 +505,7 @@ function getImportPstoLineMoveBlockReason(
   const targetAssigned = exception?.required ?? policy?.state === 'assigned'
   if (targetAssigned) {
     return hasPrimaryLnkHistoryBeforePstoAssignment(existingRow)
-      ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка с сохранением всех этапов контроля. Основной НК не заменяет НК до ТО. Удаление ошибочных документов выполняется отдельно.'
+      ? 'Стык переносится на линию с ПСТО, но у него уже есть данные ВИК/РК/УЗК/ПВК на этапе «НК». Выполните перенос через карточку стыка с сохранением всех этапов контроля. Для этапа «НК до ТО» нужен отдельный комплект. Удаление ошибочных документов выполняется отдельно.'
       : ''
   }
   if (!hasPstoLifecycleData(existingRow)) return ''
@@ -539,13 +565,19 @@ export function fixReportImportPreviewErrors(
   if (preview.errors.length === 0) return preview
 
   const preparationSettings = loadImportedWeldPreparationSettings()
-  const errorRowNumbers = new Set(preview.errors.map((error) => error.rowNumber))
+  const errorsByRow = new Map(preview.errors.map(error => [error.rowNumber, error]))
   const fixedRecords = preview.records.map((record, index) => {
     const rowNumber = preview.recordRowNumbers?.[index] ?? index + 2
-    if (!errorRowNumbers.has(rowNumber)) return record
+    const error = errorsByRow.get(rowNumber)
+    if (!error) return record
+    if (error.invalidStampFields?.length) {
+      const cleared = clearImportRecordFields(record, error.invalidStampFields)
+      if (!validateReportImportRecords([cleared], options, {}, preparationSettings).errors.length) return cleared
+      return fixImportRecordCheckedCells(cleared, options, preparationSettings)
+    }
     return fixImportRecordCheckedCells(record, options, preparationSettings)
   })
-  const { validRecords, errors } = validateReportImportRecords(
+  const { validRecords, errors, validRecordRowNumbers } = validateReportImportRecords(
     fixedRecords,
     options,
     { rowNumbers: preview.recordRowNumbers },
@@ -555,6 +587,7 @@ export function fixReportImportPreviewErrors(
   return {
     ...preview,
     records: fixedRecords,
+    validRecordRowNumbers,
     validRecords,
     errors,
   }
@@ -562,7 +595,7 @@ export function fixReportImportPreviewErrors(
 
 function validateReportImportRecords(
   records: ReportImportRecord[],
-  { activeReport, weldFormStampSelectOptions, welderStamps, welderStampSuspensions }: ReportImportPreviewValidationOptions,
+  { activeReport, checkStampsOnServer, weldFormStampSelectOptions, welderStamps, welderStampSuspensions }: ReportImportPreviewValidationOptions,
   source: {
     rowNumbers?: readonly number[]
     cellErrors?: readonly {
@@ -574,6 +607,7 @@ function validateReportImportRecords(
   } = {},
   preparationSettings: ImportedWeldPreparationSettings = loadImportedWeldPreparationSettings(),
 ) {
+  const validRecordRowNumbers: number[] = []
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
   const { saveCheckSettings } = preparationSettings
@@ -637,6 +671,7 @@ function validateReportImportRecords(
     let preparedRecord: ReportImportRecord | null = null
     const preparation = collectImportedWeldRecordPreparationErrors({
       records: [candidate],
+      checkStampsOnServer,
       skipManualJointNameValidation: true,
       skipLnkResultRuleValidation: true,
       weldFormStampSelectOptions,
@@ -675,10 +710,11 @@ function validateReportImportRecords(
       return
     }
 
+    validRecordRowNumbers.push(source.rowNumbers?.[index] ?? index + 2)
     validRecords.push(preparedRecord)
   })
 
-  return { validRecords, errors }
+  return { validRecords, errors, validRecordRowNumbers }
 }
 
 function fixImportRecordCheckedCells(record: WeldInput, options: ReportImportPreviewValidationOptions, preparationSettings: ImportedWeldPreparationSettings) {

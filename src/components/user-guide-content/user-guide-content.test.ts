@@ -15,10 +15,10 @@ describe('user guide content', () => {
     const content = JSON.stringify([WORK_GUIDE_SECTIONS, REFERENCE_GUIDE_SECTIONS_1, REFERENCE_GUIDE_SECTIONS_2, REFERENCE_GUIDE_SECTIONS_3])
     for (const removed of ['Изменить этап контроля', 'перенести комплект в «До ТО»', 'перенос годного комплекта', 'выберите судьбу связанных комплектов']) expect(content).not.toContain(removed)
     expect(content).not.toContain('Смены этапа у уже внесённого НК нет')
-    expect(content).toContain('Весь основной НК → до ТО')
-    expect(content).toContain('Весь НК до ТО → основной')
+    expect(content).toContain('Весь НК → НК до ТО')
+    expect(content).toContain('Весь НК до ТО → НК')
     expect(content).toContain('в четырёх сценариях')
-    expect(content).toContain('Основной этап должен быть пустым')
+    expect(content).toContain('Для переноса целевой этап должен быть пустым')
     expect(content).toContain('результат НК до ТО нельзя удалить, пока на него опирается заявка ПСТО')
   })
 

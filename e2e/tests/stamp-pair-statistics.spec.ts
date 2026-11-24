@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import * as XLSX from 'xlsx'
@@ -38,7 +39,7 @@ test('server, table, details and downloaded Excel preserve half-joints; missing 
   await page.goto('/statistics')
   await page.getByRole('button', { name: 'Сварщики', exact: true }).click()
   await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+  await selectStatisticsProjects(page, project)
   await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('all')
   const grid = page.locator('[data-statistics-grid="welders"]')
   await expect(grid.locator('.ag-row[row-id="PAIR-B"] [col-id="total"]')).toContainText('0,5')

@@ -2,6 +2,8 @@ import { sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { FULL_REBUILD_GENERATION_KIND } from './dispatcher-refresh-catchup'
 import { getLineProgramIdentityKey } from '@/lib/line-program'
+import { derivedCalculationCachePrefix } from '@/lib/derived-calculation-cache-key'
+import { STATISTICS_CACHE_NAMESPACE } from '@/lib/statistics-result-version'
 import { LINE_PROGRAM_OVERVIEW_CACHE_PREFIX } from './derived-calculation-cache'
 import {
   DISPATCHER_INDEX_LOCK_ID,
@@ -109,7 +111,7 @@ export async function markDispatcherTaskIndexDirty(
 
 export async function invalidateDerivedCalculationCache(
   executor: SqlExecutor = requireDb(),
-  options: { preserveLineOverviews?: boolean } = {},
+  options: { preserveLineOverviews?: boolean; workClosuresOnly?: boolean } = {},
 ) {
   await executor.execute(sql`
     with "derived_state" as (
@@ -121,7 +123,7 @@ export async function invalidateDerivedCalculationCache(
         "updated_at" = now()
       returning "source_revision"
     )
-    ${buildDerivedCacheRetention(options.preserveLineOverviews ? [] : null)}
+    ${buildDerivedCacheRetention(options.preserveLineOverviews || options.workClosuresOnly ? [] : null, options.workClosuresOnly)}
   `)
 }
 
@@ -129,7 +131,7 @@ export async function invalidateDerivedCalculationCache(
  * the immediately preceding revision may advance; pending old calculations and
  * already invalidated payloads must not be resurrected on a subsequent write.
  * null is a full clear, [] is an explicitly independent invalidation. */
-function buildDerivedCacheRetention(affectedIdentityKeys: readonly string[] | null) {
+function buildDerivedCacheRetention(affectedIdentityKeys: readonly string[] | null, workClosuresOnly = false) {
   if (affectedIdentityKeys === null) return sql`
     delete from "derived_calculation_cache" where exists (select 1 from "derived_state")
   `
@@ -138,12 +140,13 @@ function buildDerivedCacheRetention(affectedIdentityKeys: readonly string[] | nu
     set "source_revision" = state."source_revision"
     from "derived_state" as state
     where cache."source_revision" = state."source_revision" - 1
-      and cache."cache_key" like ${LINE_PROGRAM_OVERVIEW_CACHE_PREFIX + '%'}
+      and ((cache."cache_key" like ${LINE_PROGRAM_OVERVIEW_CACHE_PREFIX + '%'}
       and case when cache."payload" is json object then
         (cache."payload"::jsonb ->> 'namespace') = ${LINE_PROGRAM_OVERVIEW_CACHE_PREFIX}
         and jsonb_typeof(cache."payload"::jsonb -> 'identityKey') = 'string'
         and not ((cache."payload"::jsonb ->> 'identityKey') = any(${sql.param([...new Set(affectedIdentityKeys)])}::text[]))
-      else false end
+      else false end)
+      ${workClosuresOnly ? sql`or starts_with(cache."cache_key", ${derivedCalculationCachePrefix(STATISTICS_CACHE_NAMESPACE)})` : sql``})
     returning cache."cache_key"
   )
   delete from "derived_calculation_cache"

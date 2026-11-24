@@ -109,7 +109,7 @@ describe('all joints follow current pre-TO settings, regardless of the obsolete 
     expect(buildJointNextActions(historical, [], settings)[0]?.kind).toBe('complete')
     const permissive = { ...settings,  }
     expect(buildJointNextActions(historical, [], permissive)[0]).toMatchObject({
-      title: 'Результаты основного НК внесены', tone: 'warning', description: expect.stringContaining('СП-06'),
+      title: 'Результаты НК внесены', tone: 'warning', description: expect.stringContaining('СП-06'),
     })
     const partial = { ...historical, rkResult: 'ожидает НК', rkConclusion: null, rkConclusionDate: null }
     expect(buildJointNextActions(partial, [], settings)[0]?.kind).toBe('primaryLnkResult')

@@ -40,7 +40,7 @@ export type StatisticsFilterOption = {
 
 export type StatisticsServerRequest = {
   tab: StatisticsTab
-  projectFilter?: string
+  projectFilter?: string | string[]
   selectedSubtitles?: string[]
   from?: string
   to?: string
@@ -241,25 +241,17 @@ export function buildStatisticsServerResult({
   const tab = request.tab
   // Control reports retain permitted T work. Production counters stay separate.
   if (tab === 'supports' || tab === 'general' || tab === 'welders') rows = rows.filter(row => isTConnectionType(row.connectionType) === (tab === 'supports'))
-  const projectFilter = normalizeFilterValue(request.projectFilter)
-  const selectedSubtitles = (request.selectedSubtitles ?? []).map(normalizeFilterValue).filter(Boolean)
+  const projects = new Set(normalizeStatisticsSelection(request.projectFilter))
+  const subtitles = new Set(normalizeStatisticsSelection(request.selectedSubtitles))
   const from = String(request.from ?? '').trim()
   const to = String(request.to ?? '').trim()
   const unit = request.unit === 'wdi' ? 'wdi' : 'joints'
   const jointFilter = normalizeJointFilter(request.jointFilter)
 
   const projectOptions = getUniqueSortedValues(rows.map((row) => row.projectTitle))
-  const subtitleOptions = getUniqueSortedValues(
-    rows
-      .filter((row) => !projectFilter || normalizeFilterValue(row.projectTitle) === projectFilter)
-      .map((row) => row.subtitleCode),
-  )
-  const scopedRows = rows.filter((row) => {
-    const projectMatches = !projectFilter || normalizeFilterValue(row.projectTitle) === projectFilter
-    const subtitleMatches =
-      selectedSubtitles.length === 0 || selectedSubtitles.includes(normalizeFilterValue(row.subtitleCode))
-    return projectMatches && subtitleMatches
-  })
+  const projectRows = projects.size ? rows.filter(row => projects.has(normalizeFilterValue(row.projectTitle))) : rows
+  const subtitleOptions = getUniqueSortedValues(projectRows.map(row => row.subtitleCode))
+  const scopedRows = subtitles.size ? projectRows.filter(row => subtitles.has(normalizeFilterValue(row.subtitleCode))) : projectRows
   const physicalRows = tab === 'general' ? getActualLineRows(scopedRows, systemIndexSettings) : scopedRows
   const generalRows = physicalRows.filter((row) => matchesJointFilter(row, jointFilter, systemIndexSettings))
   const isGeneralLikeTab = tab === 'general' || tab === 'lnk' || tab === 'psto'
@@ -372,6 +364,12 @@ function getUniqueSortedValues(values: unknown[]): StatisticsFilterOption[] {
   return [...uniqueValues.entries()]
     .map(([value, label]) => ({ value, label }))
     .sort((left, right) => left.label.localeCompare(right.label, 'ru', { numeric: true }))
+}
+
+// Older clients and direct callers can still supply one project as a string.
+export function normalizeStatisticsSelection(input: string | string[] | undefined): string[] {
+  const values = Array.isArray(input) ? input : [input]
+  return [...new Set(values.map(normalizeFilterValue).filter(Boolean))].sort()
 }
 
 function normalizeFilterValue(value: unknown) {

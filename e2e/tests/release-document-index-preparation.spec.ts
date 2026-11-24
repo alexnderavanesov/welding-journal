@@ -97,7 +97,7 @@ test('release preparation scale: 200k joints and 400k conclusions before the fir
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('E2E-001')
   await expect(page.getByRole('button', { name: 'F1', exact: true })).toBeVisible()
   const row = await lnkActionRow(page, 'F1')
-  await row.getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
+  await row.getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true }).click()
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true }) })
   await editor.getByLabel('Дата контроля', { exact: true }).fill('2026-10-03')
   await editor.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()

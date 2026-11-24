@@ -174,7 +174,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         {hideNativeOptions(children, open)}
       </select>
       {open ? createPortal(<div ref={popup} data-select-listbox
-        className="fixed z-[200] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/15" style={position}
+        className={cn('fixed z-[200] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/15',
+          trigger.current?.closest('.ag-popup-child') && 'ag-custom-component-popup')} style={position}
         onMouseDown={event => { if (!(event.target instanceof HTMLInputElement)) event.preventDefault() }}>
         {searchable ? <div className="flex h-12 items-center gap-2 border-b border-slate-100 px-3">
           <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />

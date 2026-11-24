@@ -101,6 +101,7 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
     h1 { margin: 0; color: #142033; font-size: 22px; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
     .report-subtitle { max-width: 980px; margin: 8px 0 0; color: #64748b; font-size: 13px; line-height: 1.5; }
     .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; color: #52647a; font-size: 12px; }
+    .meta-item { overflow-wrap: anywhere; }
     .meta-item strong { margin-right: 5px; color: #25364b; }
     .metrics {
       display: grid; grid-template-columns: repeat(var(--metric-columns), minmax(0, 1fr)); gap: 10px;

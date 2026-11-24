@@ -419,8 +419,8 @@ function AssignmentView({
           <div>
             <p className="font-semibold">{reactivating ? 'Возобновление ПСТО' : 'Назначение ПСТО всей линии'}</p>
             <p>Назначение охватит всю линию. Стыков: {line.rowCount}.</p>
-            <p>По умолчанию уже внесённый НК остаётся на своём этапе. Для стыков с основным НК ниже можно выбрать перенос всего комплекта в НК до ТО.</p>
-            <p className="mt-1">Основной НК не заменяет НК до ТО. Требования к новым работам проверяются по настройкам проекта.</p>
+            <p>По умолчанию уже внесённый НК остаётся на своём этапе. Ниже можно выбрать стыки для переноса всего комплекта из «НК» в «НК до ТО».</p>
+            <p className="mt-1">Для этапа «НК до ТО» нужен отдельный комплект. Требования к новым работам проверяются по настройкам проекта.</p>
             {reactivating ? <p className="mt-1">Дата и основание отмены очистятся. Сохранённые работы учитываются, повторно вводить их не нужно.</p> : null}
           </div>
         </div>
@@ -430,13 +430,13 @@ function AssignmentView({
             <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="h-4 w-4 shrink-0" />Проверено стыков: {preview.rowCount}. Перенести в НК до ТО: {transferCount} · сохранить этапы: {preview.rowCount - transferCount}.</p>
             {correctionRows.length > 0 ? <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
               <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-900">Что сделать с основным НК</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Что сделать с оформленным НК</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-600">Выбор для каждого стыка. Переносится весь комплект: все методы, заявки, результаты и заключения вместе, с исходными датами и названиями. НК до ТО должен быть пустым; проверяются хронология и зависимости заявки ПСТО. Причина запрета показана у варианта переноса.</p>
               </div>
               <div className="divide-y divide-slate-100">
                 {pagination.pageItems.map(row => <div key={row.rowId} className="px-4 py-3">
                   <p className="text-sm font-semibold text-slate-900">{row.joint || `#${row.rowId}`}</p>
-                  <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · Основной НК: <MethodList methods={row.primaryMethods} /></p>
+                  <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · НК: <MethodList methods={row.primaryMethods} /></p>
                   <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason} disabled={pending} onChange={move => onTransferChange(row.rowId, move)} />
                 </div>)}
               </div>
@@ -576,7 +576,7 @@ function RemovalView({
                       <p className="mt-0.5 truncate text-xs text-slate-500">Спул: {row.spool || '—'}</p>
                     </div>
                     <div className="min-w-0 space-y-1 pr-4 text-xs text-slate-600">
-                      <p>Основной НК: <MethodList methods={row.primaryMethods} /></p>
+                      <p>НК: <MethodList methods={row.primaryMethods} /></p>
                       <p>НК до ТО: <MethodList methods={row.completedPreMethods} /></p>
                       {row.pendingPreMethods.length > 0 ? (
                         <p className="text-amber-700">Без результата: <MethodList methods={row.pendingPreMethods} /></p>
@@ -592,7 +592,7 @@ function RemovalView({
                         <p className="text-xs leading-5 text-emerald-700">{row.cancellationDisposition === 'preserve' || row.preservesPerformedHistory ? 'Выполнено — сохраняем назначение, результаты и документы. Необходимые ТВМТ и повторные циклы остаются.' : row.cancellationDisposition === 'unchanged' ? 'Действующее исключение или назначение не меняется.' : 'Невыполнено — отменяем назначение. Сохранённые этапы НК остаются на своих местах.'}</p>
                         {row.stageCorrection?.targetStage === 'primary' ? <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId) && !row.stageCorrection.disabledReason} disabled={pending} onChange={move => onTransferChange(row.rowId, move)} /> : null}
                       </>) : (
-                        <p className="text-xs text-slate-500">Снимем назначение и удалим его невыполненные позиции заявок. Основной комплект НК не изменится.</p>
+                        <p className="text-xs text-slate-500">Снимем назначение и удалим его невыполненные позиции заявок. Комплект этапа «НК» сохранится.</p>
                       )}
                     </div>
                   </div>
@@ -623,8 +623,8 @@ function RemovalView({
               {actionOutdated
                 ? 'Предпросмотр обнаружил изменение истории. Выберите предложенный способ снятия ПСТО либо вернитесь назад; документы автоматически не удаляются.'
                 : officialCancellation
-                ? `Отмена не удаляет историю. Перенос НК до ТО в основной выполняется только для явно выбранных стыков: ${rows.filter(row => transferRowIds.has(row.rowId) && row.stageCorrection?.targetStage === 'primary' && !row.stageCorrection.disabledReason).length}. Заявка или история ПСТО/ТВМТ запрещают перенос соответствующего стыка.`
-                : 'У стыков, чьё назначение изменится, нет выполненных ПСТО, ТВМТ и НК до ТО. Будет снято назначение и удалены невыполненные позиции заявок; основной НК и индивидуальные исключения сохранятся.'}
+                ? `Отмена не удаляет историю. Перенос из «НК до ТО» в «НК» выполняется только для явно выбранных стыков: ${rows.filter(row => transferRowIds.has(row.rowId) && row.stageCorrection?.targetStage === 'primary' && !row.stageCorrection.disabledReason).length}. Заявка или история ПСТО/ТВМТ запрещают перенос соответствующего стыка.`
+                : 'У стыков, чьё назначение изменится, нет выполненных ПСТО, ТВМТ и НК до ТО. Будет снято назначение и удалены невыполненные позиции заявок; данные этапа «НК» и индивидуальные исключения сохранятся.'}
             </p>
           </div>
           <div className="flex shrink-0 gap-2">

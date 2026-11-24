@@ -63,7 +63,7 @@ export function buildPstoContextualStageCorrection(
     // Even an unrelated method or an empty persisted relation occupies the target.
     if (controls.length > 0) throw new Error('Целевой этап НК до ТО уже заполнен. Сохраните исходные этапы.')
     const packages = primaryPackages.filter(hasPackageTrace)
-    if (packages.length === 0) throw new Error('Нет основного комплекта НК для исправления этапа.')
+    if (packages.length === 0) throw new Error('На этапе «НК» нет комплекта для переноса.')
     packages.forEach(assertPackageComplete)
     for (const control of packages) {
       assertUnofficialLnkGoodResultAllowed(previous, control.result, null, `${control.method} до ТО`, { allowBackfill: false })
@@ -74,7 +74,7 @@ export function buildPstoContextualStageCorrection(
     next.preHeatTreatmentControls = packages
   } else {
     if (primaryPackages.some(hasPackageTrace)) {
-      throw new Error('Целевой основной этап НК уже заполнен. Сохраните исходные этапы.')
+      throw new Error('Целевой этап «НК» уже заполнен. Сохраните исходные этапы.')
     }
     if (!controls.some(hasPackageTrace)) throw new Error('Нет комплекта НК до ТО для исправления этапа.')
     const methods = new Set<string>()

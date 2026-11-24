@@ -131,6 +131,14 @@ export function createPdfCamera(stage: HTMLDivElement, space: HTMLDivElement, sh
   stage.addEventListener('wheel', wheel, { passive: false })
   const observer = new ResizeObserver(() => layout(mode === 'custom' ? { point: toPoint(center().x, center().y), client: center() } : undefined))
   observer.observe(stage); layout()
+  function setPageRotation(offset: number) {
+    const next = pdfTurn(intrinsicRotation + offset)
+    if (rotation === next) return
+    stop()
+    const client = center(), point = toPoint(client.x, client.y)
+    rotation = next
+    layout(mode === 'custom' ? { point, client } : undefined)
+  }
   return {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     getSnapshot: () => snapshot,
@@ -142,7 +150,7 @@ export function createPdfCamera(stage: HTMLDivElement, space: HTMLDivElement, sh
     zoom,
     stop,
     fit: (next: PdfFit) => { stop(); mode = next; layout() },
-    rotate: () => { stop(); const client = center(), point = toPoint(client.x, client.y); rotation = pdfTurn(rotation + 90); layout(mode === 'custom' ? { point, client } : undefined) },
+    setPageRotation,
     reveal: (point: PdfPoint) => { stop(); translate(0, 0); position(point, center()) },
     visible: (overscan = 160) => {
       const box = stage.getBoundingClientRect(), corners = [toPoint(box.left, box.top), toPoint(box.left + stage.clientWidth, box.top + stage.clientHeight)]

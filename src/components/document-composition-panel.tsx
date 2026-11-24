@@ -32,7 +32,7 @@ export function DocumentCompositionPanel({ title, cacheKey, load, onClose, inlin
           <tbody className="block sm:table-row-group">{data.items.map((item, index) => <tr key={index} className="block border-b border-slate-100 p-3 last:border-0 sm:table-row sm:p-0">
             <td className="block break-words py-1 align-top font-semibold text-slate-800 sm:table-cell sm:p-3"><span className="mr-1 font-normal text-slate-400 sm:hidden">Стык</span>{item.joint || '—'}</td>
             <td className="block break-words py-1 align-top leading-5 text-slate-600 sm:table-cell sm:p-3"><p>{item.project || '—'}</p><p><span className="text-slate-400">Шифр: </span>{item.subtitle || '—'}</p><p><span className="text-slate-400">Линия: </span>{item.line || '—'}</p></td>
-            <td className="block break-words py-1 align-top leading-5 sm:table-cell sm:p-3"><span className="rounded bg-sky-50 px-1.5 py-0.5 font-medium text-sky-800">{item.method || '—'}</span><p className="mt-1 text-slate-500">{item.stage || '—'}</p>{item.cycle !== null ? <p className="text-slate-500">Цикл {item.cycle}</p> : null}</td>
+            <td className="block break-words py-1 align-top leading-5 sm:table-cell sm:p-3"><span className="rounded bg-sky-50 px-1.5 py-0.5 font-medium text-sky-800">{item.method || '—'}</span><p className="mt-1 text-slate-500">{item.stage === 'Основной контроль' ? 'Основной' : item.stage || '—'}</p>{item.cycle !== null ? <p className="text-slate-500">Цикл {item.cycle}</p> : null}</td>
             <td className="block break-words py-1 align-top leading-5 text-slate-600 sm:table-cell sm:p-3"><span className="mr-1 text-slate-400 sm:hidden">Источник:</span>{item.source || '—'}</td>
           </tr>)}</tbody>
         </table>

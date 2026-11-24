@@ -30,6 +30,7 @@ import { getNextTimestampVersion } from '@/server/timestamp-version'
 import { normalizeControlProcessSettings } from '@/lib/control-process-settings'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { lineProgramWeldWhere, renameLineProgramDecisions } from '@/server/line-program-rename'
+import { refreshSystemDocumentIdentityMetadata } from '@/server/system-document-identity-metadata'
 import { loadLineProgramWelderNames } from './line-program-welder-names'
 import { buildLineProgramDisplay } from '@/lib/line-program-display'
 import { applyGeneratedDocumentFields, loadGeneratedDocumentAssignments } from './generated-document-row-fields'
@@ -316,7 +317,10 @@ export const getLineProgramsForImport = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    return [...(await loadLineProgramsForIdentities(requireDb(), data.identities)).values()].map(toLineProgramRecord)
+    const programs = await loadLineProgramsForIdentities(requireDb(), data.identities)
+    return [...programs.values()].map(({ projectTitle, subtitleCode, line, category, groupName, weldControlPercent }) => ({
+      projectTitle, subtitleCode, line, category, groupName, weldControlPercent,
+    }))
   })
 
 export const getLineProgramCalculation = createServerFn({ method: 'GET' })
@@ -457,7 +461,11 @@ export async function saveLineProgramInTransaction(tx: SystemDocumentSequenceTra
     ...(renamed ? { weldingUpdatedAt: new Date() } : {}),
     updatedAt: sql`greatest(clock_timestamp(), ${weldJoints.updatedAt} + interval '1 millisecond')` })
     .where(lineProgramWeldWhere(source))
-  if (previous && renamed) await renameLineProgramDecisions(tx, previous, data)
+  if (previous && renamed) {
+    // Match weld saves: system-document locks precede dispatcher locks.
+    await refreshSystemDocumentIdentityMetadata(tx, saved.id)
+    await renameLineProgramDecisions(tx, previous, data)
+  }
   await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(previous ? [previous, saved] : [saved], new Map()) })
   return toLineProgramRecord(saved)
 }

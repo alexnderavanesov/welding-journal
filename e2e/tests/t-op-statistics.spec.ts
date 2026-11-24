@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test, type Page } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
@@ -33,7 +34,7 @@ test('статистика опор: последнее продолжение, 
   await page.goto('/statistics')
   await page.getByRole('button', { name: 'Опоры', exact: true }).click()
   await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(PROJECT.toLowerCase())
+  await selectStatisticsProjects(page, PROJECT)
   await period(page, '2026-10-01', '2026-10-31')
   const panel = page.getByTestId('support-statistics')
   const card = (name: string) => panel.getByRole('button', { name: new RegExp(`^${name}`) }).first()
@@ -99,7 +100,7 @@ test('опоры: весь период по умолчанию, точные д
   await page.getByRole('button', { name: 'Опоры', exact: true }).click()
   await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Период отчета', exact: true })).toHaveValue('all')
-  await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(PROJECT.toLowerCase())
+  await selectStatisticsProjects(page, PROJECT)
   await expect(page.getByRole('button', { name: 'Отчет PDF', exact: true })).toBeEnabled()
   const panel = page.getByTestId('support-statistics'), welders = page.getByTestId('support-welder-statistics')
   await expect(panel.getByRole('heading', { name: 'Длина основного объёма', exact: true }).locator('..')).toContainText('14,05 (неполная) м')
@@ -146,7 +147,7 @@ test('сварщики опор: общие фильтры столбцов, Ф�
     await page.goto('/statistics')
     await page.getByRole('button', { name: 'Опоры', exact: true }).click()
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(PROJECT.toLowerCase())
+    await selectStatisticsProjects(page, PROJECT)
     const welders = page.getByTestId('support-welder-statistics')
     await expect(welders.getByText('Показано сварщиков: 3 из 3', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Отчет PDF', exact: true })).toBeEnabled()
@@ -223,7 +224,7 @@ test('сварщики опор: общие фильтры столбцов, Ф�
   }
 })
 
-// The line summary uses grid-column filters, without project/subtitle dropdowns.
+// Tabs with both scope selectors keep them anchored while the document scrolls.
 for (const tab of ['Общая', 'ЛНК', 'ПСТО', 'Опоры', 'Сварщики']) test(`${tab}: проект и шифры остаются открытыми при прокрутке без новых запросов`, async ({ page }) => {
   await seed()
   await page.setViewportSize({ width: 1400, height: 740 })
@@ -232,25 +233,27 @@ for (const tab of ['Общая', 'ЛНК', 'ПСТО', 'Опоры', 'Сварщ
   await page.goto('/statistics')
   await page.getByRole('main').getByRole('button', { name: tab, exact: true }).click()
   await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-  const project = page.getByRole('combobox', { name: 'Проект', exact: true })
-  await project.selectOption(PROJECT.toLowerCase())
+  const project = page.getByRole('button', { name: /^Проект / })
+  await selectStatisticsProjects(page, PROJECT)
   await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('all')
   await expect(page.getByRole('button', { name: 'Отчет PDF', exact: true })).toBeEnabled()
   // Ensure enough page content to exercise genuine document scrolling even on an empty tab.
   await page.evaluate(() => { document.body.style.minHeight = '2000px'; window.scrollTo(0, 0) })
   await project.click()
-  const options = page.locator('[data-select-listbox]')
+  const options = page.getByRole('dialog', { name: 'Проект', exact: true })
   await expect(options).toBeVisible()
   const count = calls.filter(name => name.startsWith('getStatisticsServerResult_')).length
   const before = (await project.boundingBox())!
+  const trigger = page.getByRole('button', { name: /^Шифр / })
+  expect(before.width).toBeCloseTo((await trigger.boundingBox())!.width, 0)
+  expect((await options.boundingBox())!.width).toBeCloseTo(before.width)
   await page.evaluate(() => window.scrollBy(0, 35))
   await expect.poll(async () => (await project.boundingBox())!.y).toBeLessThan(before.y)
   await expect(options).toBeVisible()
   await expect.poll(async () => Math.abs((await options.boundingBox())!.y - (await project.boundingBox())!.y - (await project.boundingBox())!.height - 4)).toBeLessThan(1)
   await project.press('Escape')
-  const trigger = page.getByRole('button', { name: /^Шифр\/подтитул / })
   await trigger.click()
-  const popup = page.getByRole('dialog', { name: 'Шифр/подтитул', exact: true })
+  const popup = page.getByRole('dialog', { name: 'Шифр', exact: true })
   await popup.getByRole('searchbox').fill('SUP')
   await page.evaluate(() => window.scrollBy(0, 20))
   await expect(popup).toBeVisible()

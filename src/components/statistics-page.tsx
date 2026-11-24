@@ -31,7 +31,7 @@ import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { LineProgramPage } from '@/components/line-program-page'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { StatisticsSubtitleFilter } from './statistics-subtitle-filter'
+import { StatisticsScopeFilter } from './statistics-scope-filter'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { formatDisplayDate } from '@/lib/date-format'
 import {
@@ -319,7 +319,9 @@ function StatisticsReports({
   const [weldingDynamicsScaleSetting, setWeldingDynamicsScaleSetting] = useState<WeldingDynamicsScaleSetting>('auto')
   const [weldingDynamicsTableGrouping, setWeldingDynamicsTableGrouping] = useState<WeldingDynamicsTableGrouping>('projects')
   const [welderJointFilter, setWelderJointFilter] = useState<WelderStatisticsJointFilter>('all')
-  const [projectFilter, setProjectFilter] = useState('')
+  const [reportProjects, setReportProjects] = useState<string[]>([])
+  const [lineProjects, setLineProjects] = useState<string[]>([])
+  const selectedProjects = activeTab === 'lineSummary' ? lineProjects : reportProjects
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
   const [controlDynamicsScaleByTab, setControlDynamicsScaleByTab] = useState<{
     lnk: StatisticsControlDynamicsScaleSetting
@@ -367,7 +369,7 @@ function StatisticsReports({
   const periodTo = allPeriod ? '' : period.to
   const statisticsQuery = useStatisticsServerQuery({
     tab: activeTab,
-    projectFilter: activeTab === 'lineSummary' ? '' : projectFilter,
+    projectFilter: selectedProjects,
     selectedSubtitles: activeTab === 'lineSummary' ? [] : selectedSubtitles,
     from: periodFrom,
     to: periodTo,
@@ -419,7 +421,9 @@ function StatisticsReports({
   const unofficialValue = statisticsQuery.data?.unofficialValue ?? 0
   const lnkWaitingRequests = summary.methods.reduce((total, method) => total + method.waitingRequest, 0)
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
-  const scopeLabel = activeTab === 'lineSummary' ? 'по фильтрам столбцов таблицы' : getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
+  const scopeLabel = activeTab === 'lineSummary'
+    ? [lineProjects.length ? getScopeLabel(lineProjects, [], projectOptions, subtitleOptions) : 'все проекты', 'по фильтрам столбцов таблицы'].join(' · ')
+    : getScopeLabel(selectedProjects, selectedSubtitles, projectOptions, subtitleOptions)
   const periodDescription =
     activeTab === 'general'
       ? 'Каждое актуальное физическое соединение учитывается один раз по дате сварки последней записи цепочки. Негодные исключены из объёма; после ремонта зачёт переносится в месяц его сварки.'
@@ -521,17 +525,17 @@ function StatisticsReports({
                 </Button>
               </div>
             ) : null}
-            <p className={cn('truncate text-xs text-slate-500', fixedTab ? 'mt-0' : 'mt-2')} title={activeTab === 'general' ? `${periodDescription} ${scopeLabel}` : undefined}>
-              {activeTab === 'supports' ? `${periodLabel} · ${scopeLabel} · опоры, шт.; длина: итоги — м, таблица — мм` : activeTab === 'lnk'
+            <p className={cn('truncate text-xs text-slate-500', fixedTab ? 'mt-0' : 'mt-2')} title={activeTab === 'general' ? periodDescription : undefined}>
+              {activeTab === 'supports' ? `${periodLabel} · опоры, шт.; длина: итоги — м, таблица — мм` : activeTab === 'lnk'
                 ? 'Заявки, заключения, результаты и очереди лабораторного неразрушающего контроля.'
                 : activeTab === 'psto'
                   ? 'Заявки, проведение и текущая очередь послесварочной термообработки.'
                 : activeTab === 'general'
-                  ? `${periodLabel} · ${scopeLabel} · ${getJointFilterLabel(generalJointFilter)} · ${generalUnit === 'wdi' ? 'WDI' : 'стыки'}`
+                  ? `${periodLabel} · ${getJointFilterLabel(generalJointFilter)} · ${generalUnit === 'wdi' ? 'WDI' : 'стыки'}`
                 : activeTab === 'welders'
                   ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
                   : activeTab === 'lineSummary'
-                    ? 'Сводка по линиям с учетом актуальных стыков и текущего остатка.'
+                    ? 'Итоги по выбранным проектам с учётом фильтров таблицы.'
                     : 'Контроль процентных линий по официальным клеймам.'}
             </p>
             {activeTab !== 'general' ? <p className="mt-1 text-xs text-slate-500">
@@ -583,11 +587,11 @@ function StatisticsReports({
 
         {settingsOpen ? (
           <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
-            <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 pb-3">
+            <div role="group" aria-label="Параметры статистики" className="flex flex-wrap items-end gap-3">
               {activeTab !== 'lineSummary' ? (
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="grid gap-1 text-xs font-medium text-slate-600">
-                    Период
+                    <span>Период</span>
                     <Select
                       aria-label="Период отчета"
                       value={periodPreset}
@@ -609,7 +613,7 @@ function StatisticsReports({
                     </Select>
                   </label>
                   {periodPreset === 'custom' ? (
-                    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-white/80 p-1">
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-white/80 p-0.5">
                       <span className="pl-1 text-[11px] font-medium text-slate-500">С</span>
                       <Input
                         aria-label="Период с"
@@ -623,7 +627,7 @@ function StatisticsReports({
                             period: { ...current.period, from: event.target.value },
                           }))
                         }}
-                        className="h-8 w-[128px] border-slate-200 text-sm"
+                        className="h-[30px] w-[128px] border-slate-200 py-0 text-sm"
                       />
                       <span className="text-[11px] font-medium text-slate-500">По</span>
                       <Input
@@ -638,15 +642,15 @@ function StatisticsReports({
                             period: { ...current.period, to: event.target.value },
                           }))
                         }}
-                        className="h-8 w-[128px] border-slate-200 text-sm"
+                        className="h-[30px] w-[128px] border-slate-200 py-0 text-sm"
                       />
                     </div>
                   ) : null}
                 </div>
               ) : null}
               {activeTab !== 'supports' ? <div className="grid gap-1 text-xs font-medium text-slate-600">
-                  Единица
-                  <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
+                  <span>Единица</span>
+                  <div role="group" aria-label="Единица" className="inline-flex h-9 rounded-md border border-slate-200 bg-white/80 p-0.5">
                     <button
                       type="button"
                       className={segmentButtonClass(unit === 'joints')}
@@ -665,8 +669,8 @@ function StatisticsReports({
                 </div> : null}
               {activeTab !== 'lineSummary' && activeTab !== 'supports' ? (
                 <div className="grid gap-1 text-xs font-medium text-slate-600">
-                  Тип стыка
-                  <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
+                  <span>Тип стыка</span>
+                  <div role="group" aria-label="Тип стыка" className="inline-flex h-9 rounded-md border border-slate-200 bg-white/80 p-0.5">
                     {jointFilterOptions.map(([value, label]) => (
                       <button
                         key={value}
@@ -680,42 +684,17 @@ function StatisticsReports({
                   </div>
                 </div>
               ) : null}
-            </div>
-
-            {activeTab !== 'lineSummary' ? (
-            <div className="mt-3 flex flex-wrap items-end gap-3">
-              <label className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
-                Проект
-                <Select
-                  value={projectFilter}
-                  repositionOnScroll
-                  onChange={(event) => {
-                    setProjectFilter(event.target.value)
-                    setSelectedSubtitles([])
-                  }}
-                  className="w-auto h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                >
-                  <option value="">Все проекты</option>
-                  {projectOptions.map((project) => (
-                    <option key={project.value} value={project.value}>
-                      {project.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-
-              <div className="min-w-0 flex-1 basis-[420px]">
-                <StatisticsSubtitleFilter options={subtitleOptions} value={selectedSubtitles} onChange={setSelectedSubtitles} />
-              </div>
-
-              <div className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
-                Срез
-                <div className="flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-normal text-slate-600 shadow-sm">
-                  <span className="truncate">{scopeLabel}</span>
-                </div>
+              <div className={activeTab === 'lineSummary' ? 'w-[380px] max-w-full'
+                : 'grid min-w-0 flex-[1_1_452px] grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3'}>
+                <StatisticsScopeFilter field="project" options={projectOptions} value={selectedProjects} loading={statisticsQuery.isFetching}
+                  onChange={projects => {
+                    if (activeTab === 'lineSummary') setLineProjects(projects)
+                    else { setReportProjects(projects); setSelectedSubtitles([]) }
+                  }} />
+                {activeTab !== 'lineSummary' &&
+                  <StatisticsScopeFilter field="subtitle" options={subtitleOptions} value={selectedSubtitles} onChange={setSelectedSubtitles} loading={statisticsQuery.isFetching} />}
               </div>
             </div>
-            ) : null}
           </div>
         ) : null}
       {statisticsQuery.isError ? (
@@ -3542,7 +3521,7 @@ function getStatisticsPeriodLabel(allPeriod: boolean, from: string, to: string) 
 
 function segmentButtonClass(active: boolean) {
   return cn(
-    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+    'inline-flex items-center justify-center rounded-md px-3 text-sm font-medium transition-colors',
     active ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
   )
 }
@@ -3577,18 +3556,19 @@ function getAveragePerWelderShiftLabel(unit: StatisticsUnit) {
 }
 
 function getScopeLabel(
-  projectFilter: string,
+  projects: string[],
   selectedSubtitles: string[],
   projectOptions: Array<{ value: string; label: string }>,
   subtitleOptions: Array<{ value: string; label: string }>,
 ) {
-  if (!projectFilter && selectedSubtitles.length === 0) return 'все проекты и шифры'
+  if (!projects.length && selectedSubtitles.length === 0) return 'все проекты и шифры'
   const parts = []
-  const projectLabel = projectOptions.find((option) => option.value === projectFilter)?.label ?? projectFilter
-  const subtitleLabels = selectedSubtitles.map(
-    (subtitle) => subtitleOptions.find((option) => option.value === subtitle)?.label ?? subtitle,
-  )
-  if (projectFilter) parts.push(`проект ${projectLabel}`)
-  if (selectedSubtitles.length > 0) parts.push(`шифры ${subtitleLabels.join(', ')}`)
+  function selectedLabels(values: string[], options: Array<{ value: string; label: string }>) {
+    if (values.length === 1) return options.find(option => option.value === values[0])?.label ?? values[0]
+    const labels = new Map(options.map(option => [option.value, option.label]))
+    return values.map(value => labels.get(value) ?? value).join(', ')
+  }
+  if (projects.length) parts.push(`${projects.length === 1 ? 'проект' : 'проекты'} ${selectedLabels(projects, projectOptions)}`)
+  if (selectedSubtitles.length) parts.push(`шифры ${selectedLabels(selectedSubtitles, subtitleOptions)}`)
   return parts.join(' · ')
 }

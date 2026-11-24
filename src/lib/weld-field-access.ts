@@ -1,3 +1,4 @@
+import { closureDimension } from './work-closure-columns'
 import { hasPermission, type AccessIdentity } from './access-permissions'
 import { LNK_PROFILE_FIELD_KEYS, PSTO_PROFILE_FIELD_KEYS, WELDING_PROFILE_FIELD_KEYS } from '@/server/weld-mutation-policy'
 import { WELD_FIELDS } from './weld-fields'
@@ -15,6 +16,7 @@ export const RESTRICTED_WELD_FIELDS = new Set<string>([...WELD_FIELDS.map(field 
 export function canViewWeldField(identity: AccessIdentity, key: string) {
   if (identity.role !== 'user') return true
   if (key === 'preHeatTreatmentMode' || key === 'preHeatTreatmentRequired') return ['welding.view', 'lnk.view', 'psto.view'].some(permission => hasPermission(identity, permission as any))
+  if (closureDimension(key)) return hasPermission(identity, 'closures.view') && hasPermission(identity, 'welding.view')
   if (key === 'controlWorkflowAccess') return hasPermission(identity, 'lnk.view') || hasPermission(identity, 'psto.view')
   if (key === 'officiality') return ['welding.view', 'lnk.view', 'psto.view'].some(permission => hasPermission(identity, permission as any))
   if (['finalStatus', 'dispatcherTasks', 'activeDispatcherTasks', 'controlBasisSummary', 'programChainState', 'chainContinuation'].includes(key)) return ['welding.view', 'lnk.view', 'psto.view'].every(permission => identity.permissions.includes(permission as any))

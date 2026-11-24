@@ -12,7 +12,7 @@ test('import error jump reveals and focuses the cell from below a long error lis
   const template = XLSX.read(await readFile((await file.path())!), { type: 'buffer' })
   const headers = XLSX.utils.sheet_to_json<unknown[]>(template.Sheets[template.SheetNames[0]], { header: 1 })[0].map(String)
   const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers,
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, [],
     ...Array.from({ length: 120 }, (_, i) => {
       const row: Record<string, string> = { Проект: 'E2E navigation only', Шифр: 'ERR', Линия: 'L', Стык: `F${i + 1}`, 'Дата сварки': '31.02.2026' }
       return headers.map(header => row[header] ?? '')
@@ -20,7 +20,7 @@ test('import error jump reveals and focuses the cell from below a long error lis
   ]), 'Импорт')
   await dialog.locator('input[type=file]').setInputFiles({ name: 'errors.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) })
-  const error = dialog.getByRole('button', { name: /Строка 121:/ }).filter({ hasText: 'Дата сварки' }).first()
+  const error = dialog.getByRole('button', { name: /Строка 122:/ }).filter({ hasText: 'Дата сварки' }).first()
   await error.scrollIntoViewIfNeeded()
   await error.click()
   const cell = dialog.locator('[data-import-preview-grid] [row-id="119"] [col-id="weldDate"]')

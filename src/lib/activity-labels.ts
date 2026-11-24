@@ -3,6 +3,7 @@ import { WELD_FIELDS } from './weld-fields'
 import { GENERATED_DOCUMENT_PROFILES, isGeneratedDocumentType } from './generated-document-types'
 const weldLabels = new Map<string, string>(WELD_FIELDS.map(field => [field.key, field.label]))
 const fieldLabels: Record<string, string> = {
+  workType: 'Вид работы', rateCode: 'Код работ', actNumber: 'КС3',
   id: 'ID записи', lineProgramId: 'Программа линии (ID)', weldJointId: 'Стык (ID)', documentId: 'Документ (ID)',
   technologyCardId: 'Технологическая карта (ID)', welderStampId: 'Клеймо (ID)',
   name: 'Название', title: 'Название', email: 'Почта', role: 'Уровень доступа', permissions: 'Права', status: 'Состояние',
@@ -72,6 +73,7 @@ const accountLabels: Record<string, string> = {
   'account.invite.requested': 'Повтор приглашения', 'account.recovery.requested': 'Отправка восстановления',
 }
 const operationLabels: Record<string, string> = {
+  saveJointWorkClosures: 'Закрытие работ в карточке', saveBulkWorkClosures: 'Массовое заполнение закрытия работ',
   saveJournalCellEdits: 'Ввод в ячейках журнала', pasteJournalCells: 'Вставка в ячейки журнала', createWeldJoint: 'Создание стыка', createWeldJoints: 'Создание стыков', updateWeldJoint: 'Изменение стыка', updateWeldJoints: 'Изменение стыков',
   deleteWeldJoint: 'Удаление стыка', deleteWeldJoints: 'Удаление стыков', deleteObsoleteRepeatedJoint: 'Удаление неактуального повторного стыка',
   importWeldJoints: 'Импорт стыков', massFillWeldJoints: 'Массовое заполнение стыков', replaceWeldJoints: 'Замена стыков при импорте',

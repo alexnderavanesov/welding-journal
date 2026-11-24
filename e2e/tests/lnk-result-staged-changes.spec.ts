@@ -83,7 +83,7 @@ async function openManager(page: Page, stage: Stage) {
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   if (stage === 'beforeHeatTreatment') {
-    await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+    await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК до ТО', exact: true }).click()
   }
   const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
     name: stage === 'primary' ? 'Все результаты ЛНК' : 'Все результаты ЛНК до ТО', exact: true,
@@ -131,7 +131,7 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
     expect(await facts(stage)).toEqual(original)
     expect(writes).toHaveLength(0)
     await manager.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', {
-      name: stage === 'primary' ? 'До ТО' : 'Основной', exact: true,
+      name: stage === 'primary' ? 'НК до ТО' : 'НК', exact: true,
     }).click()
     await expect(manager).toBeVisible()
     await expect(page.getByRole('status').filter({ hasText: 'Сначала сохраните или отмените изменения результатов' })).toBeVisible()
@@ -377,7 +377,7 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
     await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
     await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
     if (stage === 'beforeHeatTreatment') await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' })
-      .getByRole('button', { name: 'До ТО', exact: true }).click()
+      .getByRole('button', { name: 'НК до ТО', exact: true }).click()
     const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
       name: stage === 'primary' ? 'Все заявки ЛНК' : 'Все заявки ЛНК до ТО', exact: true,
     }) })

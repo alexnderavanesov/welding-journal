@@ -10,7 +10,6 @@ type Props = {
   settingsLabel: string
   summary?: ReactNode
   sections: WeldTableSection[]
-  extraSections: string[]
   alwaysVisible: ReadonlySet<string>
   view: ReturnType<typeof useWeldReportViewState>
   openColumnsRequest: number
@@ -21,7 +20,7 @@ type Props = {
   onClearFilters: () => void
 }
 const TABS = [{ id: 'columns', label: 'Столбцы', icon: Columns3 }, { id: 'appearance', label: 'Оформление', icon: SlidersHorizontal }, { id: 'themes', label: 'Темы', icon: Palette }, { id: 'views', label: 'Мои виды', icon: Bookmark }] as const
-export function JournalGridToolbar({ settingsLabel, summary, sections, extraSections, alwaysVisible, view, openColumnsRequest, appearance, onAppearanceChange, onResetLayout, hasFilters, onClearFilters }: Props) {
+export function JournalGridToolbar({ settingsLabel, summary, sections, alwaysVisible, view, openColumnsRequest, appearance, onAppearanceChange, onResetLayout, hasFilters, onClearFilters }: Props) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<typeof TABS[number]['id']>('columns')
   const [search, setSearch] = useState('')
@@ -77,9 +76,12 @@ export function JournalGridToolbar({ settingsLabel, summary, sections, extraSect
             </div>
             {sections.map(section => {
               const matchesSection = section.section.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))
+              const collapsed = view.collapsedSections.has(section.section)
+              if (!section.fields.length) {
+                return matchesSection ? <label key={section.section} className="journal-column-option"><input type="checkbox" checked={!collapsed} onChange={() => view.toggleSection(section.section)} /><span>{section.section}</span></label> : null
+              }
               const matchingFields = section.fields.filter(field => matchesSection || field.label.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru')))
               if (!matchingFields.length) return null
-              const collapsed = view.collapsedSections.has(section.section)
               const optional = section.fields.filter(field => !alwaysVisible.has(field.key))
               const required = optional.length === 0
               const visible = collapsed ? 0 : optional.filter(field => !view.hiddenFieldKeys.has(field.key)).length
@@ -90,7 +92,6 @@ export function JournalGridToolbar({ settingsLabel, summary, sections, extraSect
                 {matchingFields.map(field => <label key={field.key} className="journal-column-option"><input type="checkbox" disabled={alwaysVisible.has(field.key)} checked={alwaysVisible.has(field.key) || (!collapsed && !view.hiddenFieldKeys.has(field.key))} onChange={event => view.setFieldVisible(field.key, event.target.checked)} /><span>{field.label}</span>{alwaysVisible.has(field.key) ? <span className="text-[10px] text-slate-400">всегда виден</span> : null}</label>)}
               </details>
             })}
-            {extraSections.filter(section => section.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))).map(section => <label key={section} className="journal-column-option"><input type="checkbox" checked={!view.collapsedSections.has(section)} onChange={() => view.toggleSection(section)} /><span>{section}</span></label>)}
             <p className="journal-panel-note">Порядок и ширина — перетаскиванием заголовков. Закрепление и подбор ширины — ПКМ по заголовку.</p>
           </> : null}
           {tab === 'appearance' ? <div className="p-4 space-y-4">

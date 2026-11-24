@@ -42,16 +42,19 @@ export async function openScheme(data: { lineId: number; token: string; acquire?
   return requireDb().transaction(async tx => {
     const current = data.acquire !== false ? await actorForWrite(tx, actor, ['schemes.view']) : actor
     const editable = data.acquire !== false && (hasPermission(current, 'schemes.edit') || hasPermission(current, 'schemes.delete'))
-    let [bundle] = await tx.select().from(lineSchemeBundles).where(eq(lineSchemeBundles.lineProgramId, data.lineId))
+    const findBundle = () => {
+      const query = tx.select().from(lineSchemeBundles).where(eq(lineSchemeBundles.lineProgramId, data.lineId))
+      return editable ? query.for('update') : query
+    }
+    let [bundle] = await findBundle()
     if (!bundle) {
       if (!editable || !hasPermission(current, 'schemes.edit')) return { bundle: null, lease: { owned: false, name: null, expiresAt: null } as SchemeLease }
       const [line] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.lineId)).for('key share')
       if (!line) throw new Error('Линия удалена. Обновите список.')
       await tx.insert(lineSchemeBundles).values({ lineProgramId: line.id, projectTitle: line.projectTitle, subtitleCode: line.subtitleCode, line: line.line }).onConflictDoNothing()
-      ;[bundle] = await tx.select().from(lineSchemeBundles).where(eq(lineSchemeBundles.lineProgramId, data.lineId))
+      ;[bundle] = await findBundle()
     }
     if (editable) {
-      bundle = await lockedBundle(tx, bundle.id)
       if (!bundle.lockExpiresAt || bundle.lockExpiresAt.getTime() <= Date.now() || lease(bundle, actor, data.token).owned) {
         ;[bundle] = await tx.update(lineSchemeBundles).set({ lockUserId: current.id, lockName: current.name, lockToken: data.token, lockExpiresAt: expires() }).where(eq(lineSchemeBundles.id, bundle.id)).returning()
       }
@@ -160,7 +163,7 @@ export async function saveSchemePoints(data: SchemeWriteRequest & { revisionId: 
     }
     const movedAnnotations = await saveSchemeAnnotations(tx, revision.id, data.changes.annotations)
     await saveSchemeDimensions(tx, revision.id, data.changes.dimensions, data.changes.upsert.filter(point => byId.has(point.id) && byId.get(point.id)!.page !== point.page).map(point => point.id), movedAnnotations)
-    const [next] = await tx.update(lineSchemeRevisions).set({ version: revision.version + 1 }).where(eq(lineSchemeRevisions.id, revision.id)).returning({ version: lineSchemeRevisions.version })
+    const [next] = await tx.update(lineSchemeRevisions).set({ version: revision.version + 1, pageRotations: data.changes.pageRotations }).where(eq(lineSchemeRevisions.id, revision.id)).returning({ version: lineSchemeRevisions.version })
     return { revisionVersion: next.version, points: writes.map(point => ({ id: point.id, physicalId: point.physicalId })), operationId: data.operationId }
   }, data.changes.upsert.some(point => point.rootId !== undefined || point.physicalId !== undefined))
 }

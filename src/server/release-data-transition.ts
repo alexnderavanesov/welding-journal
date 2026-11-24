@@ -8,6 +8,7 @@ import { initializePstoLinePrograms } from './psto-program-transition'
 import { initializePreHeatTreatmentMode } from './pre-heat-treatment-mode-transition'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { initializeSystemDocumentIndexesInTransaction } from './system-document-index'
+import { prepareSystemDocumentIdentityMetadata } from './system-document-identity-metadata'
 
 /** Caller owns ONE transaction for all transitions and the readiness marker. */
 export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) {
@@ -26,7 +27,8 @@ export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) 
     if (!transitionMarker) throw new Error('Нет подтверждения перехода программы линий. Выпуск остановлен.')
     const preHeatTreatment = await initializePreHeatTreatmentMode(tx)
     await initializeSystemDocumentIndexesInTransaction(tx)
-    return { skipped: true, preHeatTreatment, systemDocumentIndexesPrepared: true }
+    const documentIdentities = await prepareSystemDocumentIdentityMetadata(tx)
+    return { skipped: true, preHeatTreatment, systemDocumentIndexesPrepared: true, documentIdentities }
   }
   // No application writes are allowed during release. Locks also prevent a
   // late legacy warning/stamp update racing the owner conversion.
@@ -44,7 +46,8 @@ export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) 
   // legacy index belongs here, before users resume, not in their first save.
   // The existing version markers make subsequent preparation idempotent.
   await initializeSystemDocumentIndexesInTransaction(tx)
+  const documentIdentities = await prepareSystemDocumentIdentityMetadata(tx)
   await tx.insert(appSettings).values({ key: DATA_RELEASE_KEY, value: DATA_RELEASE_VALUE })
     .onConflictDoUpdate({ target: appSettings.key, set: { value: DATA_RELEASE_VALUE, updatedAt: new Date() } })
-  return { skipped: false, transition, warnings, pstoPrograms, preHeatTreatment, stampTemplates, systemDocumentIndexesPrepared: true }
+  return { skipped: false, transition, warnings, pstoPrograms, preHeatTreatment, stampTemplates, systemDocumentIndexesPrepared: true, documentIdentities }
 }

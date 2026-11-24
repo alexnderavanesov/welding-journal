@@ -157,6 +157,7 @@ export function WelderStampsCreatePanel({
           <span>Клеймо НАКС</span>
           <AutocompleteInput
             options={naksStampOptions}
+            listLabel="Подсказки клейма НАКС"
             value={draft.naksStamp}
             onValueChange={handleNaksStampChange}
             maxLength={4}

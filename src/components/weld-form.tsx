@@ -1,3 +1,4 @@
+import { WorkClosureEditor } from './work-closure-editor'
 import { previewControlRequestRemoval } from '@/server/weld-mutations-api'
 import { getClearedControlAssignments } from '@/lib/control-assignment-request-removal'
 import { formatControlRequestRemovals } from '@/lib/control-request-removal-preview'
@@ -47,6 +48,7 @@ import {
 export type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-utils'
 
 type WeldFormProps = {
+  closureAccess?: 'view' | 'edit'
   onOpenRoot?: (id: number) => void
   value: WeldDraft
   focusField?: WeldFieldKey
@@ -73,6 +75,7 @@ export type WeldFormPreSaveDecision = {
 }
 
 export function WeldForm({
+  closureAccess,
   onOpenRoot,
   value,
   focusField,
@@ -101,6 +104,7 @@ export function WeldForm({
   const systemWdiEnabled = isSystemWdiMode(otherSettings)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const [activeTab, setActiveTab] = useState<WeldFormTab>(() => getWeldFormTabForField(focusField))
+  const [openedClosureJoint, setOpenedClosureJoint] = useState<number>()
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
   const validationDraft = useDebouncedValue(draft, 120)
@@ -160,7 +164,7 @@ export function WeldForm({
   const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(validationDraft, value)
   const saveHint = [cancellationResultHint, reactivationResultHint].filter(Boolean).join('; ') || null
   const handleSave = async () => {
-    if (busy || checkingRef.current || cancellationDraft) return
+    if (activeTab === 'closures' || busy || checkingRef.current || cancellationDraft) return
 
     const currentStampSelectOptions = resolveStampSelectOptions(stampSelectOptions, draft)
     const currentExternalSaveBlockReason = getExternalSaveBlockReason?.(draft) ?? null
@@ -204,7 +208,7 @@ export function WeldForm({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || !isTopModalDialog(contentRef.current)) return
 
-      if (event.isComposing) return
+      if (event.isComposing || contentRef.current?.querySelector('[data-active-closure-editor]')) return
 
       const target = event.target
       const isTextArea = target instanceof HTMLTextAreaElement
@@ -329,14 +333,23 @@ export function WeldForm({
           fieldRefs={fieldRefs}
           onToggleSection={toggleSection}
           setDraft={setDraft}
+          showClosures={!!value.id && !!closureAccess}
           activeTab={activeTab}
-          onActiveTabChange={setActiveTab}
+          onActiveTabChange={tab => {
+            if (tab === 'closures' && value.id) setOpenedClosureJoint(value.id)
+            setActiveTab(tab)
+          }}
           fieldStatusKeys={fieldStatusKeys}
           fieldStatusLabel={fieldStatusLabel}
         />
+        {value.id && openedClosureJoint === value.id && closureAccess && (
+          <div hidden={activeTab !== 'closures'} data-active-closure-editor={activeTab === 'closures' ? true : undefined} className="mt-4">
+            <WorkClosureEditor rows={[{ ...value, id: value.id }]} mode="card" editable={closureAccess === 'edit'} />
+          </div>
+        )}
       </div>
 
-      {preSaveDecision ? (
+      {activeTab !== 'closures' && preSaveDecision ? (
         <div className={`flex items-center gap-3 border-t px-6 py-3 text-sm ${
           preSaveDecision.status === 'resolved'
             ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
@@ -354,7 +367,7 @@ export function WeldForm({
         </div>
       ) : null}
 
-      <WeldFormFooter
+      {activeTab !== 'closures' && <WeldFormFooter
         busy={busy}
         autoClearHint={saveHint}
         saveBlockReason={saveBlockReason}
@@ -369,7 +382,7 @@ export function WeldForm({
         fieldStatusLabel={fieldStatusLabel}
         onCancel={onCancel}
         onSave={handleSave}
-      />
+      />}
       {cancellationDraft ? <ConfirmActionDialog title="Сохранить изменения назначений?" tone="warning" description={confirmationText} confirmLabel="Подтвердить и сохранить" cancelLabel="Вернуться к редактированию" onClose={() => setCancellationDraft(null)} onConfirm={() => { setCancellationDraft(null); onSave(withCalculatedFinalStatus(cancellationDraft)) }} /> : null}
     </LargeDialogShell>
   )
@@ -450,6 +463,6 @@ export function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {
   if (!fieldKey) return 'joint'
   if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY || yesEmptyFieldKeys.has(fieldKey)) return 'control'
   if (weldingMaterialWeldFormFieldKeys.has(fieldKey)) return 'weldingMaterials'
-  if (secondaryWeldFormFieldKeys.has(fieldKey)) return 'workClosure'
+  if (secondaryWeldFormFieldKeys.has(fieldKey)) return 'testing'
   return 'joint'
 }

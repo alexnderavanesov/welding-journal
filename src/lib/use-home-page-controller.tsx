@@ -1423,6 +1423,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     repeatedJointMutation,
     saveMutation,
   } = useWeldJournalMutations({
+    checkStampsOnServer: !can('references.view'),
     rows,
     editingRecord: editing?.record as WeldRow | undefined,
     welderStamps,
@@ -3084,7 +3085,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       if (rowLnkRequests.length > 0) {
         primaryEditingActions.push({
           id: 'lnk-request-edit-primary',
-          label: 'Заявка · Основной',
+          label: 'Заявка',
           icon: FilePlus2,
           onSelect: openPrimaryRequestEditor,
         })
@@ -3092,7 +3093,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       if (primaryResultRows.length > 0) {
         primaryEditingActions.push({
           id: 'lnk-result-edit-primary',
-          label: 'Результат и заключение · Основной',
+          label: 'Результат и заключение',
           icon: ClipboardCheck,
           onSelect: () => exactLnkResult
             ? openExactLnkResult(row, exactLnkResult.methodKey)
@@ -3149,7 +3150,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
               : !hasContextRequestExtensionOption
                 ? contextRequestStage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
                   ? 'Созданных заявок ЛНК до ТО пока нет'
-                  : 'Созданных основных заявок ЛНК пока нет'
+                  : 'Заявок НК пока нет'
                 : undefined,
             onSelect: () => openContextRequest('extend'),
           },
@@ -3197,7 +3198,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           {
             id: 'layered-control-assign', label: 'Назначить послойный контроль', icon: ClipboardCheck,
             disabled: Boolean(layeredAssignmentBlockReason),
-            title: layeredAssignmentBlockReason || 'После собственного основного результата ПВК, только для У-стыков.',
+            title: layeredAssignmentBlockReason || 'После результата ПВК стыка, только для У-стыков.',
             onSelect: async () => {
               if (!await confirmAction({ title: 'Назначить послойный контроль?', description: 'ПВК будет переведён в «да». Послойные ВИК и ПВК кромок и слоёв создаются вместе, четырьмя заключениями.', confirmLabel: 'Назначить' })) return
               if (!await requireEditPassword('назначение послойного контроля')) return
@@ -3695,6 +3696,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
 
   const reportImportDialogProps = {
+    checkStampsOnServer: !can('references.view'),
     open: isImportDialogOpen,
     activeReport: 'weldingJournal' as const,
     isPending:
@@ -3706,9 +3708,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     welderStampSuspensions,
     columnFilters: dispatcherTaskServerFilters,
     onClose: () => setIsImportDialogOpen(false),
-    onImportRecords: (records: WeldInput[], skippedRows: number) =>
+    onImportRecords: (records: WeldInput[], skippedRows: number, importId: string) =>
       runProtectedImport('импорт новых данных', async () => {
-        const result = await importMutation.mutateAsync(records.map(withOfficialJoint))
+        const result = await importMutation.mutateAsync({ records: records.map(withOfficialJoint), importId })
         setMessage(`Добавлено ${result.inserted}, пропущено служебных строк: ${skippedRows}`)
       }),
     onMassFillRecords: (
@@ -4744,7 +4746,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           title: `Удалить: ${getPstoCycleStageInlineLabel(payload.stage)}`,
           itemName: String(row.joint ?? '-').trim() || '-',
           description: 'Будет удален только выбранный последний этап. Предыдущие заявки, результаты и документы сохранятся.',
-          warning: 'Документы основного ЛНК не удаляются. Если от этапа зависят последующие документы или возникнет новое нарушение хронологии, удаление будет заблокировано.',
+          warning: 'Документы этапа «НК» не удаляются. Если от этапа зависят последующие документы или возникнет новое нарушение хронологии, удаление будет заблокировано.',
           confirmLabel: 'Удалить этап',
           tone: 'danger',
         })
@@ -4773,7 +4775,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           itemName: `${String(row.line ?? '-').trim() || '-'} · ${String(row.joint ?? '-').trim() || '-'}`,
           description: `Результат ТВМТ цикла №${payload.sequence} будет изменен на «годен». ` +
             `Циклы ${cycleLabels} и связанные с ними документы (${documentCount}) будут удалены.`,
-          warning: 'Основной ЛНК сохранится. Перед записью система проверит его даты относительно исправленного цикла; при конфликте не изменится ничего. Действие нельзя отменить.',
+          warning: 'Данные этапа «НК» сохранятся. Перед записью система проверит его даты относительно исправленного цикла; при конфликте не изменится ничего. Действие нельзя отменить.',
           confirmLabel: 'Удалить циклы и сохранить',
           tone: 'danger',
         })

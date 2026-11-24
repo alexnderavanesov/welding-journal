@@ -41,3 +41,13 @@ describe('joint list refresh after a scheme save', () => {
     expect(hasSchemePlacementChanges({ upsert: [{ id, page: 1, x: .2, y: .3 }], remove: [] }, [])).toBe(true)
   })
 })
+
+it('accepts sparse rotations and checks sheet bounds against the current revision', () => {
+  const changes = { upsert: [], remove: [], pageRotations: { '1': 90, '3': 270 } }
+  expect(validateSchemeChanges(changes, 3)).toEqual(changes)
+  expect(() => validateSchemeChanges(changes, 2)).toThrow(/поворота/)
+  const invalid: Record<string, number>[] = [{ '1': 15 }, { '0': 90 }, { '01': 90 }]
+  for (const pageRotations of invalid) {
+    expect(() => validateSchemeChanges({ ...changes, pageRotations }, 3)).toThrow(/поворота/)
+  }
+})

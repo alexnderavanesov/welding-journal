@@ -106,8 +106,6 @@ const PSTO_WORKFLOW_FIELD_KEYS = new Set<string>([
   'tvmtResult',
   'tvmtConclusionDate',
   'tvmtConclusion',
-  'pstoBoq',
-  'pstoKs3',
   ...(ALL_LNK_FIELD_METHODS
     .flatMap((method) => [
       method.enabledKey,

@@ -150,11 +150,11 @@ export function useLnkResultSaveActions({
       if (layeredRows.length) {
         try {
           for (const row of layeredRows) {
-            if (resultById[row.id] === LNK_EMPTY_RESULT_VALUE) throw new Error('Для назначения послойного контроля внесите основной результат ПВК.')
+            if (resultById[row.id] === LNK_EMPTY_RESULT_VALUE) throw new Error('Для назначения послойного контроля внесите результат ПВК стыка.')
             buildLayeredControlAssignment({ ...row, pvkResult: resultById[row.id] }, true)
           }
         } catch (error) { setMessage((error as Error).message); return }
-        if (!await confirmAction({ title: 'Назначить послойный контроль?', itemName: `Новых назначений: ${layeredRows.length}`, description: 'Только для отмеченных У-стыков вместе с основным ПВК назначаются послойные ВИК и ПВК и создаются четыре заключения. ПВК переводится в «да», в том числе из «отменен» или «дополнительный». Остальные стыки и ранее назначенный послойный контроль не изменяются.', confirmLabel: 'Назначить и сохранить' })) return
+        if (!await confirmAction({ title: 'Назначить послойный контроль?', itemName: `Новых назначений: ${layeredRows.length}`, description: 'Только для отмеченных У-стыков вместе с ПВК стыка назначаются послойные ВИК и ПВК и создаются четыре заключения. ПВК переводится в «да», в том числе из «отменен» или «дополнительный». Остальные стыки и ранее назначенный послойный контроль не изменяются.', confirmLabel: 'Назначить и сохранить' })) return
       }
       const conclusionRows = selectedRows.filter((row) => resultById[row.id] !== LNK_EMPTY_RESULT_VALUE)
       const creationPlan = buildSystemDocumentCreationPlan({
@@ -182,9 +182,9 @@ export function useLnkResultSaveActions({
         )
         if (warningRows.length > 0) {
           const confirmed = await confirmAction({
-            title: 'Продолжить основной НК раньше?',
+            title: 'Продолжить НК до завершения предыдущих этапов?',
             itemName: `Стыков: ${warningRows.length} · Метод: ${method.code}`,
-            description: 'Предыдущие этапы контроля еще не завершены. Результаты и заключения будут оформлены в основном этапе ЛНК.',
+            description: 'Результаты и заключения будут оформлены на этапе «НК».',
             warning: 'В диспетчере появится системное предупреждение СП-06 до завершения НК до ТО, ПСТО и ТВМТ.',
             confirmLabel: 'Продолжить',
             tone: 'warning',

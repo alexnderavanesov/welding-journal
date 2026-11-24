@@ -112,16 +112,6 @@ export const LNK_CONCLUSIONS_FIELDS = [
 export const LNK_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
   'lnkCreatedAt',
   'lnkUpdatedAt',
-  'vikBoq',
-  'vikKs3',
-  'rkBoq',
-  'rkKs3',
-  'uzkBoq',
-  'uzkKs3',
-  'pvkBoq',
-  'pvkKs3',
-  'tvmtBoq',
-  'tvmtKs3',
 ])
 
 export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([

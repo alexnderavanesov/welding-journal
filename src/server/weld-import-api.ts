@@ -1,4 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
+import { OFFICIAL_STAMP_VALIDATION_FIELD_KEYS } from '@/lib/welder-stamp-compatibility-validation'
+import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
+import type { ImportStampInput } from '@/lib/import-stamp-review'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import type {
@@ -6,6 +9,21 @@ import type {
   WeldImportScopeResult,
   WeldPayload,
 } from '@/server/weld-contracts'
+
+export const reviewWeldImportStamps = createServerFn({ method: 'POST' })
+  .validator((data: { records: ImportStampInput[] }) => {
+    if (!Array.isArray(data?.records)) throw new Error('Проверьте строки с клеймами.')
+    assertWeldImportRowLimit(data.records.length)
+    return data.records.map(row => {
+      if (!row || typeof row !== 'object') throw new Error('Проверьте строку с клеймом.')
+      return Object.fromEntries(OFFICIAL_STAMP_VALIDATION_FIELD_KEYS.map(key => {
+        const value = row[key]
+        if (value != null && typeof value !== 'string' && typeof value !== 'number') throw new Error('Проверьте значение поля стыка.')
+        return [key, value]
+      })) as ImportStampInput
+    })
+  })
+  .handler(async ({ data }) => (await import('./weld-save-validation')).reviewImportStampQualifications(data))
 
 export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
   .validator((data: WeldImportScopeRequest | undefined) => data)
@@ -36,7 +54,7 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
   })
 
 export const importWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: { records: WeldInput[] }) => data)
+  .validator((data: { records: WeldInput[]; importId?: string }) => data)
   .handler(async ({ data }) => {
     const server = await import('@/server/weld-import')
     return server.importWeldJoints({ data })

@@ -2,6 +2,7 @@ import { expect, test, type Page, type APIRequestContext, type Route } from '@pl
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { withE2eDatabase } from '../database'
+import { openDocumentGridFilter } from '../document-grid'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { deserializeRpcResponse, serializeRpcData, siblingRpcUrl, rpcName } from '../rpc'
 import type { SystemDocumentReference, SystemDocumentSourcePosition } from '../../src/lib/system-document-types'
@@ -71,6 +72,28 @@ async function seed() {
   })
 }
 test.afterEach(() => cleanupLineProgramProjects([project]))
+
+for (const [stage, request, other, conclusion, method] of [
+  ['Основной', 'a', 'preA', 'Help shared VIK', 'ВИК'],
+  ['До ТО', 'preA', 'a', 'Help before VIK', 'ВИК до ТО'],
+] as const) test(`одноимённые заявки: фильтр «${stage}» и переход к своему заключению`, async ({ page }) => {
+  const { docs } = await seed()
+  await page.goto('/documents')
+  await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
+  const filter = await openDocumentGridFilter(page, 'stage', 'Этап')
+  await filter.locator('label').filter({ hasText: stage }).getByRole('checkbox').check()
+  await filter.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  const row = (key: string) => page.locator(`[data-document-history-grid] .ag-row[row-id="document:system-document:${docs[key].documentId}"]`).first()
+  await expect(row(request).getByText('Help A', { exact: true })).toBeVisible()
+  await expect(row(other)).toHaveCount(0)
+  await row(request).click({ button: 'right' })
+  await page.getByTestId('context-action-menu').getByRole('button', { name: 'Связи документов' }).click()
+  const links = page.getByRole('dialog', { name: 'Связи документов' })
+  const target = links.getByRole('button').filter({ hasText: conclusion })
+  await expect(target).toContainText(` · ${method} · `)
+  await target.click()
+  await expect(links.getByRole('region', { name: 'Исходные заявки' }).getByRole('button').filter({ hasText: 'Help A' })).toBeVisible()
+})
 
 test('connections count positions, preserve pending requests and distinguish methods and equal stage names', async ({ page }) => {
   const { docs } = await seed(), call = await rpc(page)

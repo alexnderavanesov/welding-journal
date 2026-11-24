@@ -15,7 +15,7 @@ describe('LnkControlStageSwitch', () => {
 
     const stageButtons = within(screen.getByRole('group', { name: 'Этап контроля ЛНК' }))
       .getAllByRole('button')
-    expect(stageButtons.map((button) => button.textContent)).toEqual(['До ТО', 'Основной'])
+    expect(stageButtons.map((button) => button.textContent)).toEqual(['НК до ТО', 'НК'])
 
     fireEvent.click(stageButtons[0]!)
     expect(onChange).toHaveBeenCalledWith('beforeHeatTreatment')

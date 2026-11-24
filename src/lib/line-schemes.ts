@@ -22,7 +22,8 @@ export type SchemeLine = { lineId: number; bundleId: number | null; projectTitle
 export const SCHEME_FILTER_FIELDS = ['projectTitle', 'subtitleCode', 'line', 'total', 'welded', 'placedCount', 'placedPercent', 'pdf', 'files'] as const
 export type SchemeFilterField = typeof SCHEME_FILTER_FIELDS[number]
 export type SchemeFilters = Partial<Record<SchemeFilterField, string[]>>
-export type SchemeRegistryRequest = { page?: number; search?: string; filters?: SchemeFilters }
+export type SchemeRegistrySort = { field: SchemeFilterField; direction: 'asc' | 'desc' }
+export type SchemeRegistryRequest = { page?: number; search?: string; filters?: SchemeFilters; sort?: SchemeRegistrySort }
 export function schemeFilterValue(row: SchemeLine, field: SchemeFilterField): string {
   if (field === 'pdf') return row.fileName?.replace(/\.pdf$/i, '') ?? ''
   if (field === 'files') return String(row.revisionCount)
@@ -34,7 +35,7 @@ export function schemeFilterLabel(field: SchemeFilterField, value: string): stri
   if (field === 'placedPercent') return value === '' ? '—' : `${Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
   return value || '(Пусто)'
 }
-export type SchemeRevision = { id: string; fileName: string; changeNumber: string | null; size: number; pageCount: number; version: number; authorName: string; createdAt: string }
+export type SchemeRevision = { id: string; fileName: string; changeNumber: string | null; size: number; pageCount: number; pageRotations?: Record<string, number>; version: number; authorName: string; createdAt: string }
 export type SchemeBundle = { id: number; lineId: number; projectTitle: string; subtitleCode: string; line: string; deleted: boolean; activeRevisionId: string | null; version: number; revisions: SchemeRevision[] }
 export type SchemeLease = { owned: boolean; name: string | null; expiresAt: string | null }
 /** Details follow the same current representative as the marker's label. */
@@ -73,7 +74,7 @@ export function schemeDimensionPair(a: string, b: string) {
     fromAnnotationId: from.startsWith('a:') ? from.slice(2) : null, toAnnotationId: to.startsWith('a:') ? to.slice(2) : null }
 }
 export type SchemeDimensionChanges = { upsert: SchemeDimension[]; remove: string[] }
-export type SchemeChanges = { upsert: SchemePointChange[]; remove: string[]; dimensions?: SchemeDimensionChanges; annotations?: { upsert: SchemeAnnotation[]; remove: string[] } }
+export type SchemeChanges = { upsert: SchemePointChange[]; remove: string[]; pageRotations?: Record<string, number>; dimensions?: SchemeDimensionChanges; annotations?: { upsert: SchemeAnnotation[]; remove: string[] } }
 
 /** The joint list only records whether and on which sheet a joint is placed.
  * Coordinate/style edits do not change that list; an unknown point is treated
@@ -95,6 +96,11 @@ export function schemeToken(value: unknown): string {
 }
 export function validateSchemeChanges(value: SchemeChanges, pageCount = SCHEME_MAX_PAGES): SchemeChanges {
   if (!value || !Array.isArray(value.upsert) || !Array.isArray(value.remove)) throw new Error('Недопустимые изменения схемы.')
+  if (value.pageRotations !== undefined) {
+    const turns = value.pageRotations
+    if (!turns || typeof turns !== 'object' || Array.isArray(turns) || Object.entries(turns).some(([page, angle]) =>
+      !/^[1-9]\d*$/.test(page) || Number(page) > pageCount || ![90, 180, 270].includes(angle))) throw new Error('Недопустимый лист или угол поворота PDF.')
+  }
   const ids = new Set<string>()
   for (const point of value.upsert) {
     schemeToken(point.id)

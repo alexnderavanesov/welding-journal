@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { journalRow, editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -190,7 +191,7 @@ test('официальность туда и обратно: отмена, дв�
   await expect(page.getByTestId('program-finished-label')).toBeVisible()
   await page.goto('/statistics')
   await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+  await selectStatisticsProjects(page, project)
   await page.getByRole('button', { name: 'Стыки', exact: true }).click()
   await expect(page.getByText('1 выполнено из 1', { exact: true })).toBeVisible()
   expect(calls.filter(name => name.startsWith('applyLnkOfficialityChange_'))).toHaveLength(1)

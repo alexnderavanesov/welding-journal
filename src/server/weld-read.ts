@@ -1,3 +1,5 @@
+import { closureFieldKeys } from '@/lib/work-closure-columns'
+import { projectClosureRow, selectClosurePositions } from './work-closure-query'
 import { createHash } from 'node:crypto'
 import { getPreHeatTreatmentFilterLabel } from '@/lib/pre-heat-treatment-column'
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
@@ -306,12 +308,6 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'testContour',
   'testDate',
   'piDate',
-  'boq',
-  'testBoq',
-  'piBoq',
-  'ks3',
-  'testKs3',
-  'piKs3',
   'createdAt',
   'weldingUpdatedAt',
   'pstoCreatedAt',
@@ -811,8 +807,10 @@ export async function visitReportOutput(
         signal?.throwIfAborted()
         const ids = (await db.execute<{ id: number }>(sql`fetch forward 1000 from report_output_cursor`)).rows.map(row => row.id)
         if (!ids.length) break
-        const facts = await db.select(WELD_TABLE_SELECT).from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
-        const byId = new Map(facts.map(row => [row.id, row]))
+        const facts = await db.select({ ...WELD_TABLE_SELECT,
+          ...(report === 'weldingJournal' && (!input.fieldKeys || closureFieldKeys.some(key => input.fieldKeys?.includes(key))) ? selectClosurePositions(data.columnFilters) : {}),
+        }).from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
+        const byId = new Map(facts.map(row => [row.id, projectClosureRow(row)]))
         const rows = ids.map(id => byId.get(id)!)
         const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, settings), { dispatcherState: state.dispatcher, db })
         const prepared = prepareJournalPageRows(buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)

@@ -28,6 +28,7 @@ const preStageFields: Record<string, Set<string>> = {
 // These operations directly act on their primary records. Related records are
 // effects of the same action, not additional actions by the named operator.
 const primaryEntities: Record<string, string[]> = {
+  saveJointWorkClosures: ['work_closures'], saveBulkWorkClosures: ['work_closures'],
   saveDuplicateControl: ['duplicate_controls'], saveDuplicateControls: ['duplicate_controls'], deleteDuplicateControl: ['duplicate_controls'],
   saveRemoteGeneratedDocuments: ['generated_documents'], deleteRemoteGeneratedDocument: ['generated_documents'], applyDocumentOperation: ['generated_documents'],
   saveRemoteDocumentTemplate: ['document_templates'], updateRemoteDocumentTemplate: ['document_templates'], deleteRemoteDocumentTemplate: ['document_templates'], cleanupRemoteDocumentTemplateFiles: ['document_templates'],

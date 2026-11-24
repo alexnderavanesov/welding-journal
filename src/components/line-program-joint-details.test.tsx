@@ -103,7 +103,7 @@ describe('compact joint rows preserve meaningful details', () => {
       const result = screen.getByLabelText(`Результат ${joint}`)
       expect(result).not.toBeVisible()
       fireEvent.click(result.closest('details')!.querySelector('summary')!)
-      expect(within(result).getByText('Основной этап')).toBeVisible()
+      expect(within(result).getByText('НК')).toBeVisible()
       expect(result.closest('td')?.className).toBe(result.closest('tr')?.querySelector('td')?.className)
       expect(within(result).queryByRole('button')).not.toBeInTheDocument()
       expect(within(result).queryByRole('link')).not.toBeInTheDocument()
@@ -238,7 +238,7 @@ describe('compact joint rows preserve meaningful details', () => {
       tvmtRequest: 'ТВМТ-1', tvmtRequestDate: '2026-09-05', tvmtConclusion: 'ТВМТ-РЕЗ-1', tvmtConclusionDate: '2026-09-06',
       pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-09-07', tvmtConclusion: 'ТВМТ-РЕЗ-2', tvmtConclusionDate: '2026-09-09' }],
     }} />)
-    expect(screen.getAllByRole('heading').map(node => node.textContent)).toEqual(['НК до ТО', 'ПСТО и ТВМТ', 'Основной этап'])
+    expect(screen.getAllByRole('heading').map(node => node.textContent)).toEqual(['НК до ТО', 'ПСТО и ТВМТ', 'НК'])
     expect(screen.getAllByRole('columnheader').slice(0, 4).map(node => node.textContent)).toEqual(['Контроль', 'Заявка', 'Заключение', 'Дефекты'])
     for (const [title, scope] of [
       ['ДО-ТО', { type: 'lnkRequest', sourceKind: 'beforeHeatTreatment', date: '2026-09-01' }],

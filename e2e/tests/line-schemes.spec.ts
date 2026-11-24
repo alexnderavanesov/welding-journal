@@ -1,3 +1,4 @@
+import { rpcName } from '../rpc'
 import { filterSchemeProject } from '../line-scheme-grid'
 import { expect, test } from '@playwright/test'
 import { PDFDocument, PDFName, StandardFonts, rgb, degrees } from 'pdf-lib'
@@ -301,6 +302,11 @@ test('PDF: разметка, сохранение, листы, архив, бл�
   await expect(secondDialog.getByText(/Редактирует:/)).toBeVisible()
   await expect(secondDialog.getByRole('button', { name: /^Сохранить/ })).toBeDisabled()
   await expect(secondDialog.locator('[data-scheme-point]')).toHaveCount(1)
+  const viewerSheet = secondDialog.locator('.line-scheme-pdf-sheet')
+  await expect(viewerSheet).toHaveCSS('--scheme-point-rotation', '-90deg')
+  await secondDialog.getByRole('button', { name: 'Повернуть', exact: true }).click()
+  await expect(viewerSheet).toHaveCSS('--scheme-point-rotation', '-180deg')
+  await expect(secondDialog.getByRole('button', { name: /^Сохранить/ })).toBeDisabled()
   for (const width of [1904, 1280]) {
     await second.setViewportSize({ width, height: 1000 })
     const header = secondDialog.locator('.line-scheme-heading')
@@ -453,6 +459,12 @@ test('PDF: разметка, сохранение, листы, архив, бл�
   await expect(dialog.locator('[data-scheme-point-layer="1"]')).toBeVisible()
   await expect(dialog.locator('[data-scheme-point]')).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: 'S2', exact: true })).toHaveAttribute('data-scheme-placement', 'unplaced')
+  const expectSheetAngle = async (angle: number) => expect.poll(() =>
+    dialog.locator('.line-scheme-pdf-sheet').evaluate(el => (el as HTMLElement).style.transform),
+  ).toContain(`rotate(${angle}deg)`)
+  const turn = dialog.getByRole('button', { name: 'Повернуть', exact: true })
+  await turn.click()
+  await expectSheetAngle(90)
 
   // Escape always confirms. Enter explicitly discards a draft, while the
   // separate save action persists it before closing.
@@ -472,6 +484,16 @@ test('PDF: разметка, сохранение, листы, архив, бл�
   const reopen = () => page.getByRole('row').filter({ hasText: project }).getByRole('button', { name: 'Drawing C', exact: true }).click()
   await reopen()
   await expect(layer).toBeVisible()
+  await expectSheetAngle(0)
+  for (let n = 0; n < 4; n++) await turn.click()
+  await expect(dialog.getByRole('button', { name: /^Сохранить/ })).toBeDisabled()
+  await turn.click()
+  await dialog.getByRole('button', { name: 'Следующий лист' }).click()
+  await expectSheetAngle(90) // Native rotation on sheet 2.
+  await turn.click()
+  await expectSheetAngle(180)
+  await dialog.getByRole('button', { name: 'Предыдущий лист' }).click()
+  await expectSheetAngle(90)
   await expect(dialog.locator('[data-scheme-point]')).toHaveCount(0)
   await dialog.getByRole('button', { name: 'S2', exact: true }).click()
   await layer.click({ position: { x: 180, y: 170 } })
@@ -481,6 +503,9 @@ test('PDF: разметка, сохранение, листы, архив, бл�
   await expect(dialog).not.toBeVisible()
   await reopen()
   await expect(dialog.locator('[data-scheme-point]')).toHaveCount(1)
+  await expectSheetAngle(90)
+  await dialog.getByRole('button', { name: 'Следующий лист' }).click()
+  await expectSheetAngle(180)
   await page.keyboard.press('Escape')
   await expect(closePrompt).toContainText('Изменений нет')
   await page.keyboard.press('Enter')
@@ -510,7 +535,35 @@ test('PDF: разметка, сохранение, листы, архив, бл�
   }
   await reopen()
   await expect(dialog.locator('[data-scheme-point]')).toHaveCount(1)
-  await dialog.getByRole('button', { name: 'Закрыть схему', exact: true }).click()
+  const revisionId = await dialog.getByLabel('Редакция PDF').inputValue()
+  const savedDrawing = () => withE2eDatabase(async db => (await db.query(`
+    select r.page_rotations, p.page, p.x, p.y from line_scheme_revisions r
+    join line_scheme_points p on p.revision_id=r.id where r.id=$1
+  `, [revisionId])).rows[0])
+  const previous = await savedDrawing()
+  expect(previous.page_rotations).toEqual({ '1': 90, '2': 90 })
+  for (let n = 0; n < 3; n++) await turn.click()
+  await expectSheetAngle(0)
+  await dialog.getByRole('button', { name: /^Сохранить/ }).click()
+  await expect(dialog.getByText('Разметка сохранена', { exact: true })).toBeVisible()
+  expect(await savedDrawing()).toEqual({ ...previous, page_rotations: { '2': 90 } })
+  let releaseRefresh!: () => void
+  const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (/^getLineSchemes(?:_|$)/.test(rpcName(route.request().url()))) await refreshGate
+    await route.continue()
+  })
+  try {
+    await dialog.getByRole('button', { name: 'Закрыть схему', exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+    const registry = page.getByRole('region', { name: 'Схемы линий', exact: true })
+    await expect(registry.getByRole('button', { name: 'Обновить список' })).toBeDisabled()
+    await expect(registry.locator('.ag-overlay-loading-center')).not.toBeVisible()
+    await registry.getByRole('button', { name: 'Drawing C', exact: true }).click({ trial: true })
+  } finally {
+    releaseRefresh()
+    await page.unrouteAll({ behavior: 'wait' })
+  }
   await expect.poll(() => page.workers().length).toBe(0)
   expect(rpcErrors).toEqual([])
   console.log(JSON.stringify({ lineScheme: { browser: testInfo.project.name, firstUploadAndOpenMs: openMs, firstSaveMs: saveMs } }))

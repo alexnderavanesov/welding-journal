@@ -10,7 +10,7 @@ it('preserves reference parameters independently of access to weld facts', () =>
 })
 it('preserves line configuration, while nested joint responses keep their own field boundary', () => {
   const identity = user('lines.view')
-  for (const [name, value] of [['findLineProgram', line], ['getLineProgramPage', { rows: [line] }], ['getLineProgramSection', { rows: [line] }], ['getLineProgramCalculation', { line }], ['getLineProgramsForImport', [line]]] as const) {
+  for (const [name, value] of [['findLineProgram', line], ['getLineProgramPage', { rows: [line] }], ['getLineProgramSection', { rows: [line] }], ['getLineProgramCalculation', { line }]] as const) {
     expect(redactOperationResult(identity, 'line-program.ts', name, value)).toEqual(value)
   }
   expect(redactOperationResult(identity, 'line-program.ts', 'getLineProgramJointPage', { rows: [{ id: 2, joint: 'F1', weldingJournalNote: 'private', pstoResult: 'private', pvkControlPercent: 10 }] }))

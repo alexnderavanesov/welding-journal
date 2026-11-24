@@ -26,13 +26,14 @@ beforeEach(() => {
 })
 
 describe('physical statistics bounded loading', () => {
-  it.each([1, 1000, 200000])('loads %i rows and saved cut facts in six reads when no registered schemes exist', async count => {
+  it.each([1, 1000, 200000])('loads %i rows and saved cut facts without reading unused subtitle choices', async count => {
     state.rows = Array.from({ length: count }, (_, index) => ({ id: index + 1, joint: `S${index + 1}`, line: 'L',
       weldDate: '2026-09-01', connectionType: 'С17', d1: '50.8', wdi: '999', weldControlPercent: '10' })) as WeldRow[]
     const result = await computeStatisticsServerResult({ tab: 'lineSummary', unit: 'wdi' })
     expect(result.lineSummary.total).toBe((count - 1) * 2)
     expect(result.lineSummary.completed).toBe((count - 1) * 2)
-    expect(state.tables).toHaveLength(6)
+    expect(state.selectDistinct).toHaveBeenCalledExactlyOnceWith({ value: weldJoints.projectTitle })
+    expect(state.tables).toHaveLength(5)
     expect(state.transaction).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
       isolationLevel: 'repeatable read', accessMode: 'read only',
     })

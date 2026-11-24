@@ -21,6 +21,7 @@ vi.mock('@/server/line-program', () => ({ getLineProgramsForImport: vi.fn().mock
 
 const preview = {
   fileName: 'import.xlsx',
+  validRecordRowNumbers: [2],
   fields: [FIELD_BY_KEY.get('joint')!],
   records: [{ joint: 'F1' }],
   validRecords: [{ joint: 'F1' }],

@@ -4,6 +4,8 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
+import type { ClosureDimension } from '@/lib/work-closure-columns'
+import type { WorkClosureFilter } from '@/lib/work-closures'
 
 type CellTable = Pick<WeldTableProps, 'rowsReady' | 'onEdit' | 'onDelete' | 'onOpenDocument' | 'onOpenLnkRequest' | 'onOpenLnkResult' | 'onOpenJoint' | 'onOpenJointOverview' | 'controlBasisEditorEnabled'>
 export type JournalGridContextValue = {
@@ -14,7 +16,9 @@ export type JournalGridContextValue = {
   openMenu: (row: WeldRow, position: { x: number; y: number; anchorElement?: Element }, fieldKey?: WeldFieldKey) => void
 }
 export const JournalGridContext = createContext<JournalGridContextValue | null>(null)
-export const JournalFilterContext = createContext<(Pick<WeldTableProps, 'columnFilters' | 'onColumnFiltersChange'> & { report: AgGridWeldReport; deferModelChanges?: boolean }) | null>(null)
+export const JournalFilterContext = createContext<(Pick<WeldTableProps, 'columnFilters' | 'onColumnFiltersChange'> & {
+  report: AgGridWeldReport; deferModelChanges?: boolean; onClosureSummary?: (dimension: ClosureDimension, filter: WorkClosureFilter) => void
+}) | null>(null)
 export const JournalExtrasContext = createContext<{
   table: Pick<WeldTableProps, 'rowsReady' | 'extraColumns' | 'rowActions'>
   getActionRow: JournalGridContextValue['getActionRow']

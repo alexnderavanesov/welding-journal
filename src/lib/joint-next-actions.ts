@@ -162,7 +162,7 @@ export function buildJointNextActions(
         kind: 'blocked',
         title: 'НК до ТО не годен',
         description:
-          `Негодный результат: ${results}. ПСТО, ТВМТ и основной этап НК для этого стыка не требуются. ` +
+          `Негодный результат: ${results}. ПСТО, ТВМТ и НК для этого стыка не требуются. ` +
           'Дальнейшая работа ведется по новому официальному или R/W-стыку.',
         tone: 'warning',
       }]
@@ -236,7 +236,7 @@ function buildDirectWorkflowAction(
       return {
         key: `primary-lnk-recorded-with-debt:${row.id}`,
         kind: 'complete',
-        title: 'Результаты основного НК внесены',
+        title: 'Результаты НК внесены',
         description: 'СП-06 остаётся, пока пропущенные этапы контроля не будут подтверждены фактическими данными.',
         tone: 'warning',
       }
@@ -304,7 +304,7 @@ function buildDirectWorkflowAction(
     return {
       key: `blocked-primary:${row.id}:${blockedPrimaryMethod.code}`,
       kind: 'blocked',
-      title: `Основной ${blockedPrimaryMethod.code} пока недоступен`,
+      title: `${blockedPrimaryMethod.code} пока недоступен`,
       description: getPrimaryLnkStageBlockReason(row, blockedPrimaryMethod.code),
       tone: 'warning',
     }
@@ -324,7 +324,7 @@ function buildPrimaryWorkflowAction(
     return buildControlAction({
       row,
       kind: 'primaryLnkRequest',
-      title: 'Создать заявку основного НК',
+      title: 'Создать заявку НК',
       description: `Ожидают заявки: ${primaryRequestMethods.map((method) => method.code).join(', ')}.`,
       buttonLabel: 'Создать заявку',
       methodCode: primaryRequestMethods[0]?.code,
@@ -336,7 +336,7 @@ function buildPrimaryWorkflowAction(
     return buildControlAction({
       row,
       kind: 'primaryLnkResult',
-      title: 'Внести результат основного НК',
+      title: 'Внести результат НК',
       description: `Ожидают результата: ${primaryResultMethods.map((method) => method.code).join(', ')}.`,
       buttonLabel: 'Внести результат',
       methodCode: primaryResultMethods[0]?.code,
@@ -418,7 +418,7 @@ function buildActivePhysicalCycleAction(
       title: `Внести результат ТВМТ · цикл ${sequence}`,
       description: isPstoCancelledValue(row.pstoRequired)
         ? 'Линия ПСТО отменена. Внесите фактический результат ТВМТ, чтобы закончить уже начатый цикл; новый повтор не откроется.'
-        : 'После годной ТВМТ откроется основной НК. Негодная ТВМТ потребует повторную ПСТО.',
+        : 'После годной ТВМТ откроется НК. Негодная ТВМТ потребует повторную ПСТО.',
       buttonLabel: 'Внести результат',
     })
   }

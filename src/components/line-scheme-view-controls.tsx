@@ -8,8 +8,8 @@ import { Select } from './ui/select'
 export const SCHEME_VIEW_MENU = 'scheme-view-menu'
 /** Viewing state stays outside the PDF/marker tree; dimming only composes the
  * existing raster. Footer and context menu operate on this same camera/state. */
-export function LineSchemeViewControls({ frame, target, camera, page, children }: {
-  frame: RefObject<HTMLDivElement | null>; target: HTMLElement | null; camera: PdfCamera | null; page: number; children: ReactNode;
+export function LineSchemeViewControls({ frame, target, camera, page, onRotate, rotationDisabled, children }: {
+  frame: RefObject<HTMLDivElement | null>; target: HTMLElement | null; camera: PdfCamera | null; page: number; onRotate: () => void; rotationDisabled: boolean; children: ReactNode;
 }) {
   const [percent, setPercent] = useState(100)
   const [menu, setMenu] = useState<{ x: number; y: number; anchorElement: HTMLElement } | null>(null)
@@ -34,7 +34,7 @@ export function LineSchemeViewControls({ frame, target, camera, page, children }
       { id: 'out', label: 'Уменьшить', icon: Minus, onSelect: () => camera.zoom(1 / 1.2, menu) },
       { id: 'page', label: 'Весь лист', icon: Scan, onSelect: () => camera.fit('fit-page') },
       { id: 'width', label: 'По ширине', icon: MoveHorizontal, onSelect: () => camera.fit('fit-width') },
-      { id: 'rotate', label: 'Повернуть на 90°', icon: RotateCw, onSelect: () => camera.rotate() },
+      { id: 'rotate', label: 'Повернуть на 90°', icon: RotateCw, disabled: rotationDisabled, onSelect: onRotate },
       ] },
       { id: 'background', label: `Фон PDF · ${percent}%`, onSelect: () => {}, children: [10, 30, 60, 100].map(value => ({ id: String(value), label: `${value}%`, icon: value === percent ? Check : undefined, onSelect: () => setPercent(value) })) },
     ] } : null} />

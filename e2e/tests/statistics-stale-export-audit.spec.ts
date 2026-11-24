@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Request } from '@playwright/test'
 import * as XLSX from 'xlsx'
@@ -66,9 +67,7 @@ test('statistics: a delayed period RPC must not export old totals under the new 
 
     await page.goto('/statistics')
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    const projectSelect = page.getByRole('combobox', { name: 'Проект', exact: true })
-    await expect(projectSelect.locator('option', { hasText: project })).toHaveCount(1)
-    await projectSelect.selectOption(project.toLowerCase())
+    await selectStatisticsProjects(page, project)
     await page.getByRole('button', { name: 'Стыки', exact: true }).click()
     await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('custom')
     await page.getByLabel('Период с', { exact: true }).fill('2026-09-01')

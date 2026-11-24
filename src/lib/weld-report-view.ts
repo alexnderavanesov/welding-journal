@@ -1,3 +1,5 @@
+import { closureFieldKeys } from './work-closure-columns'
+import { migrateClosureColumnFilters } from './work-closures'
 import { SERVICE_DATE_FIELDS } from './weld-field-access'
 import { userStorage } from '@/lib/user-storage'
 import {
@@ -80,14 +82,14 @@ export function readWeldReportViewStorage(
   const fallback = createDefaultWeldReportViewStorage(defaultCollapsedSections)
   if (typeof window === 'undefined') return fallback
   try {
-    const parsed = JSON.parse(userStorage.getItem(getStorageKey(storageKey)) ?? 'null') as Partial<WeldReportViewStorage> | null
+    const parsed = JSON.parse(userStorage.getItem(getStorageKey(storageKey)) ?? 'null') as (Partial<WeldReportViewStorage> & { closureColumnsVersion?: number }) | null
     if (!parsed) return fallback
     return {
       activePreset: isPreset(parsed.activePreset) ? parsed.activePreset : fallback.activePreset,
-      hiddenFieldKeys: normalizeFieldKeys(parsed.hiddenFieldKeys),
-      customHiddenFieldKeys: normalizeFieldKeys(parsed.customHiddenFieldKeys),
+      hiddenFieldKeys: normalizeFieldKeys(parsed.hiddenFieldKeys, parsed.closureColumnsVersion !== 2),
+      customHiddenFieldKeys: normalizeFieldKeys(parsed.customHiddenFieldKeys, parsed.closureColumnsVersion !== 2),
       collapsedSections: normalizeStrings(parsed.collapsedSections, fallback.collapsedSections),
-      savedViews: normalizeSavedViews(parsed.savedViews),
+      savedViews: normalizeSavedViews(parsed.savedViews, parsed.closureColumnsVersion !== 2),
     }
   } catch {
     return fallback
@@ -96,7 +98,7 @@ export function readWeldReportViewStorage(
 
 export function writeWeldReportViewStorage(storageKey: string, value: WeldReportViewStorage) {
   if (typeof window === 'undefined') return
-  try { userStorage.setItem(getStorageKey(storageKey), JSON.stringify(value)) }
+  try { userStorage.setItem(getStorageKey(storageKey), JSON.stringify({ ...value, closureColumnsVersion: 2 })) }
   catch { /* Keep the current view usable in memory when browser storage is unavailable. */ }
 }
 
@@ -118,7 +120,7 @@ function isFieldVisibleInPreset(fieldKey: string, preset: Exclude<WeldReportColu
   return /date|request|result|conclusion|psto|tvmt|heattreatment|status|officiality/.test(normalized)
 }
 
-function normalizeSavedViews(value: unknown): SavedWeldReportView[] {
+function normalizeSavedViews(value: unknown, legacyClosures: boolean): SavedWeldReportView[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((candidate) => {
     if (!candidate || typeof candidate !== 'object') return []
@@ -126,11 +128,11 @@ function normalizeSavedViews(value: unknown): SavedWeldReportView[] {
     const name = String(raw.name ?? '').trim()
     const id = String(raw.id ?? '').trim()
     if (!name || !id || !raw.snapshot) return []
-    return [{ id, name, snapshot: normalizeSnapshot(raw.snapshot) }]
+    return [{ id, name, snapshot: normalizeSnapshot(raw.snapshot, legacyClosures) }]
   })
 }
 
-function normalizeSnapshot(value: WeldReportViewSnapshot): WeldReportViewSnapshot {
+function normalizeSnapshot(value: WeldReportViewSnapshot, legacyClosures = false): WeldReportViewSnapshot {
   const columnFilters = migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
     Object.entries(value.columnFilters ?? {})
       .filter(([, filter]) => String(filter ?? '').trim()),
@@ -138,10 +140,10 @@ function normalizeSnapshot(value: WeldReportViewSnapshot): WeldReportViewSnapsho
   const sortFieldKey = value.sort ? migrateLegacyWeldFieldKey(value.sort.fieldKey) : ''
   const sortField = isKnownWeldFieldKey(sortFieldKey) ? FIELD_BY_KEY.get(sortFieldKey) : undefined
   return {
-    hiddenFieldKeys: normalizeFieldKeys(value.hiddenFieldKeys),
+    hiddenFieldKeys: normalizeFieldKeys(value.hiddenFieldKeys, legacyClosures),
     collapsedSections: normalizeStrings(value.collapsedSections),
     columnFilters: Object.fromEntries(
-      Object.entries(columnFilters)
+      Object.entries(migrateClosureColumnFilters(columnFilters))
         .filter(([fieldKey]) => fieldKey === REPORT_QUICK_SEARCH_FILTER_KEY || isKnownWeldFieldKey(fieldKey) || isHiddenReportFilterKey(fieldKey)),
     ),
     sort: value.sort && sortField && !isVirtualWeldField(sortField) &&
@@ -151,8 +153,9 @@ function normalizeSnapshot(value: WeldReportViewSnapshot): WeldReportViewSnapsho
   }
 }
 
-function normalizeFieldKeys(value: unknown) {
+function normalizeFieldKeys(value: unknown, legacyClosures: boolean) {
   return normalizeStrings(value)
+    .flatMap(key => legacyClosures && key === 'workClosureSummary' ? closureFieldKeys : [key])
     .map(migrateLegacyWeldFieldKey)
     .filter(isKnownWeldFieldKey)
 }

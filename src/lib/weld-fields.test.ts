@@ -21,6 +21,8 @@ import {
   weldingMaterialWeldFormFieldKeys,
 } from './weld-form-field-sets'
 import { CONTROL_BASIS_FIELD_KEYS } from './control-assignment-basis'
+import { getLnkVisibleFieldSections } from './lnk-visible-field-layout'
+import { closureFieldKeys } from './work-closure-columns'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -62,8 +64,7 @@ describe('weld field order', () => {
       'Прочее',
       'Материал (дополнительно)',
       'Сварочный материал и ТК',
-      'Код работ',
-      'Закрытие',
+      'Закрытие работ',
     ])
   })
 
@@ -292,13 +293,13 @@ describe('weld field order', () => {
 
     expect(journalSections.some((group) => group.section === 'Испытания')).toBe(true)
     expect(journalSections.flatMap((group) => group.fields).map((field) => field.key)).toEqual(
-      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']),
+      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate']),
     )
     expect(lnkSections.flatMap((group) => group.fields).map((field) => field.key)).not.toEqual(
-      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']),
+      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate']),
     )
     expect(pstoSections.flatMap((group) => group.fields).map((field) => field.key)).not.toEqual(
-      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']),
+      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate']),
     )
   })
 
@@ -400,55 +401,9 @@ describe('weld field order', () => {
     ])
   })
 
-  it('shows welding customer work code and acceptance fields in separate sections', () => {
-    const tests = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Испытания')
-    const customerWorkCode = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Код работ')
-    const acceptance = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Закрытие')
-
-    expect(tests?.fields.map((field) => field.label)).toEqual([
-      'Вид испытаний',
-      'Контур',
-      'Дата ГИ',
-      'Дата ПИ',
-    ])
-    expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
-      'BoQ сварка',
-      'BoQ ПСТО',
-      'BoQ ВИК',
-      'BoQ РК',
-      'BoQ УЗК',
-      'BoQ ПВК',
-      'BoQ ТВМТ',
-      'BoQ ГИ',
-      'BoQ ПИ',
-    ])
-    expect(acceptance?.fields.map((field) => field.label)).toEqual([
-      'КС3 сварка',
-      'КС3 ПСТО',
-      'КС3 ВИК',
-      'КС3 РК',
-      'КС3 УЗК',
-      'КС3 ПВК',
-      'КС3 ТВМТ',
-      'КС3 ГИ',
-      'КС3 ПИ',
-    ])
-  })
-
-  it('keeps work code and acceptance fields available in the weld form secondary tab', () => {
-    expect([...secondaryWeldFormFieldKeys].some((fieldKey) => formHiddenFieldKeys.has(fieldKey))).toBe(false)
-    expect(secondaryWeldFormFieldKeys.has('testTypes')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('testContour')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('testDate')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('piDate')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('boq')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('ks3')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('testBoq')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('piBoq')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('testKs3')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('piKs3')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('pstoBoq')).toBe(true)
-    expect(secondaryWeldFormFieldKeys.has('pstoKs3')).toBe(true)
+  it('keeps testing fields in the testing tab and the closure summary outside the ordinary weld draft', () => {
+    expect([...secondaryWeldFormFieldKeys]).toEqual(['testTypes', 'testContour', 'testDate', 'piDate'])
+    expect(formHiddenFieldKeys.has('workClosureSummary')).toBe(true)
   })
 
   it('keeps welding materials available in their dedicated weld form tab', () => {
@@ -464,43 +419,9 @@ describe('weld field order', () => {
     ])
   })
 
-  it('keeps BoQ and KS3 fields visible in the welding journal report', () => {
-    const sections = getAvailableWeldTableSections({
-      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
-      mergePstoSections: false,
-    })
-    const customerWorkCode = sections.find((group) => group.section === 'Код работ')
-    const acceptance = sections.find((group) => group.section === 'Закрытие')
-    const tests = sections.find((group) => group.section === 'Испытания')
-
-    expect(tests?.fields.map((field) => field.label)).toEqual([
-      'Вид испытаний',
-      'Контур',
-      'Дата ГИ',
-      'Дата ПИ',
-    ])
-    expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
-      'BoQ сварка',
-      'BoQ ПСТО',
-      'BoQ ВИК',
-      'BoQ РК',
-      'BoQ УЗК',
-      'BoQ ПВК',
-      'BoQ ТВМТ',
-      'BoQ ГИ',
-      'BoQ ПИ',
-    ])
-    expect(acceptance?.fields.map((field) => field.label)).toEqual([
-      'КС3 сварка',
-      'КС3 ПСТО',
-      'КС3 ВИК',
-      'КС3 РК',
-      'КС3 УЗК',
-      'КС3 ПВК',
-      'КС3 ТВМТ',
-      'КС3 ГИ',
-      'КС3 ПИ',
-    ])
+  it('shows one final closure section in the welding journal', () => {
+    const sections = getAvailableWeldTableSections({ hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS, mergePstoSections: false })
+    expect(sections.at(-1)?.fields.map(field => field.key)).toEqual(['workClosureSummary', 'workClosureRateCode', 'workClosureActNumber'])
   })
 
   it('shows service tracking fields in the misc section', () => {
@@ -583,16 +504,20 @@ describe('weld field order', () => {
     expect(formHiddenFieldKeys.has('pstoNote')).toBe(true)
   })
 
-  it('keeps TVMT BoQ and KS3 visibility unchanged while the operational cycle moves to PSTO', () => {
+  it('keeps financial entries separate from the TVMT operational cycle', () => {
     const pstoFields = getAvailableWeldTableSections({
       hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
       mergePstoSections: true,
     }).flatMap((group) => group.fields)
 
-    expect(LNK_HIDDEN_FIELD_KEYS.has('tvmtBoq')).toBe(true)
-    expect(LNK_HIDDEN_FIELD_KEYS.has('tvmtKs3')).toBe(true)
-    expect(HEAT_TREATMENT_HIDDEN_FIELD_KEYS.has('tvmtBoq')).toBe(true)
-    expect(HEAT_TREATMENT_HIDDEN_FIELD_KEYS.has('tvmtKs3')).toBe(true)
+    const journal = getAvailableWeldTableSections({ hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS, mergePstoSections: false })
+    const lnk = getAvailableWeldTableSections({ hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS, sectionLayout: getLnkVisibleFieldSections(), mergePstoSections: false })
+    expect(journal.at(-1)?.section).toBe('Закрытие работ')
+    expect(journal.at(-1)?.fields.map(field => field.key)).toEqual(closureFieldKeys)
+    for (const key of closureFieldKeys) {
+      expect(lnk.flatMap(group => group.fields).some(field => field.key === key)).toBe(false)
+      expect(pstoFields.some(field => field.key === key)).toBe(false)
+    }
     expect(pstoFields.map((field) => field.key)).toEqual(expect.arrayContaining([
       'tvmtRequest',
       'tvmtResult',

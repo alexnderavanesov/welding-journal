@@ -141,7 +141,7 @@ function pressEscape() {
 function TestGridToolbar() {
   const view = useWeldReportViewState({ storageKey: 'test-grid', sections: [], alwaysVisibleFieldKeys: new Set(),
     defaultCollapsedSections: new Set(), columnFilters: {}, sort: null, onColumnFiltersChange: vi.fn(), onSortChange: vi.fn() })
-  return <JournalGridToolbar settingsLabel="Настройка вида" sections={[]} extraSections={[]} alwaysVisible={new Set()}
+  return <JournalGridToolbar settingsLabel="Настройка вида" sections={[]} alwaysVisible={new Set()}
     view={view} openColumnsRequest={0} appearance={DEFAULT_JOURNAL_APPEARANCE} onAppearanceChange={vi.fn()}
     onResetLayout={vi.fn()} hasFilters={false} onClearFilters={vi.fn()} />
 }

@@ -71,7 +71,7 @@ async function openManager(page: Page, stage: 'primary' | 'beforeHeatTreatment',
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   if (stage === 'beforeHeatTreatment') await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' })
-    .getByRole('button', { name: 'До ТО', exact: true }).click()
+    .getByRole('button', { name: 'НК до ТО', exact: true }).click()
   const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
     name: stage === 'primary' ? 'Все результаты ЛНК' : 'Все результаты ЛНК до ТО', exact: true,
   }) })

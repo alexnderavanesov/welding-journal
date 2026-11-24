@@ -84,3 +84,18 @@ it('rejects malformed numeric filter input before reading any data', async () =>
   expect(db.execute).not.toHaveBeenCalled()
   expect(db.select).not.toHaveBeenCalled()
 })
+
+it('refuses an unsupported sort field or direction before reading the registry', async () => {
+  const db = fixture([])
+  for (const sort of [{ field: 'unknown', direction: 'asc' }, { field: 'total', direction: 'unknown' }]) {
+    await expect(readSchemeLines({ sort: sort as never })).rejects.toThrow('Недопустимая сортировка')
+  }
+  expect(db.execute).not.toHaveBeenCalled()
+})
+
+it('sorts the matching physical totals before slicing the requested page', async () => {
+  fixture(Array.from({ length: 55 }, (_, index) => index + 1))
+  const data = { sort: { field: 'total', direction: 'desc' } as const, filters: { placedPercent: ['100'] } }
+  expect((await readSchemeLines(data)).rows.map(row => row.total)).toEqual(Array.from({ length: 50 }, (_, i) => 55 - i))
+  expect((await readSchemeLines({ ...data, page: 1 })).rows.map(row => row.total)).toEqual([5, 4, 3, 2, 1])
+})

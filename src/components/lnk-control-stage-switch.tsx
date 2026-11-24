@@ -7,8 +7,8 @@ type LnkControlStageSwitchProps = {
 }
 
 const STAGES: Array<{ value: LnkControlStage; label: string }> = [
-  { value: 'beforeHeatTreatment', label: 'До ТО' },
-  { value: 'primary', label: 'Основной' },
+  { value: 'beforeHeatTreatment', label: 'НК до ТО' },
+  { value: 'primary', label: 'НК' },
 ]
 
 export function LnkControlStageSwitch({

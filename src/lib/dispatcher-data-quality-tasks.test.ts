@@ -365,7 +365,7 @@ describe('dispatcher data quality tasks', () => {
       row({ id: 1, hasRk: '', rkResult: 'годен' }),
       row({ id: 2, joint: 'F2', hasRk: '', rkRequest: 'Заявка РК' }),
       row({ id: 3, joint: 'F3', hasRk: 'отменен', rkResult: 'годен' }),
-      row({ preHeatTreatmentRequired: true, id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', pstoBoq: 'Учтено' }),
+      row({ preHeatTreatmentRequired: true, id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', workClosureSummary: 'Учтено' }),
     ])
 
     expect(tasks).toHaveLength(1)

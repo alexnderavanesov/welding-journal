@@ -5,6 +5,7 @@ import journal from '../../drizzle/meta/_journal.json' with { type: 'json' }
 export const DATA_RELEASE_KEY = 'maintenance:release:line-program:v1'
 export const LINE_PROGRAM_TRANSITION_KEY = 'maintenance:line-program:v1'
 export const PRE_HEAT_SELECTED_TRANSITION_KEY = 'maintenance:pre-heat-treatment:selected:v1'
+export const SYSTEM_DOCUMENT_IDENTITY_TRANSITION_KEY = 'maintenance:system-document-identities:v1'
 export const REQUIRED_SCHEMA_TIME = journal.entries.at(-1)!.when
 // Written only after the migration runner verifies Drizzle metadata. Runtime
 // credentials need access to app_settings, not to the administrator's schema.

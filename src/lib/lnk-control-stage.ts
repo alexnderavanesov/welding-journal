@@ -128,7 +128,7 @@ export function getPreHeatTreatmentControls(row: WeldInput) {
 
 export function getPreHeatTreatmentHistoryNote(row: WeldInput): string | undefined {
   if (getPreHeatTreatmentControls(row).length === 0) return undefined
-  if (!isPreHeatTreatmentLnkAvailable(row)) return 'Сохранённая история. На текущей линии этап не предусмотрен. Заявки и заключения доступны для просмотра и отдельного исправления; основной этап ими автоматически не закрывается. Негодный результат сохраняет силу.'
+  if (!isPreHeatTreatmentLnkAvailable(row)) return 'Сохранённая история. На текущей линии этап не предусмотрен. Заявки и заключения доступны для просмотра и отдельного исправления; эти документы учитываются только на этапе «НК до ТО». Негодный результат сохраняет силу.'
   return undefined
 }
 
@@ -310,7 +310,7 @@ export function getPrimaryLnkStageDebt(
 
   const reason = missingPreHeatTreatmentControls.length > 0
     ? `Сначала завершите НК до ТО: ${missingPreHeatTreatmentControls.map(({ methodCode: code }) => code).join(', ')}.`
-    : `Контроль ${normalizedMethod} после ТО недоступен: ${getPstoTvmtWorkflowLabel(pstoState)}.`
+    : `Контроль ${normalizedMethod} недоступен: ${getPstoTvmtWorkflowLabel(pstoState)}.`
   return { missingPreHeatTreatmentControls, pstoState, reason }
 }
 
@@ -336,7 +336,7 @@ export function getPrimaryLnkRequestAccess(
     ? getRejectedPreHeatTreatmentControls(row).map(({ methodCode: code }) => code)
     : []
   return rejected.length > 0
-    ? { status: 'blocked', reason: `Основной этап НК для этого стыка не требуется: НК до ТО имеет негодный результат: ${rejected.join(', ')}.`, debt: null }
+    ? { status: 'blocked', reason: `НК для этого стыка не требуется: НК до ТО имеет негодный результат: ${rejected.join(', ')}.`, debt: null }
     : { status: 'ready', reason: '', debt: null }
 }
 

@@ -10,8 +10,6 @@ import { PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS } from '@/lib/pre-heat-treatment-r
 
 export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoNote',
-  'pstoBoq',
-  'pstoKs3',
 ])
 export const PSTO_WAITING_REQUEST_FIELDS = [
   getReportField('projectTitle', 'ПСТО'),
@@ -71,6 +69,7 @@ export const PSTO_SECTION_FIELD_ORDER = [
 ] as const satisfies readonly WeldFieldKey[]
 
 export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  'workClosureSummary', 'workClosureRateCode', 'workClosureActNumber',
   'layeredVikEdgesDocument',
   'layeredVikLayersDocument',
   'layeredPvkEdgesDocument',
@@ -101,22 +100,14 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'uzkResult',
   'pvkResult',
   'tvmtResult',
-  'pstoBoq',
-  'pstoKs3',
   'testTypes',
   'testContour',
   'testDate',
   'piDate',
-  'testBoq',
-  'piBoq',
-  'testKs3',
-  'piKs3',
   'weldingJournalNote',
   'jsrDocument',
   'checklistDocument',
   'zniDocument', 'custom1Document', 'custom2Document',
-  'boq',
-  'ks3',
   'createdAt',
   'weldingUpdatedAt',
   'rkExposureScheme',

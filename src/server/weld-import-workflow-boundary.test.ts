@@ -34,7 +34,10 @@ describe.each(['owner', 'user', 'local'] as const)('workflow import boundary: %s
     catch (error) { message = (error as Error).message }
     for (const key of ['rkRequest', 'rkResult', 'pstoResult']) expect(message).toContain(key)
     expect(() => check({ joint: 'F15', hasVik: 'да', hasRk: '10%', weldingJournalNote: 'note',
-      stamp1K: 'AAAA', stamp1Z: 'BBBB', d1: 159, t1: 8, vikBoq: 'work', pstoKs3: 'closed' })).not.toThrow()
+      stamp1K: 'AAAA', stamp1Z: 'BBBB', d1: 159, t1: 8 })).not.toThrow()
+  })
+  it.each(['workClosureSummary', 'workClosureRateCode', 'workClosureActNumber', 'workClosures', 'vikBoq', 'pstoKs3'])('rejects closure data in raw imports: %s', key => {
+    expect(() => check({ joint: 'F15', [key]: 'A' })).toThrow()
   })
   it('does not grant permission to change or clear existing history', () => {
     const previous = { id: 15, rkRequest: 'R', rkResult: 'годен' }

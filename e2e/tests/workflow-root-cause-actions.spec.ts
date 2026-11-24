@@ -29,7 +29,7 @@ test('точное исправление ZV возвращает чернови
 
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
-  await runNextAction(page, SOURCE_JOINT, 'Создать заявку основного НК')
+  await runNextAction(page, SOURCE_JOINT, 'Создать заявку НК')
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeVisible()
 
   const requestDate = page.getByLabel('Дата заявки', { exact: true })

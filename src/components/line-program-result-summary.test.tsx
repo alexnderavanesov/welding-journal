@@ -20,7 +20,7 @@ it('omits PSTO and TVMT only from the assignment summary and leaves all NK stage
   render(<ProgramResultSummary row={row} />)
   const summary = screen.getByLabelText('Результат F1')
   expect(summary).not.toHaveTextContent(/ПСТО|ТВМТ/)
-  for (const label of ['НК до ТО', 'Основной этап', 'Дубли контроля', 'Послойный: ожидает заключений']) {
+  for (const label of ['НК до ТО', 'НК', 'Дубли контроля', 'Послойный: ожидает заключений']) {
     expect(screen.getByText(label)).toBeVisible()
   }
   expect(summary).not.toHaveClass('max-h-24', 'overflow-y-auto')
@@ -43,7 +43,7 @@ it('shows no need instead of pending methods after rejection, retaining saved fa
   expect(screen.getByText('ПВК: нет потребности')).toBeVisible()
   expect(screen.getByText('ВИК: годен')).toBeVisible()
   expect(screen.getByText('РК: ремонт')).toBeVisible()
-  expect(buildProgramHistory(rejected).sections.find(s => s.title === 'Основной этап')?.controls.find(c => c.method === 'УЗК')?.result).toBe('нет потребности')
+  expect(buildProgramHistory(rejected).sections.find(s => s.title === 'НК')?.controls.find(c => c.method === 'УЗК')?.result).toBe('нет потребности')
   expect(rejected).toStrictEqual(before)
 })
 it('does not hide completed, rejected or cancelled methods or their documents', () => {

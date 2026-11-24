@@ -334,28 +334,10 @@ export const weldJoints = pgTable(
     testContour: text('test_contour'),
     testDate: date('test_date'),
     piDate: date('pi_date'),
-    boq: text('boq'),
-    testBoq: text('test_boq'),
-    piBoq: text('pi_boq'),
-    ks3: text('ks3'),
-    testKs3: text('test_ks3'),
-    piKs3: text('pi_ks3'),
-    pstoBoq: text('psto_boq'),
-    pstoKs3: text('psto_ks3'),
     pstoCreatedAt: timestamp('psto_created_at', { withTimezone: true }),
     pstoUpdatedAt: timestamp('psto_updated_at', { withTimezone: true }),
     lnkCreatedAt: timestamp('lnk_created_at', { withTimezone: true }),
     lnkUpdatedAt: timestamp('lnk_updated_at', { withTimezone: true }),
-    vikBoq: text('vik_boq'),
-    vikKs3: text('vik_ks3'),
-    rkBoq: text('rk_boq'),
-    rkKs3: text('rk_ks3'),
-    pvkBoq: text('pvk_boq'),
-    pvkKs3: text('pvk_ks3'),
-    uzkBoq: text('uzk_boq'),
-    uzkKs3: text('uzk_ks3'),
-    tvmtBoq: text('tvmt_boq'),
-    tvmtKs3: text('tvmt_ks3'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     weldingUpdatedAt: timestamp('welding_updated_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -409,6 +391,17 @@ export const weldJoints = pgTable(
 export type WeldJoint = typeof weldJoints.$inferSelect
 export type NewWeldJoint = typeof weldJoints.$inferInsert
 
+export const workClosures = pgTable('work_closures', {
+  weldJointId: integer('weld_joint_id').notNull().references(() => weldJoints.id, { onDelete: 'cascade' }),
+  workType: text('work_type').notNull(),
+  rateCode: text('rate_code').notNull().default(''),
+  actNumber: text('act_number').notNull().default(''),
+}, table => [
+  primaryKey({ columns: [table.weldJointId, table.workType] }),
+  index('work_closures_rate_idx').on(table.rateCode, table.weldJointId),
+  index('work_closures_act_idx').on(table.actNumber, table.weldJointId),
+])
+
 // A scheme survives deletion of its line. The original registry ID is never
 // reused by name; last titles are captured before an explicit line deletion.
 export const lineSchemeBundles = pgTable('line_scheme_bundles', {
@@ -435,6 +428,7 @@ export const lineSchemeRevisions = pgTable('line_scheme_revisions', {
   changeNumber: text('change_number'),
   fileKey: text('file_key').notNull().unique().references(() => lineSchemeFiles.key, { onDelete: 'restrict' }),
   fileName: text('file_name').notNull(), size: integer('size').notNull(), pageCount: integer('page_count').notNull(),
+  pageRotations: jsonb('page_rotations').$type<Record<string, number>>().default({}).notNull(),
   version: integer('version').default(1).notNull(), authorId: text('author_id').notNull(), authorName: text('author_name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, table => [index('line_scheme_revisions_bundle_idx').on(table.bundleId, table.createdAt),

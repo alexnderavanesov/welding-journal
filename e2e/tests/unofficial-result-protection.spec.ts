@@ -56,7 +56,7 @@ for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИ
   await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
   if (beforeHeatTreatment) {
     const stage = page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' })
-    await stage.getByRole('button', { name: 'До ТО', exact: true }).click()
+    await stage.getByRole('button', { name: 'НК до ТО', exact: true }).click()
   }
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
     name: beforeHeatTreatment ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ЛНК', exact: true,
@@ -227,7 +227,7 @@ test('НК до ТО: предупреждение и запрет удален�
   await page.goto('/lnk')
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
-  await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК до ТО', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК до ТО', exact: true }) })
   await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(joint)
   await dialog.getByRole('button').filter({ hasText: 'UG-PRE-UZK-C' }).click()

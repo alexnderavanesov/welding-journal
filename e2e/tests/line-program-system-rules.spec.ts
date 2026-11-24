@@ -265,7 +265,7 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
       await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
       await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
       await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК', exact: true })
-        .getByRole('button', { name: 'До ТО', exact: true }).click()
+        .getByRole('button', { name: 'НК до ТО', exact: true }).click()
       const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК до ТО', exact: true }) })
       await manager.getByLabel('Вид контроля в реестре', { exact: true }).selectOption('УЗК')
       const filtered = page.waitForResponse(response => response.url().includes('/_serverFn/') &&

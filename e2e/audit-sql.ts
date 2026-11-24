@@ -30,6 +30,7 @@ export async function auditSqlDetails() {
   if (!file) return undefined
   return JSON.parse(await readFile(file, 'utf8')) as {
     statements: number
+    rpcStatements?: Record<string, number>
     dispatcherCalculations: unknown[]
     resources?: { reads: Record<string, { calls: number; rows: number; totalMilliseconds: number }> }
   }

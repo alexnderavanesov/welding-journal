@@ -42,3 +42,12 @@ it('shares only identical LNK/PSTO calculations and retains every selection para
   expect(buildStatisticsCalculationCacheKey({ ...request, tab: 'lineSummary' }, 'new-schemes'))
     .not.toBe(buildStatisticsCalculationCacheKey({ ...request, tab: 'lineSummary' }, 'old-schemes'))
 })
+
+it('shares a cache entry for equivalent project sets, including a single-project legacy request', () => {
+  const key = (projectFilter: StatisticsServerRequest['projectFilter']) =>
+    buildStatisticsCalculationCacheKey(normalizeStatisticsServerRequest({ tab: 'lineSummary', projectFilter }))
+  expect(key([' B', 'a', 'A '])).toBe(key(['a', 'b']))
+  expect(key(' A ')).toBe(key(['a']))
+  expect(key(['a', 'b'])).not.toBe(key('a'))
+  expect(key([])).toBe(key(undefined))
+})

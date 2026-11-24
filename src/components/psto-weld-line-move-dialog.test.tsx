@@ -63,9 +63,9 @@ describe('PstoWeldLineMoveDialog', () => {
   it.each(['assigned', 'unassigned', 'cancelled'] as const)('confirms a move to %s without a transfer choice when no correction metadata is present', targetState => {
     const onConfirm = vi.fn(), onClose = vi.fn()
     render(<PstoWeldLineMoveDialog preview={{ ...assignedPreview, targetState }} pending={false} onClose={onClose} onConfirm={onConfirm} />)
-    expect(screen.queryByRole('button', { name: /Перенести.*НК|Оставить основной|Удалить/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Перенести.*НК|Оставить НК|Удалить/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()
-    expect(screen.getByText(/НК до ТО остаётся НК до ТО/)).toBeInTheDocument()
+    expect(screen.getByText(/документы сохраняют свой этап: «НК» или «НК до ТО»/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
   })
@@ -93,8 +93,8 @@ describe('PstoWeldLineMoveDialog', () => {
     const onConfirm = vi.fn()
     render(<PstoWeldLineMoveDialog preview={{ ...correctionPreview, targetState }} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
     expect(screen.getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
-    expect(screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })).toBeEnabled()
-    expect(screen.getByRole('status')).toHaveTextContent('перенос НК в основной — 0 · сохранить этапы — 1')
+    expect(screen.getByRole('radio', { name: 'Весь НК до ТО → НК' })).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent('НК до ТО → НК — 0 · сохранить этапы — 1')
     expect(screen.getByText(/Все методы, заявки, результаты и заключения переносятся вместе, с исходными датами и названиями/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
@@ -105,10 +105,10 @@ describe('PstoWeldLineMoveDialog', () => {
     const second = { ...preToRow, rowId: 8, joint: 'F7R' }
     const third = { ...assignedRow, rowId: 9, joint: 'F7R2' }
     render(<PstoWeldLineMoveDialog preview={{ ...correctionPreview, targetState, isChainMove: true, rows: [preToRow, second, third] }} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
-    fireEvent.click(within(screen.getByRole('group', { name: 'Этап НК для стыка F7R' })).getByRole('radio', { name: 'Весь НК до ТО → основной' }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Этап НК для стыка F7R' })).getByRole('radio', { name: 'Весь НК до ТО → НК' }))
     expect(within(screen.getByRole('group', { name: 'Этап НК для стыка F7' })).getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
     expect(screen.queryByRole('group', { name: 'Этап НК для стыка F7R2' })).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('перенос НК в основной — 1 · сохранить этапы — 2')
+    expect(screen.getByRole('status')).toHaveTextContent('НК до ТО → НК — 1 · сохранить этапы — 2')
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос цепочки' }))
     expect(onConfirm).toHaveBeenCalledWith([
       { rowId: 7, disposition: 'keepPrimary' },
@@ -121,7 +121,7 @@ describe('PstoWeldLineMoveDialog', () => {
     const onConfirm = vi.fn()
     const row = { ...preToRow, stageCorrection: { targetStage: 'primary' as const, disabledReason } }
     render(<PstoWeldLineMoveDialog preview={{ ...correctionPreview, rows: [row], row }} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
-    const transfer = screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })
+    const transfer = screen.getByRole('radio', { name: 'Весь НК до ТО → НК' })
     expect(transfer).toBeDisabled()
     expect(transfer).toHaveAccessibleDescription(`Перенос недоступен: ${disabledReason}`)
     fireEvent.click(transfer)
@@ -136,8 +136,8 @@ describe('PstoWeldLineMoveDialog', () => {
     render(<PstoWeldLineMoveDialog preview={{ ...assignedPreview, rows: [row], row }} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
     if (targetStage === 'primary') expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     else {
-      expect(screen.getByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
-      fireEvent.click(screen.getByRole('radio', { name: 'Весь основной НК → до ТО' }))
+      expect(screen.getByRole('radio', { name: 'Оставить НК' })).toBeChecked()
+      fireEvent.click(screen.getByRole('radio', { name: 'Весь НК → НК до ТО' }))
     }
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: targetStage === 'primary' ? 'keepPrimary' : 'movePrimaryToPreHeatTreatment' }])
@@ -146,12 +146,12 @@ describe('PstoWeldLineMoveDialog', () => {
   it('drops a selected correction when a refreshed preview blocks it', () => {
     const onConfirm = vi.fn()
     const view = render(<PstoWeldLineMoveDialog preview={correctionPreview} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
-    fireEvent.click(screen.getByRole('radio', { name: 'Весь НК до ТО → основной' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Весь НК до ТО → НК' }))
     const row = { ...preToRow, stageCorrection: { targetStage: 'primary' as const, disabledReason: 'Данные изменились: основной НК уже заполнен.' } }
     view.rerender(<PstoWeldLineMoveDialog preview={{ ...correctionPreview, rows: [row], row }} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
     expect(screen.getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
-    expect(screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('перенос НК в основной — 0')
+    expect(screen.getByRole('radio', { name: 'Весь НК до ТО → НК' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('НК до ТО → НК — 0')
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
   })
@@ -161,8 +161,8 @@ describe('PstoWeldLineMoveDialog', () => {
     render(<PstoWeldLineMoveDialog preview={correctionPreview}
       initialDecisions={[{ rowId: 7, disposition: 'movePreHeatTreatmentToPrimary' }]}
       pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
-    expect(screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })).toBeChecked()
-    expect(screen.getByRole('status')).toHaveTextContent('перенос НК в основной — 1')
+    expect(screen.getByRole('radio', { name: 'Весь НК до ТО → НК' })).toBeChecked()
+    expect(screen.getByRole('status')).toHaveTextContent('НК до ТО → НК — 1')
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'movePreHeatTreatmentToPrimary' }])
   })
@@ -181,7 +181,7 @@ describe('PstoWeldLineMoveDialog', () => {
   it('can switch back to preservation and freezes choices while saving', () => {
     const onConfirm = vi.fn(), onClose = vi.fn()
     const view = render(<PstoWeldLineMoveDialog preview={correctionPreview} pending={false} onClose={onClose} onConfirm={onConfirm} />)
-    fireEvent.click(screen.getByRole('radio', { name: 'Весь НК до ТО → основной' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Весь НК до ТО → НК' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Оставить НК до ТО' }))
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
@@ -194,7 +194,7 @@ describe('PstoWeldLineMoveDialog', () => {
   it('Escape returns only from the upper move dialog without submitting a selected correction', () => {
     const onConfirm = vi.fn(), onClose = vi.fn()
     render(<PstoWeldLineMoveDialog preview={correctionPreview} pending={false} onClose={onClose} onConfirm={onConfirm} />)
-    const transfer = screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })
+    const transfer = screen.getByRole('radio', { name: 'Весь НК до ТО → НК' })
     fireEvent.click(transfer)
     transfer.focus()
     const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
@@ -224,10 +224,10 @@ describe('PstoWeldLineMoveDialog', () => {
     await waitFor(() => expect(result.current.pstoLineMovePreSaveDecision?.status).toBe('required'))
     expect(result.current.pstoLineMovePreSaveDecision?.message).toContain('По умолчанию этапы НК сохраняются')
     render(<PstoWeldLineMoveDialog preview={preview} pending={false} onClose={vi.fn()} onConfirm={result.current.confirmPstoLineMove} />)
-    fireEvent.click(screen.getAllByRole('radio', { name: 'Весь НК до ТО → основной' })[0]!)
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Весь НК до ТО → НК' })[0]!)
     const confirm = screen.getByRole('button', { name: isChainMove ? 'Подтвердить перенос цепочки' : 'Подтвердить перенос' })
     fireEvent.click(confirm)
-    expect(result.current.pstoLineMovePreSaveDecision?.message).toContain(`Стыков: весь НК до ТО → основной — 1; сохранить этапы — ${isChainMove ? 1 : 0}`)
+    expect(result.current.pstoLineMovePreSaveDecision?.message).toContain(`Стыков: весь НК до ТО → НК — 1; сохранить этапы — ${isChainMove ? 1 : 0}`)
     fireEvent.click(screen.getAllByRole('radio', { name: 'Оставить НК до ТО' })[0]!)
     fireEvent.click(confirm)
     expect(result.current.pstoLineMovePreSaveDecision?.message).toContain('сохранятся на своих этапах')

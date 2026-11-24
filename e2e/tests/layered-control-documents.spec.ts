@@ -177,7 +177,7 @@ test('послойное назначение вместе с результат
   await page.goto('/lnk')
   const row = () => lnkGridRow(page, joint)
   await revealLnkColumn(page, 'jointNextAction')
-  await row().getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
+  await row().getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true }).click()
   const resultDialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true }) })
   await resultDialog.getByLabel('Метод контроля', { exact: true }).selectOption('pvkRequest')
   await resultDialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()

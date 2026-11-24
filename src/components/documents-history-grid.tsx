@@ -197,6 +197,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const groupMotion = useJournalGroupMotion(frame, true, positionScope)
   const focus = useDocumentGridFocus(api, frame)
   const prepared = useRef<{ generation: number; request: DocumentHistoryGridRequest; result: DocumentHistoryGridResult<T> } | null>(null)
+  const datasourceStarted = useRef(false)
   const requests = useRef(new Map<string, Promise<DocumentHistoryGridResult<T>>>())
   const fetchRows = useCallback((request: DocumentHistoryGridRequest) => {
     const generation = requestGeneration.current, key = JSON.stringify([generation, request.startRow, request.endRow, request.rowGroupCols, request.groupKeys, request.sortModel, request.search, request.selectedIds, request.revision])
@@ -207,6 +208,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     if (mounted.current) { setLoading(true); setError('') }
     const ready = prepared.current
     const preparedMatches = ready?.generation === generation && blockIdentity(ready.request) === blockIdentity(request)
+      && (request.revision === undefined || request.revision === ready.result.revision)
     if (preparedMatches) prepared.current = null
     const promise = (preparedMatches ? Promise.resolve(ready!.result) : current.current.loadRows(request)).then(result => {
       if (!mounted.current || generation !== requestGeneration.current) throw new Error('Stale grid request')
@@ -227,13 +229,21 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     return promise
   }, [])
   const rowId = useCallback((row: Row) => isGroup(row) ? row.id : `document:${current.current.getRowId?.(row) ?? row.id}`, [])
-  const loadPositionBlock = useCallback((route: string[], startRow: number) => {
+  const loadPositionBlock = useCallback(async (route: string[], startRow: number) => {
+    const generation = requestGeneration.current
     const columns = apiRef.current?.getColumnState() ?? settingsRef.current.columns
-    return fetchRows({ startRow, endRow: startRow + 100, groupKeys: route,
+    const request: DocumentHistoryGridRequest = { startRow, endRow: startRow + 100, groupKeys: route,
       rowGroupCols: columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0)).map(column => column.colId),
       sortModel: columns.filter(column => column.sort).sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0)).map(column => ({ colId: column.colId, sort: column.sort! })),
       search: searchRef.current, revision: fullQuery.revision.current,
-    })
+    }
+    const result = await fetchRows(request)
+    // Position restoration can finish before AG Grid's debounced initial read.
+    // Hand the same root block to the datasource when it asks for these rows.
+    if (!datasourceStarted.current && generation === requestGeneration.current && startRow === 0 && !route.length) {
+      prepared.current = { generation, request, result }
+    }
+    return result
   }, [fetchRows])
   const position = useDocumentGridSession(api, frame, props.viewId, positionScope, search, initialSession, props.highlightedDocumentId != null, { load: loadPositionBlock, getRowId: rowId })
   useJournalDocumentScroll(pageTrack, pageStage, frame, api, true, navigationHeight, position.isRestoring, bottomCover)
@@ -308,6 +318,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   }, [resetRowRange, fullQuery.toggle])
   const datasource = useMemo<IServerSideDatasource<Row>>(() => ({
     getRows: params => {
+      datasourceStarted.current = true
       const generation = requestGeneration.current, scope = positionScopeRef.current
       const reveal = pendingResultReveal.current
       const request: DocumentHistoryGridRequest = {

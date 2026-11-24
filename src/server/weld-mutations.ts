@@ -755,11 +755,11 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
       await prepareLineProgramWeldRecords(tx, records, previousRows)
       const layeredIds = new Set(data.layeredControl?.rowIds ?? [])
       if (layeredIds.size && (importMode || mutationScope !== 'lnk' || [...layeredIds].some((id) => !previousRows.has(id)))) {
-        throw new Error('Послойную отметку можно сохранить только для выбранных стыков через ввод собственного основного ПВК.')
+        throw new Error('Послойную отметку можно сохранить только для выбранных стыков через ввод ПВК стыка.')
       }
       records = records.map((record) => {
         if (!layeredIds.has(Number(record.id))) return record
-        if (!['годен', 'ремонт', 'вырез'].includes(String(record.pvkResult ?? '').trim().toLowerCase())) throw new Error('Сначала внесите собственный основной результат ПВК.')
+        if (!['годен', 'ремонт', 'вырез'].includes(String(record.pvkResult ?? '').trim().toLowerCase())) throw new Error('Сначала внесите результат ПВК стыка.')
         return buildLayeredControlAssignment(record as WeldRow, data.layeredControl?.confirmPvk === true)
       })
       if (data.requireFullyAssignedPstoLines) {
@@ -1234,9 +1234,10 @@ export async function insertWeldJointsInBatches(
   tx: SystemDocumentSequenceTransaction,
   records: readonly WeldInput[],
   processSettings: Awaited<ReturnType<typeof loadControlProcessSettingsFromTransaction>>,
+  options?: { lineProgramsPrepared: boolean },
 ) {
   const inserted: WeldJoint[] = []
-  await prepareLineProgramWeldRecords(tx, records)
+  if (!options?.lineProgramsPrepared) await prepareLineProgramWeldRecords(tx, records)
   await prepareTechnologyCardWeldWrites(tx, records, new Map())
   for (const batch of splitWeldImportInsertBatches(records)) {
     const rows = await tx

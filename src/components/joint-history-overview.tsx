@@ -162,7 +162,7 @@ export function JointHistoryOverview({
           ))}
         </HistorySection>
 
-        <HistorySection title="Основной этап НК" empty={mainControls.length === 0}>
+        <HistorySection title="НК" empty={mainControls.length === 0}>
           {mainControls.map((method) => (
             <HistoryLine
               key={method.code}

@@ -183,7 +183,7 @@ export function getLnkResultSaveBlockReason({
     for (const row of selectedRows) {
       if (!draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned) continue
       const pvkResult = getEffectiveLnkResultDraftValueForRow(row, draft)
-      if (!row.layeredControlAssigned && !isFinalLnkResultValue(pvkResult)) return `Стык ${row.joint || row.id}: для послойного контроля нужен основной результат ПВК.`
+      if (!row.layeredControlAssigned && !isFinalLnkResultValue(pvkResult)) return `Стык ${row.joint || row.id}: для послойного контроля нужен результат ПВК стыка.`
       try { buildLayeredControlAssignment({ ...row, pvkResult }, true) }
       catch (error) { return `Стык ${row.joint || row.id}: ${(error as Error).message}` }
     }

@@ -48,7 +48,7 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
       .getByRole('button', { name: 'годен', exact: true }).click()
     await page.getByRole('button', { name: 'Сохранить результат до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeHidden()
-    await expect(row().getByRole('button', { name: historical ? 'Выполнить: Создать заявку основного НК' : 'Выполнить: Создать заявку ПСТО', exact: true })).toBeVisible()
+    await expect(row().getByRole('button', { name: historical ? 'Выполнить: Создать заявку НК' : 'Выполнить: Создать заявку ПСТО', exact: true })).toBeVisible()
     await expect.poll(() => withE2eDatabase(async (client) => (await client.query('select result from pre_heat_treatment_controls where weld_joint_id = $1', [id])).rows)).toEqual([{ result: 'годен' }])
     const audit = await withE2eDatabase(async db => (await db.query(`select changes from audit_changes
       where joint_id=$1 and entity='pre_heat_treatment_controls' and changes ? 'result' order by id desc limit 1`, [id])).rows[0])

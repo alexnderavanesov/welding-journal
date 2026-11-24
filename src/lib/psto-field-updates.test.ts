@@ -64,14 +64,12 @@ describe('clearInactivePstoWaitingStatus', () => {
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoRequestDate: '2026-06-30',
       pstoResult: null,
-      pstoBoq: 'BoQ-ПСТО',
-      pstoKs3: 'КС3-ПСТО',
+      workClosureSummary: 'BoQ-ПСТО',
     } as WeldRow)
 
     expect(row.pstoRequest).toBe('ПСТО-30.06.26-001')
     expect(row.pstoRequestDate).toBe('2026-06-30')
-    expect(row.pstoBoq).toBe('BoQ-ПСТО')
-    expect(row.pstoKs3).toBe('КС3-ПСТО')
+    expect(row.workClosureSummary).toBe('BoQ-ПСТО')
   })
 
   it('fills active PSTO result with waiting request status when request is missing', () => {

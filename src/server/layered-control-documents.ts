@@ -110,7 +110,7 @@ export function getLayeredControlHistoryGuardError({
   }
 
   if (current.layeredControlAssigned && !String(current.pvkResult ?? '').trim()) {
-    return `Сначала уберите послойный контроль стыка ${joint}, затем удалите основной результат ПВК.`
+    return `Сначала уберите послойный контроль стыка ${joint}, затем удалите результат ПВК стыка.`
   }
   return null
 }

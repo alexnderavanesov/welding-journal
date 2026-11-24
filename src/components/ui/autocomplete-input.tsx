@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom'
 import { Input } from './input'
 
 /** Free text stays editable; the bounded suggestions never restrict its value. */
-export function AutocompleteInput({ value, options, onValueChange, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'list'> & {
-  value: string; options: string[]; onValueChange: (value: string) => void
+export function AutocompleteInput({ value, options, listLabel, onValueChange, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'list'> & {
+  value: string; options: string[]; listLabel?: string; onValueChange: (value: string) => void
 }) {
   const input = useRef<HTMLInputElement>(null), popup = useRef<HTMLDivElement>(null)
   const id = useId(), [open, setOpen] = useState(false), [active, setActive] = useState(-1)
@@ -48,7 +48,7 @@ export function AutocompleteInput({ value, options, onValueChange, ...props }: O
         if (event.key === 'Enter' && visible && matches[active]) { event.preventDefault(); event.stopPropagation(); choose(matches[active]); return }
         props.onKeyDown?.(event)
       }} />
-    {visible ? createPortal(<div id={id} ref={popup} role="listbox" data-select-listbox aria-label="Подсказки клейма НАКС" style={position}
+    {visible ? createPortal(<div id={id} ref={popup} role="listbox" data-select-listbox aria-label={listLabel ?? 'Варианты'} style={position}
       className="fixed z-[200] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-1 shadow-xl shadow-slate-900/15" onScroll={event => setScrollTop(event.currentTarget.scrollTop)} onMouseDown={event => event.preventDefault()}>
       <div style={{ height: matches.length * 36, position: 'relative' }}>
         {shown.map((option, offset) => { const index = start + offset; return <div key={option} id={`${id}-${index}`} role="option" aria-selected={index === active} aria-posinset={index + 1} aria-setsize={matches.length}

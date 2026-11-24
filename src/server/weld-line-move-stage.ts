@@ -68,7 +68,7 @@ export async function preparePstoLineMoveRecordInTransaction({
   }
   if (disposition === 'movePrimaryToPreHeatTreatment' && (
     !actuallyChanged || !targetLineAssigned || !targetIdentity.projectTitle || !targetIdentity.subtitleCode || !targetIdentity.line
-  )) throw new Error('Перенос основного НК в НК до ТО доступен только при смене линии на линию с назначенной ПСТО.')
+  )) throw new Error('Перенос из «НК» в «НК до ТО» доступен только при смене линии на линию с назначенной ПСТО.')
   const preservesPrimaryHistory = (
     identityChanged &&
     targetLineAssigned &&

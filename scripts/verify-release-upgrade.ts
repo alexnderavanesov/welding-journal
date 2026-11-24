@@ -62,7 +62,33 @@ try {
   for (const name of ['package.json', 'tsconfig.json', 'drizzle.config.ts']) copyFileSync(join(root, name), join(fixture, name))
   mkdirSync(join(fixture, 'drizzle/meta'), { recursive: true })
   for (const entry of journal.entries) copyFileSync(join(root, 'drizzle', `${entry.tag}.sql`), join(fixture, 'drizzle', `${entry.tag}.sql`))
-  if (process.argv.includes('--supports')) {
+  if (process.argv.includes('--work-closures')) {
+    selectFixtureVersion(74)
+    migrate(fixture)
+    const id = (await client.query("insert into weld_joints(project_title,line,joint,tvmt_ks3) values ('UPGRADE','L1','F1','001') returning id")).rows[0].id
+    const line = (await client.query("insert into line_programs(project_title,subtitle_code,line) values ('UPGRADE','S','L1') returning id")).rows[0].id
+    const bundle = (await client.query("insert into line_scheme_bundles(line_program_id,project_title,subtitle_code,line) values ($1,'UPGRADE','S','L1') returning id", [line])).rows[0].id
+    await client.query("insert into line_scheme_files(key,state) values ('fixture/document.pdf','ready')")
+    await client.query("insert into line_scheme_revisions(id,bundle_id,file_key,file_name,size,page_count,author_id,author_name) values ('00000000-0000-4000-8000-000000000001',$1,'fixture/document.pdf','document.pdf',100,2,'fixture','Fixture')", [bundle])
+    assert.throws(() => migrate(root), /В прежних полях кода работ или КС3 обнаружены данные/)
+    assert.equal((await client.query('select tvmt_ks3 from weld_joints where id=$1', [id])).rows[0].tvmt_ks3, '001')
+    assert.equal((await client.query("select to_regclass('public.work_closures') as relation")).rows[0].relation, null)
+    // The operator has explicitly cleared the synthetic legacy value before retry.
+    await client.query('update weld_joints set tvmt_ks3=null where id=$1', [id])
+    const legacy = ['boq','ks3', ...['test','pi','psto','vik','rk','pvk','uzk','tvmt'].flatMap(key => [key+'_boq',key+'_ks3'])]
+    const oldFacts = await savedFacts(legacy)
+    const pdf = (await client.query('select to_jsonb(r) as data from line_scheme_revisions r')).rows
+    migrate(root)
+    assert.deepEqual(await savedFacts(), oldFacts)
+    assert.deepEqual((await client.query("select to_jsonb(r)-'page_rotations' as data from line_scheme_revisions r")).rows, pdf)
+    assert.deepEqual((await client.query('select page_rotations from line_scheme_revisions')).rows, [{ page_rotations: {} }])
+    assert.equal((await client.query('select 1 from work_closures')).rowCount, 0)
+    await client.query("insert into work_closures(weld_joint_id,work_type,rate_code,act_number) values($1,'Сварка','A','001')", [id])
+    migrate(root)
+    assert.deepEqual((await client.query('select work_type,rate_code,act_number from work_closures')).rows, [{ work_type:'Сварка', rate_code:'A', act_number:'001' }])
+    assert.deepEqual(await savedFacts(), oldFacts)
+    console.log(JSON.stringify({ passed: true, baseline: '0074', target: '0076', protectedNonemptyLegacy: true, preservedJointAndPdf: true, repeatPreservedClosure: true }))
+  } else if (process.argv.includes('--supports')) {
     // Exercise the generated 0058 migration over a populated 0057 database.
     // This is synthetic preservation coverage, not the pending real-backup rehearsal.
     selectFixtureVersion(57)

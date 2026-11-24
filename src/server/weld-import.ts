@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { accessContext } from './access-store'
 import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
@@ -10,7 +12,7 @@ import { markTechnologyCardsUsed } from '@/server/technology-card-registry'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import {
-weldJoints, linePrograms
+weldJoints, linePrograms, documentOperationReceipts
 } from '@/db/schema'
 import {
 assertExistingRowsImportPayload,
@@ -31,6 +33,7 @@ import {
 assertCurrentWeldRowVersions,
 type WeldRowVersionTarget,
 } from '@/lib/weld-row-version'
+import { closureFieldKeys } from '@/lib/work-closure-columns'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import { buildDispatcherTaskServerFilters } from '@/lib/dispatcher-task-row-codes'
 import {
@@ -67,7 +70,7 @@ mergeWeldRecordsWithPrevious,
 prepareServerWeldRecords,
 validateServerWeldRecords
 } from '@/server/weld-save-validation'
-import { asc,count,inArray,sql } from 'drizzle-orm'
+import { asc,count,eq,inArray,sql } from 'drizzle-orm'
 
 import {
 getDispatcherDirtyScopes,
@@ -80,7 +83,6 @@ updateWeldJointsInBatches,
 import {
 getChangedWeldLineMemberships,
 haveSameWeldLineMemberships,
-lockWeldLineMemberships,
 } from '@/server/weld-line-membership-lock'
 import {
 applyCurrentSystemWdi,
@@ -115,6 +117,7 @@ export async function listWeldingJournalImportScope({
   data?: WeldImportScopeRequest
 }): Promise<WeldImportScopeResult> {
   const data = splitReportQuickSearch(buildDispatcherTaskServerFilters(normalizeWeldImportScopeRequest(input).columnFilters))
+  if (closureFieldKeys.some(key => data.columnFilters[key])) (await import('./access-payload')).requireContextPermission('closures.view')
   await assertSecurityScope('entry')
   if (hasDispatcherTaskServerFilter(data.columnFilters) || data.columnFilters.finalStatus) await ensureDispatcherTaskIndexFresh()
   const db = requireDb()
@@ -379,7 +382,7 @@ export async function lockAndAssertWeldRowVersions(
 export async function importWeldJoints({
   data: input,
 }: {
-  data: { records: WeldInput[] }
+  data: { records: WeldInput[]; importId?: string }
 }) {
   await assertSecurityScope(getWeldImportSecurityScope('newRecords'))
   assertWeldImportRowLimit(input.records.length)
@@ -387,12 +390,31 @@ export async function importWeldJoints({
   // Preparation derives line/chain fields in place. A rejected transaction must
   // not add those fields to a caller's DTO that may be corrected and resubmitted.
   const data = { records: input.records.map(({ id: _submittedId, ...record }) => ({ ...record })) }
+  let receipt: { id: string; requestHash: string } | undefined
+  if (input.importId !== undefined) {
+    const actor = accessContext.getStore()?.identity.id
+    if (!actor || typeof input.importId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(input.importId)) {
+      throw new Error('Обновите предпросмотр импорта и повторите сохранение.')
+    }
+    const key = createHash('sha256').update(JSON.stringify([actor, input.importId.toLowerCase()])).digest('hex')
+    // Sorting field names makes the same logical submission independent of JSON key order.
+    const payload = data.records.map(record => Object.entries(record).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+    receipt = { id: 'weld-import:' + key, requestHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') }
+  }
   const db = requireDb()
-
   return db.transaction(async (tx) => {
-    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
     for (const record of data.records) (await import('./access-payload')).assertImportedWeldFields(record)
-    await lockWeldLineMemberships(tx, data.records)
+    if (receipt) {
+      const reserved = await tx.insert(documentOperationReceipts).values({ ...receipt, result: '' }).onConflictDoNothing()
+        .returning({ id: documentOperationReceipts.id })
+      if (!reserved.length) {
+        const [saved] = await tx.select({ hash: documentOperationReceipts.requestHash, result: documentOperationReceipts.result })
+          .from(documentOperationReceipts).where(eq(documentOperationReceipts.id, receipt.id))
+        if (!saved || saved.hash !== receipt.requestHash) throw new Error('Данные этой попытки импорта изменились. Загрузите файл ещё раз.')
+        return JSON.parse(saved.result) as { inserted: number; rows: { id: number }[] }
+      }
+    }
+    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
     await prepareLineProgramWeldRecords(tx, data.records)
     const validationContext = await loadServerWeldValidationContext(tx, data.records)
     prepareServerWeldRecords({
@@ -407,10 +429,12 @@ export async function importWeldJoints({
       context: validationContext,
       importMode: true,
     })
-    const rows = await insertWeldJointsInBatches(tx, data.records, processSettings)
+    const rows = await insertWeldJointsInBatches(tx, data.records, processSettings, { lineProgramsPrepared: true })
     await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(data.records, new Map()) })
-    return { inserted: rows.length, rows: rows.map((row) => ({ id: row.id })) }
+    const result = { inserted: rows.length, rows: rows.map((row) => ({ id: row.id })) }
+    if (receipt) await tx.update(documentOperationReceipts).set({ result: JSON.stringify(result) }).where(eq(documentOperationReceipts.id, receipt.id))
+    return result
   })
 }
 

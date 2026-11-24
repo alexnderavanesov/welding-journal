@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -15,7 +16,7 @@ test('a deferred checkbox refocus cannot steal the newer filter search focus', a
     await page.goto('/statistics')
     await page.getByRole('button', { name: 'Сварщики', exact: true }).click()
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+    await selectStatisticsProjects(page, project)
     await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('custom')
     await page.getByLabel('Период с', { exact: true }).fill('2026-09-01')
     await page.getByLabel('Период по', { exact: true }).fill('2026-09-30')

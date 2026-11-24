@@ -74,7 +74,7 @@ export function WeldLayeredControlField({ draft, setDraft }: { draft: WeldInput;
           setDraft((row) => ({ ...row, hasPvk: 'да', layeredControlRequest: { assigned: true, confirmPvk: true } }))
         } finally { inFlight.current = false; setBusy(false) }
       }} />Послойная замена РК/УЗК</label>
-    <p>Только У-стыки. Четыре послойных заключения создаются после собственного основного ПВК; одна отметка назначает ВИК и ПВК кромок и слоёв.</p>
+    <p>Только У-стыки. Четыре послойных заключения создаются после ПВК стыка; одна отметка назначает ВИК и ПВК кромок и слоёв.</p>
     {excluded ? <p>{EXCLUDED_CONTROL_ASSIGNMENT_REASON}</p> : null}
     {draft.layeredControlAssigned && draft.id ? <Button type="button" variant="outline" disabled={busy || excluded} onClick={async () => {
       if (inFlight.current) return

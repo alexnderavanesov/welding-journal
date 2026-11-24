@@ -240,7 +240,7 @@ export function useHomeWeldEditorController() {
 
 function getPstoLineMoveDraftDecisionSummary(preview: PstoWeldLineMovePreview, decisions: PstoWeldLineMoveDecision[]) {
   const transferCount = decisions.filter(decision => decision.disposition !== 'keepPrimary').length
-  const direction = preview.targetState === 'assigned' ? 'основной НК → до ТО' : 'НК до ТО → основной'
+  const direction = preview.targetState === 'assigned' ? 'НК → НК до ТО' : 'НК до ТО → НК'
   const prefix = preview.isChainMove
     ? `Подтверждён перенос всей цепочки ${preview.rootJoint}: записей ${preview.rows.length}.`
     : 'Подтверждён перенос линии.'

@@ -40,6 +40,17 @@ const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = 
   })
 
 describe('existing rows report import preview', () => {
+  it.each(['massFill', 'replaceData'] as const)('marks every conflicting Excel row for the same update target in %s', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal', weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+      rows: [7, 8].map(id => ({ id, joint: 'F' + id, rowVersion: 'v1' } as WeldRow)),
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('isometry')!.label], [[7, 'A'], [8, 'B'], [7, 'C']]),
+    })
+    expect(preview.errors.map(error => [error.rowNumber, error.id])).toEqual([[2, 7], [4, 7]])
+    expect(preview.validRecords.map(row => row.id)).toEqual([8])
+    expect(preview.expectedRowVersions?.map(row => row.id)).toEqual([8])
+  })
+
   it.each(['massFill', 'replaceData'] as const)('allows unrelated edits to stored T composition in %s after merging', async mode => {
     const keys = ['fillerWire', 'weldingJournalNote'] as const
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({

@@ -86,7 +86,7 @@ describe('LnkRequestManagerDialog', () => {
     expect(screen.queryByRole('group', { name: 'Этап контроля ЛНК' })).not.toBeInTheDocument()
     rerenderDialog({ onStageChange })
     expect(screen.getByRole('group', { name: 'Этап контроля ЛНК' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'До ТО' }))
+    fireEvent.click(screen.getByRole('button', { name: 'НК до ТО' }))
     expect(onStageChange).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Изменить этап контроля' })).not.toBeInTheDocument()
     expect(onDeleteRequest).not.toHaveBeenCalled()

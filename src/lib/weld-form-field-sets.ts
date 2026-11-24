@@ -20,7 +20,7 @@ export const factualWelderStampFieldKeys = new Set<WeldFieldKey>([
   'stamp1ZFact',
 ])
 
-export const secondaryWeldFormSectionNames = new Set(['Испытания', 'Код работ', 'Закрытие'])
+export const secondaryWeldFormSectionNames = new Set(['Испытания'])
 
 export const weldingMaterialWeldFormSectionNames = new Set(['Сварочный материал и ТК'])
 
@@ -31,27 +31,10 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
   'testContour',
   'testDate',
   'piDate',
-  'boq',
-  'testBoq',
-  'piBoq',
-  'pstoBoq',
-  'vikBoq',
-  'rkBoq',
-  'uzkBoq',
-  'pvkBoq',
-  'tvmtBoq',
-  'ks3',
-  'testKs3',
-  'piKs3',
-  'pstoKs3',
-  'vikKs3',
-  'rkKs3',
-  'uzkKs3',
-  'pvkKs3',
-  'tvmtKs3',
 ])
 
 export const formHiddenFieldKeys = new Set<WeldFieldKey>([
+  'workClosureSummary', 'workClosureRateCode', 'workClosureActNumber',
   'id',
   'dispatcherTasks',
   'jsrDocument',

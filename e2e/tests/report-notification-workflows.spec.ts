@@ -59,7 +59,7 @@ test('success notifications remain visible in the lower-right corner after joint
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
     await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
     const row = await lnkActionRow(page, joint)
-    await row.getByRole('button', { name: 'Выполнить: Создать заявку основного НК', exact: true }).click()
+    await row.getByRole('button', { name: 'Выполнить: Создать заявку НК', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК', exact: true })).toBeVisible()
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-10-20')
     await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
@@ -74,7 +74,7 @@ test('success notifications remain visible in the lower-right corner after joint
     expect(requestDocuments.length).toBeGreaterThan(0)
     expect(requestDocuments.every(row => row.changes.title.origin === 'automatic')).toBe(true)
 
-    await (await lnkActionRow(page, joint)).getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
+    await (await lnkActionRow(page, joint)).getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toBeVisible()
     await page.getByLabel('Дата контроля', { exact: true }).fill('2026-10-21')
     await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true })

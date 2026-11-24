@@ -60,9 +60,7 @@ export const LNK_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
   ]),
   ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) =>
     fieldKey !== 'lnkCreatedAt' &&
-    fieldKey !== 'lnkUpdatedAt' &&
-    fieldKey !== 'tvmtBoq' &&
-    fieldKey !== 'tvmtKs3'),
+    fieldKey !== 'lnkUpdatedAt'),
   'rkExposureConfirmedDiameter',
   'lnkNote',
   'officiality',
@@ -78,8 +76,6 @@ export const PSTO_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoResult',
   'heatTreatmentDiagram',
   'pstoNote',
-  'pstoBoq',
-  'pstoKs3',
   'hasTvmt',
   'tvmtControlBasis',
   'tvmtRequest',
@@ -87,8 +83,6 @@ export const PSTO_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
   'tvmtResult',
   'tvmtConclusionDate',
   'tvmtConclusion',
-  'tvmtBoq',
-  'tvmtKs3',
 ])
 
 const NON_WELDING_LNK_FIELD_KEYS = new Set<WeldFieldKey>([

@@ -74,7 +74,7 @@ function freeze<T>(value: T): T {
 describe('contextual PSTO stage correction', () => {
   it('moves all four complete packages verbatim to negative-ID relations without changing input', () => {
     const row = freeze(candidate('beforeHeatTreatment', {
-      pstoNote: 'Примечание', lnkNote: 'Общее примечание', rkBoq: 'BoQ', rowVersion: 'v7',
+      pstoNote: 'Примечание', lnkNote: 'Общее примечание', workClosureSummary: 'BoQ', rowVersion: 'v7',
       duplicateControls: [{ id: 51, weldJointId: 7, method: 'ВИК', result: 'годен',
         controlDate: '2026-08-04', conclusionDate: '2026-08-04', conclusion: 'Дубль-1' }],
     }))
@@ -84,7 +84,7 @@ describe('contextual PSTO stage correction', () => {
     expect(new Set(next.preHeatTreatmentControls!.map(control => control.id)).size).toBe(4)
     expect(Object.keys(primary).every(key => next[key as keyof WeldRow] === null)).toBe(true)
     expect(next).toMatchObject({ pstoRequired: 'да', line: 'Целевая линия', rowVersion: 'v7',
-      pstoNote: 'Примечание', lnkNote: 'Общее примечание', rkBoq: 'BoQ', preVikRequest: ' Заявка ВИК ' })
+      pstoNote: 'Примечание', lnkNote: 'Общее примечание', workClosureSummary: 'BoQ', preVikRequest: ' Заявка ВИК ' })
     expect(next.duplicateControls).toBe(row.duplicateControls)
     expect(row).toMatchObject(primary)
     expect(row.preHeatTreatmentControls).toEqual([])
@@ -110,7 +110,7 @@ describe('contextual PSTO stage correction', () => {
   it.each(directions)('keeps request-only values and ignores derived waiting labels (%s)', target => {
     const row = candidate(target, {
       pstoResult: 'ожидает заявку ПСТО', tvmtResult: 'ожидает ТВМТ', pstoNote: 'Ожидание',
-      pstoBoq: 'да', tvmtKs3: 'КС3',
+      workClosureSummary: 'да',
     })
     if (target === 'beforeHeatTreatment') {
       for (const method of LNK_METHODS) {
@@ -292,14 +292,14 @@ describe('contextual PSTO stage correction', () => {
 
   it('requires the entire target stage to be empty, including unrelated methods', () => {
     const onlyVik = candidate('primary', { preHeatTreatmentControls: [pre[0]], uzkRequest: 'Другой комплект' })
-    expect(() => build(onlyVik, 'primary', settings, indices)).toThrow('основной этап НК уже заполнен')
+    expect(() => build(onlyVik, 'primary', settings, indices)).toThrow('этап «НК» уже заполнен')
     expect(() => build(candidate('beforeHeatTreatment', { preHeatTreatmentControls: [{ id: 8, weldJointId: 7, method: 'ПВК' }] }),
       'beforeHeatTreatment', settings, indices)).toThrow('НК до ТО уже заполнен')
   })
 
   it.each([{ lnkDefectDescription: 'Сохранённая схема' }, { rkExposureConfirmedDiameter: 219.1 },
     { vikResult: 'годен (отменен)' }, { pvkConclusionDate: '2026-08-02' }])('protects partial target data %j', fields => {
-    expect(() => build(candidate('primary', fields), 'primary', settings, indices)).toThrow('основной этап НК уже заполнен')
+    expect(() => build(candidate('primary', fields), 'primary', settings, indices)).toThrow('этап «НК» уже заполнен')
   })
 
   it.each(['ВИК', 'РК', 'УЗК', 'ПВК'])('checks every transferred %s good result on unofficial welds', methodCode => {
@@ -334,7 +334,7 @@ describe('contextual PSTO stage correction', () => {
 
   it('rejects an empty source consisting only of waiting labels', () => {
     expect(() => build({ preHeatTreatmentRequired: true, id: 7, pstoRequired: 'да', vikResult: 'ожидает заявку' }, 'beforeHeatTreatment', settings, indices))
-      .toThrow('Нет основного комплекта')
+      .toThrow('На этапе «НК» нет комплекта для переноса')
     expect(() => build(candidate('primary', { preHeatTreatmentControls: [{ id: 101, weldJointId: 7, method: 'ВИК', result: 'ожидает НК' }] }),
       'primary', settings, indices)).toThrow('Нет комплекта НК до ТО')
   })

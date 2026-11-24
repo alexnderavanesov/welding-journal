@@ -194,7 +194,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   await page.goto(isPre ? '/lnk' : '/psto')
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: isPre ? 'Все результаты ЛНК' : 'История ПСТО и ТВМТ', exact: true }).click()
-  if (isPre) await page.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+  if (isPre) await page.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК до ТО', exact: true }).click()
   const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Все результаты ЛНК до ТО' : 'История ПСТО и ТВМТ', exact: true }) })
   // Both fixture rows are already visible. Do not start a second asynchronous
   // registry search while testing the correction/confirmation workflow.

@@ -16,7 +16,7 @@ describe('UserGuidePage', () => {
     render(<UserGuidePage />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Поиск по руководству' }), { target: { value: 'Смена линии сохраняет этапы контроля' } })
     expect(screen.getByText('Смена линии сохраняет этапы контроля')).toBeInTheDocument()
-    expect(screen.getByText(/При смене линии НК до ТО остаётся НК до ТО/)).toBeInTheDocument()
+    expect(screen.getByText(/«ВИК до ТО» останется в истории с этой пометкой/)).toBeInTheDocument()
     expect(screen.queryByText(/Заявка повторного цикла без фактической ПСТО удаляется/)).not.toBeInTheDocument()
   })
   it('opens with concise workflows and loads the full reference on demand', async () => {

@@ -44,7 +44,7 @@ test('joint card: repeated history, line view, editing tabs, stamp lookup and fa
         await editJournalJoint(page, id)
         await expect(editor.getByRole('textbox', { name: 'Изометрия', exact: true })).toBeEditable()
       })
-      for (const tab of ['Назначение контроля', 'Сварочный материал и ТК', 'Испытания и закрытие', 'Стык']) {
+      for (const tab of ['Назначение контроля', 'Сварочный материал и ТК', 'Испытания', 'Стык']) {
         await probe.measure(`card:editor-${tab}:${round}`, async () => {
           await editor.getByRole('button', { name: new RegExp(`^${tab}(?:\\s|$)`) }).click()
         })

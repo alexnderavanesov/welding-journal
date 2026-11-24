@@ -79,21 +79,7 @@ describe('weld mutation policy', () => {
     expect(formHiddenFieldKeys.has('preHeatTreatmentRequired')).toBe(true)
   })
 
-  it('allows work-code fields shared with LNK and PSTO reports', () => {
-    const restricted = restrictWeldMutationRecord({
-      id: 7,
-      vikBoq: 'ВИК-BoQ',
-      rkKs3: 'РК-КС3',
-      pstoBoq: 'ПСТО-BoQ',
-      tvmtKs3: 'ТВМТ-КС3',
-    }, 'welding')
-
-    expect(restricted).toEqual({
-      id: 7,
-      vikBoq: 'ВИК-BoQ',
-      rkKs3: 'РК-КС3',
-      pstoBoq: 'ПСТО-BoQ',
-      tvmtKs3: 'ТВМТ-КС3',
-    })
+  it('keeps financial entries outside ordinary welding edits', () => {
+    expect(restrictWeldMutationRecord({ id: 7, workClosureSummary: 'ВИК · A · 42' }, 'welding')).toEqual({ id: 7 })
   })
 })

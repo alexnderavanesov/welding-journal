@@ -137,7 +137,7 @@ describe('LnkRequestDialog', () => {
     )
 
     await waitFor(() => expect(screen.getByDisplayValue(/Заявка-001/)).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'До ТО' }))
+    fireEvent.click(screen.getByRole('button', { name: 'НК до ТО' }))
     expect(onStageChange).toHaveBeenCalledWith('beforeHeatTreatment', [row.id], 'extend')
     fireEvent.click(screen.getByRole('button', { name: 'ВИК' }))
 

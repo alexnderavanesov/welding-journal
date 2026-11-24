@@ -1,10 +1,12 @@
-import { useEffect, useId, useState, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 /** One tooltip for the viewport, rather than a portal/timer for every cell. */
 export function JournalCellTooltip({ frame, enabled }: { frame: RefObject<HTMLDivElement | null>; enabled: boolean }) {
   const id = useId()
-  const [tip, setTip] = useState<{ title: string; body: string; left: number; top: number } | null>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const [tip, setTip] = useState<{ anchor: HTMLElement; title: string; body?: string; items?: string[] } | null>(null)
+  const dismiss = useRef<() => void>(() => {})
   useEffect(() => {
     const root = frame.current
     if (!enabled || !root) return
@@ -18,22 +20,25 @@ export function JournalCellTooltip({ frame, enabled }: { frame: RefObject<HTMLDi
       shown = false
       setTip(null)
     }
+    dismiss.current = close
     const enter = (event: Event) => {
       const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-journal-tip-title]') : null
       if (!target || target === anchor) return
       close(); anchor = target
       timer = setTimeout(() => {
         if (!target.isConnected || anchor !== target) return
-        const rect = target.getBoundingClientRect()
         target.setAttribute('aria-describedby', id)
         shown = true
-        setTip({ title: target.dataset.journalTipTitle ?? '', body: target.dataset.journalTipBody ?? '',
-          left: Math.max(12, Math.min(rect.left, innerWidth - 332)), top: Math.max(12, Math.min(rect.bottom + 8, innerHeight - 200)) })
+        setTip({ anchor: target, title: target.dataset.journalTipTitle ?? '', body: target.dataset.journalTipBody,
+          items: target.dataset.journalTipList?.split('\n') })
       }, event.type === 'focusin' ? 0 : 450)
     }
     const leave = (event: MouseEvent | FocusEvent) => {
-      if (anchor && event.relatedTarget instanceof Node && anchor.contains(event.relatedTarget)) return
+      if (event.relatedTarget instanceof Node && (anchor?.contains(event.relatedTarget) || panel.current?.contains(event.relatedTarget))) return
       close()
+    }
+    const scroll = (event: Event) => {
+      if (!(event.target instanceof Node && panel.current?.contains(event.target))) close()
     }
     const key = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !shown) return
@@ -44,18 +49,40 @@ export function JournalCellTooltip({ frame, enabled }: { frame: RefObject<HTMLDi
     root.addEventListener('mouseout', leave)
     root.addEventListener('focusout', leave)
     root.addEventListener('pointerdown', close)
-    window.addEventListener('scroll', close, { capture: true, passive: true })
+    root.addEventListener('click', close)
+    window.addEventListener('scroll', scroll, { capture: true, passive: true })
     window.addEventListener('resize', close)
     window.addEventListener('keydown', key, true)
     return () => {
       close()
       root.removeEventListener('mouseover', enter); root.removeEventListener('focusin', enter)
       root.removeEventListener('mouseout', leave); root.removeEventListener('focusout', leave)
-      root.removeEventListener('pointerdown', close)
-      window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); window.removeEventListener('keydown', key, true)
+      root.removeEventListener('pointerdown', close); root.removeEventListener('click', close)
+      window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', close); window.removeEventListener('keydown', key, true)
     }
   }, [enabled, frame, id])
-  return tip ? createPortal(<div id={id} role="tooltip" className="journal-cell-tooltip" style={{ left: tip.left, top: tip.top }}>
-    <strong>{tip.title}</strong><p>{tip.body}</p>
+  useLayoutEffect(() => {
+    const element = panel.current
+    if (!tip || !element) return
+    const rect = tip.anchor.getBoundingClientRect()
+    const inset = 12
+    // List panels meet the cell edge so the pointer can reach and scroll long lists.
+    const gap = tip.items ? 0 : 8
+    const below = innerHeight - rect.bottom - gap - inset
+    const above = rect.top - gap - inset
+    element.style.maxHeight = tip.items ? Math.max(0, above, below) + 'px' : ''
+    const { width, height } = element.getBoundingClientRect()
+    const top = height <= below || below >= above ? rect.bottom + gap : rect.top - gap - height
+    element.style.left = Math.max(inset, Math.min(rect.left, innerWidth - width - inset)) + 'px'
+    element.style.top = Math.max(inset, Math.min(top, innerHeight - height - inset)) + 'px'
+  }, [tip])
+  const items = tip?.items
+  return tip ? createPortal(<div ref={panel} id={id} role="tooltip" className="journal-cell-tooltip" data-position-list={items ? '' : undefined}
+    onMouseLeave={event => { if (!(event.relatedTarget instanceof Node && tip.anchor.contains(event.relatedTarget))) dismiss.current() }}>
+    <strong>{tip.title}</strong>
+    {items ? <ol>{items.map((text, i) => <li key={i}>
+      {items.length > 1 && <span className="journal-tip-number" aria-hidden="true">{i + 1}</span>}
+      <span>{text}</span>
+    </li>)}</ol> : <p>{tip.body}</p>}
   </div>, document.body) : null
 }

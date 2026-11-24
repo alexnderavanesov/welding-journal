@@ -370,7 +370,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
     })
 
     expect(screen.getByRole('button', { name: 'Добавить в существующую' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Основной' }))
+    fireEvent.click(screen.getByRole('button', { name: 'НК' }))
     expect(onStageChange).toHaveBeenCalledWith('primary', [row.id], 'extend')
   })
 

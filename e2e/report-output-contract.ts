@@ -2,7 +2,8 @@ import { expect, type Page } from '@playwright/test'
 
 // Independent contract for the fresh user's current journal view.
 // October's 111 columns: -8 retired stamps (08.11), -2 service dates hidden by
-// the access plan, +weld length, +pre-heat requirement, +2 custom documents.
+// the access plan, +weld length, +pre-heat requirement, +2 custom documents,
+// then 18 legacy rate/act fields replaced by 3 closure columns.
 // Keep the whole ordered list: a matching count alone would miss a substitution.
 export const CURRENT_JOURNAL_OUTPUT_HEADERS = [
   'Линия', 'Стык', 'Проект', 'Шифр', 'Группа трубопровода', 'Категория трубопровода',
@@ -22,8 +23,7 @@ export const CURRENT_JOURNAL_OUTPUT_HEADERS = [
   'Номер сертификата на материал 1', 'Номер сертификата на материал 2', 'Длина элемента 1, мм', 'Длина элемента 2, мм',
   'Номер технологической карты', 'Сварочные электроды', 'Номер сертификата (электроды)',
   'Присадочная проволока', 'Номер сертификата (проволока)', 'Защитный газ', 'Номер сертификата (газ)',
-  'BoQ сварка', 'BoQ ПСТО', 'BoQ ВИК', 'BoQ РК', 'BoQ УЗК', 'BoQ ПВК', 'BoQ ТВМТ', 'BoQ ГИ', 'BoQ ПИ',
-  'КС3 сварка', 'КС3 ПСТО', 'КС3 ВИК', 'КС3 РК', 'КС3 УЗК', 'КС3 ПВК', 'КС3 ТВМТ', 'КС3 ГИ', 'КС3 ПИ',
+  'Вид работ', 'Код работ', 'КС3',
   'Итоговый статус',
 ]
 
@@ -38,14 +38,15 @@ export const ALL_JOURNAL_OUTPUT_HEADERS = [
 export async function showAllJournalOutputColumns(page: Page) {
   await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
   const settings = page.getByRole('dialog', { name: 'Настройка вида журнала', exact: true })
-  await expect(settings.locator('.journal-panel-heading')).toContainText('105 из 107 столбцов')
+  const total = ALL_JOURNAL_OUTPUT_HEADERS.length
+  await expect(settings.locator('.journal-panel-heading')).toContainText(`${CURRENT_JOURNAL_OUTPUT_HEADERS.length} из ${total} столбцов`)
   // The separate "Следующий шаг" toggle shares this class but is not a column.
   const checkedLabels = () => settings.locator('.journal-column-group label.journal-column-option').evaluateAll(labels => labels
     .filter(label => label.querySelector('input')?.checked)
     .map(label => label.querySelector('span')?.textContent ?? '').sort())
   expect(await checkedLabels()).toEqual([...CURRENT_JOURNAL_OUTPUT_HEADERS].sort())
   await settings.getByRole('button', { name: 'Показать все', exact: true }).click()
-  await expect(settings.locator('.journal-panel-heading')).toContainText('107 из 107 столбцов')
+  await expect(settings.locator('.journal-panel-heading')).toContainText(`${total} из ${total} столбцов`)
   expect(await checkedLabels()).toEqual([...ALL_JOURNAL_OUTPUT_HEADERS].sort())
   await settings.getByRole('button', { name: 'Закрыть настройки вида', exact: true }).click()
   await expect(settings).toBeHidden()

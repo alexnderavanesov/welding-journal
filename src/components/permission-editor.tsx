@@ -3,6 +3,7 @@ import { FieldHelp } from './field-help'
 import { ACCESS_AREAS, ACCESS_ACTIONS, AREA_ACTIONS, type AccessArea, type AccessAction, type Permission } from '@/lib/access-permissions'
 
 const AREA_HELP: Record<AccessArea, string> = {
+  closures: 'Просмотр и фильтрация закрытий в журнале. Изменение расценок и КС3 в карточке и массово через ПКМ.',
   schemes: 'Просмотр чертежей и состояний физических стыков; редактирование точек и редакций; удаление файлов. Карточки стыков сохраняют свои права доступа.',
   welding: 'Стыки, параметры сварки, клейма и примечания сварочного журнала. Результаты ЛНК и ПСТО настраиваются отдельно.',
   lnk: 'Отчёт ЛНК, результаты неразрушающего контроля, заявки и заключения ЛНК.',
@@ -72,7 +73,7 @@ export function PermissionEditor({ value, onChange, disabled = false }: {
               onChange={event => toggle(permissions, event.target.checked)} />
           </div></th>
         })}</tr></thead>
-        <tbody>{(Object.entries(ACCESS_AREAS) as [AccessArea, string][]).map(([area, label], index) => <tr key={area} className={`${index === 7 ? 'border-t-2' : 'border-t'} border-slate-200 hover:bg-sky-50/50`}>
+        <tbody>{(Object.entries(ACCESS_AREAS) as [AccessArea, string][]).map(([area, label]) => <tr key={area} className={`${area === 'schemes' ? 'border-t-2' : 'border-t'} border-slate-200 hover:bg-sky-50/50`}>
           <th scope="row" className="px-4 py-3 text-left font-medium text-slate-700"><span className="flex items-center justify-between gap-2">{label}<FieldHelp label={`О разделе «${label}»`}>{AREA_HELP[area]}</FieldHelp></span></th>
           {(Object.keys(ACCESS_ACTIONS) as AccessAction[]).map(action => <td key={action} className="px-2 py-3 text-center">{AREA_ACTIONS[area].includes(action)
             ? checkbox(`${area}.${action}`, `${label}: ${ACCESS_ACTIONS[action]}`) : <span aria-label="Не применяется" className="text-slate-300">—</span>}</td>)}

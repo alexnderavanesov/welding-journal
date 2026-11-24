@@ -4,6 +4,7 @@ import { scrypt } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
+import { withLineProgramFixture } from '../line-program-fixtures'
 
 const PROJECT = 'E2E досрочная катушка'
 const LINE = 'E2E-COIL-L1'
@@ -52,7 +53,7 @@ test.beforeEach(async () => {
 })
 
 test.afterEach(async () => {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     await client.query(`
       delete from dispatcher_accepted_warnings
       where key in (

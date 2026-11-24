@@ -19,7 +19,7 @@ describe('shared journal/template filter plan', () => {
   it('classifies every journal virtual field explicitly; the PSTO-only cycle summary is not a journal column', () => {
     expect(WELDING_JOURNAL_HIDDEN_FIELD_KEYS.has('pstoCycleSummary')).toBe(true)
     for (const field of WELD_FIELDS.filter(field => 'virtual' in field && field.virtual && field.key !== 'pstoCycleSummary')) {
-      expect(field.key === 'dispatcherTasks' || Object.hasOwn(GENERATED_DOCUMENT_FIELD_TYPES, field.key) ||
+      expect(field.key === 'dispatcherTasks' || ['workClosureSummary', 'workClosureRateCode', 'workClosureActNumber'].includes(field.key) || Object.hasOwn(GENERATED_DOCUMENT_FIELD_TYPES, field.key) ||
         (JOURNAL_DERIVED_FILTER_KEYS as readonly string[]).includes(field.key), field.key).toBe(true)
     }
     for (const key of JOURNAL_DERIVED_FILTER_KEYS) expect(FIELD_BY_KEY.has(key)).toBe(true)

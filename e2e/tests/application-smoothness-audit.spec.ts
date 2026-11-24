@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test, type Page } from '@playwright/test'
 import { createSmoothnessProbe } from '../smoothness-probe'
 import { seedSmoothnessFixture, cleanupSmoothnessFixture, SMOOTHNESS_PROJECT } from '../smoothness-fixture'
@@ -95,7 +96,7 @@ test('statistics: every tab, both support tables, welder details and line summar
         await main.getByRole('button', { name: tab, exact: true }).click()
         if (tab !== 'Полинейная сводка') {
           await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('all')
-          await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(SMOOTHNESS_PROJECT.toLowerCase())
+          await selectStatisticsProjects(page, SMOOTHNESS_PROJECT)
         }
         await expect(page.getByRole('button', { name: 'Отчет PDF', exact: true })).toBeEnabled({ timeout: 60000 })
       })

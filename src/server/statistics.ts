@@ -14,6 +14,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   buildStatisticsServerResult,
+  normalizeStatisticsSelection,
   type StatisticsServerRequest,
   type StatisticsServerResult,
 } from '@/lib/statistics-server-summary'
@@ -35,7 +36,7 @@ import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { packStatisticsResult, STATISTICS_TRANSPORT, type StatisticsRpcRequest } from '@/lib/statistics-result-payload'
 import { supportConnectionTypeWhere } from './connection-type-sql'
 import { readLineSchemeStatisticsVersion, readLineSummarySchemes } from './line-summary-schemes'
-import { STATISTICS_RESULT_VERSION } from '@/lib/statistics-result-version'
+import { STATISTICS_CACHE_NAMESPACE } from '@/lib/statistics-result-version'
 
 const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
@@ -148,7 +149,7 @@ export function buildStatisticsCalculationCacheKey(request: StatisticsServerRequ
   // These two tabs display different parts of the SAME complete control
   // summary. Selection, unit, period and dynamics parameters stay in the key;
   // the existing revision check/coalescing still owns freshness and concurrency.
-  return buildDerivedCalculationCacheKey(`statistics:v${STATISTICS_RESULT_VERSION}`, {
+  return buildDerivedCalculationCacheKey(STATISTICS_CACHE_NAMESPACE, {
     ...request, tab: request.tab === 'psto' ? 'lnk' : request.tab, schemesVersion,
   })
 }
@@ -157,10 +158,11 @@ export async function computeStatisticsServerResult(
   data: StatisticsServerRequest,
 ): Promise<StatisticsServerResult> {
   const db = requireDb()
-  const scopeWhere = buildStatisticsScopeWhere(data)
-  const projectWhere = data.projectFilter
-    ? sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`
+  const projects = normalizeStatisticsSelection(data.projectFilter)
+  const projectWhere = projects.length
+    ? sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = any(${sql.param(projects)}::text[])`
     : undefined
+  const scopeWhere = buildStatisticsScopeWhere(data, projectWhere)
   const rowSelect = getStatisticsRowSelect(data.tab)
   const needsControlHistory = data.tab !== 'lineSummary'
   const { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows, schemes } = await db.transaction(async (db) => {
@@ -223,7 +225,8 @@ export async function computeStatisticsServerResult(
         .where(scopeWhere)
         .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)) : []
     const projectRows = await db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints)
-    const subtitleRows = await db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere)
+    const subtitleRows = data.tab === 'lineSummary' ? []
+      : await db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere)
     const stampRows = data.tab === 'welders' || data.tab === 'supports'
         ? await db.select().from(welderStamps).orderBy(asc(welderStamps.id)) : []
     const settingsRows = await db
@@ -296,14 +299,8 @@ export function normalizeStatisticsServerRequest(data: StatisticsServerRequest):
 
   return {
     tab,
-    projectFilter: String(data?.projectFilter ?? '').trim().toLowerCase(),
-    selectedSubtitles: Array.from(
-      new Set(
-        (data?.selectedSubtitles ?? [])
-          .map((value) => String(value ?? '').trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    ).sort(),
+    projectFilter: normalizeStatisticsSelection(data?.projectFilter),
+    selectedSubtitles: normalizeStatisticsSelection(data?.selectedSubtitles),
     from: String(data?.from ?? '').trim(),
     to: String(data?.to ?? '').trim(),
     unit: tab !== 'supports' && data?.unit === 'wdi' ? 'wdi' : 'joints',
@@ -337,21 +334,13 @@ function getStoredSetting(rows: Array<{ key: string; value: string }>, key: stri
   }
 }
 
-function buildStatisticsScopeWhere(data: StatisticsServerRequest) {
+function buildStatisticsScopeWhere(data: StatisticsServerRequest, projectWhere: SQL | undefined) {
   const clauses: SQL[] = []
   if (data.tab === 'supports') clauses.push(supportConnectionTypeWhere(weldJoints.connectionType))
   else if (data.tab === 'general' || data.tab === 'welders') clauses.push(sql`not (${supportConnectionTypeWhere(weldJoints.connectionType)})`)
-  if (data.projectFilter) {
-    clauses.push(sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`)
-  }
-  if (data.selectedSubtitles && data.selectedSubtitles.length > 0) {
-    clauses.push(
-      inArray(
-        sql<string>`lower(trim(coalesce(${weldJoints.subtitleCode}, '')))`,
-        data.selectedSubtitles,
-      ),
-    )
-  }
+  if (projectWhere) clauses.push(projectWhere)
+  const subtitles = normalizeStatisticsSelection(data.selectedSubtitles)
+  if (subtitles.length) clauses.push(sql`lower(trim(coalesce(${weldJoints.subtitleCode}, ''))) = any(${sql.param(subtitles)}::text[])`)
   return clauses.length > 0 ? and(...clauses) : undefined
 }
 

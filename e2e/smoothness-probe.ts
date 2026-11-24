@@ -1,7 +1,7 @@
 import { expect, type Page, type TestInfo, type Locator, type Request } from '@playwright/test'
 import { open, writeFile } from 'node:fs/promises'
 import { rpcName } from './rpc'
-import { auditSqlCount, auditSqlDetails } from './audit-sql'
+import { auditSqlSnapshot, auditSqlDetails } from './audit-sql'
 
 // Opt-in diagnostics, never imported by the application. No DOM reads in RAF.
 function install() {
@@ -60,7 +60,7 @@ export async function createSmoothnessProbe(page: Page, info: TestInfo) {
     version: page.context().browser()?.version(), viewport: page.viewportSize(), cpuThrottling: 'none',
     traceDiagnostic: traceAction ? { action: traceAction, comparablePerformanceRun: false } : undefined, samples, errors }, null, 2))
   const measure = async (name: string, run: () => Promise<unknown>, interaction?: object) => {
-    const sqlBefore = (await auditSqlDetails())?.statements, before = await metrics(), first = requests.length
+    const sqlBefore = await auditSqlDetails(), before = await metrics(), first = requests.length
     const timeOriginBefore = await page.evaluate(() => performance.timeOrigin)
     await page.evaluate(traceName => {
       const state = (window as unknown as { smoothnessProbe: State }).smoothnessProbe
@@ -104,9 +104,14 @@ export async function createSmoothnessProbe(page: Page, info: TestInfo) {
         const url = new URL(request.url())
         return { resourceType: request.resourceType(), resource: `${url.origin}${url.pathname}` }
       })
-      const sqlAfter = await auditSqlCount()
+      const sqlAfter = await auditSqlSnapshot()
+      const sqlByRpc: Record<string, number> = {}
+      for (const [id, total] of Object.entries(sqlAfter?.rpcStatements ?? {})) {
+        const delta = total - (sqlBefore?.rpcStatements?.[id] ?? 0)
+        if (delta) sqlByRpc[rpcName(`http://localhost/_serverFn/${id}`)] = delta
+      }
       samples.push({ name, readyMs, ...render, longTaskDiagnostics, interaction, networkSettled, pendingResources, requests: requests.slice(first).map(request => ({ name: request.name, startedMs: request.at - started })),
-        sqlStatements: sqlBefore !== undefined && sqlAfter !== undefined ? sqlAfter - sqlBefore : null,
+        sqlStatements: sqlBefore && sqlAfter ? sqlAfter.statements - sqlBefore.statements : null, sqlByRpc,
         scriptMs: cdp ? Math.max(0, after.ScriptDuration - (render.timeOrigin === timeOriginBefore ? before.ScriptDuration : 0)) * 1000 : null,
         layoutMs: cdp ? Math.max(0, after.LayoutDuration - (render.timeOrigin === timeOriginBefore ? before.LayoutDuration : 0)) * 1000 : null,
         styleMs: cdp ? Math.max(0, after.RecalcStyleDuration - (render.timeOrigin === timeOriginBefore ? before.RecalcStyleDuration : 0)) * 1000 : null })

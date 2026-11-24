@@ -437,8 +437,9 @@ for (const role of ['owner', 'lnk-only', 'psto-only'] as const) test(`${role}: r
     await expect(dialog.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeEnabled()
     expect(await readSystemDocumentNextNumbers(requireDb(), SYSTEM_DOCUMENT_SEQUENCE_IDS)).toEqual(counters)
     await dialog.getByRole('tab', { name: /Заявки и имена/ }).click()
-    const names = await dialog.getByRole('textbox', { name: /^Название/ }).evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))
-    expect(names).toHaveLength(2)
+    const nameInputs = dialog.getByRole('textbox', { name: /^Название/ })
+    await expect(nameInputs).toHaveCount(2)
+    const names = await nameInputs.evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))
     for (let i = 0; i < 2; i++) expect(names[i]).toMatch(psto
       ? new RegExp(`^pstoRequest-E2E naming context-CONTEXT-${i + 1}-CONTEXT-L${i + 1}-[0-9]+$`)
       : new RegExp(`^Заявка НК №CONTEXT-${i + 1}-[0-9]+$`))

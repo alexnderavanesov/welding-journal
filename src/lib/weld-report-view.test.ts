@@ -21,6 +21,20 @@ describe('weld report views', () => {
   })
   beforeEach(() => window.localStorage.clear())
 
+  it('expands a formerly hidden closure column once and preserves independent visibility after saving', () => {
+    const hiddenFieldKeys = ['workClosureSummary']
+    const snapshot = { hiddenFieldKeys, columnFilters: { workClosureSummary: '{"actNumber":"001"}' } }
+    window.localStorage.setItem('welding-report-view:v1:journal', JSON.stringify({
+      hiddenFieldKeys, savedViews: [{ name: 'Цех', id: 'x', snapshot }],
+    }))
+    const view = readWeldReportViewStorage('journal', new Set())
+    const all = ['workClosureSummary', 'workClosureRateCode', 'workClosureActNumber']
+    expect(view.hiddenFieldKeys).toEqual(all)
+    expect(view.savedViews[0].snapshot).toMatchObject({ hiddenFieldKeys: all, columnFilters: { workClosureActNumber: '{"actNumber":["001"]}' } })
+    writeWeldReportViewStorage('journal', { ...view, hiddenFieldKeys: ['workClosureSummary'] })
+    expect(readWeldReportViewStorage('journal', new Set()).hiddenFieldKeys).toEqual(['workClosureSummary'])
+  })
+
   it('builds predictable compact and chronology column sets', () => {
     const alwaysVisible = new Set(['line', 'joint'])
     const compact = getPresetHiddenFieldKeys({

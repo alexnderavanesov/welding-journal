@@ -180,10 +180,13 @@ const transitions: Array<{
 }> = [
   { name: 'unit', change: () => fireEvent.click(screen.getByRole('button', { name: 'Стыки' })),
     expectedRequest: { unit: 'joints' }, expectedMeta: ['Единица', 'стыки'] },
-  { name: 'project scope', change: () => fireEvent.change(screen.getByRole('combobox', { name: 'Проект' }), { target: { value: 'project a' } }),
-    expectedRequest: { projectFilter: 'project a' }, expectedMeta: ['Срез', 'проект Project A'] },
+  { name: 'project scope', change: () => {
+    fireEvent.click(screen.getByRole('button', { name: /^Проект / }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Project A' }))
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Найти проект' }), { key: 'Escape' })
+  }, expectedRequest: { projectFilter: ['project a'] }, expectedMeta: ['Срез', 'проект Project A'] },
   { name: 'subtitle scope', change: () => {
-    fireEvent.click(screen.getByRole('button', { name: /Шифр\/подтитул/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Шифр / }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Sub A' }))
     fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Найти шифр' }), { key: 'Escape' })
   },
@@ -217,6 +220,11 @@ it.each(transitions)('does not use previous-key data when changing $name', async
   scenario.change()
   await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2))
   expect(mocks.rpc.mock.calls[1][0].data).toMatchObject(scenario.expectedRequest)
+  if (scenario.name === 'project scope') {
+    fireEvent.click(screen.getByRole('button', { name: /^Шифр / }))
+    expect(screen.queryByRole('checkbox', { name: 'Sub A' })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Найти шифр' }), { key: 'Escape' })
+  }
   expect(reportButton()).toBeDisabled()
   expect(screen.getByRole('status')).toHaveTextContent('Обновляем статистику для выбранных параметров')
   fireEvent.click(reportButton())

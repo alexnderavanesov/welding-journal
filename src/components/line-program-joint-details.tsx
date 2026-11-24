@@ -53,7 +53,7 @@ export function buildProgramHistory(row: WeldRow) {
         requestDocument: reference('lnkRequest', c.tvmtRequest, c.tvmtRequestDate, { ...scope, methodCode: 'ТВМТ' }), conclusionDocument: reference('lnkConclusion', c.tvmtConclusion, c.tvmtConclusionDate, { ...scope, methodCode: 'ТВМТ' }) },
     ].filter(present)
   }) })
-  sections.push({ title: 'Основной этап', controls: LNK_METHODS.map(method => ({
+  sections.push({ title: 'НК', controls: LNK_METHODS.map(method => ({
     id: method.code, method: method.code, result: isLnkMethodNoNeed(row, method) ? getLnkDisplayValue(row, method.resultKey) : resultDisplay(method.code, row[method.resultKey]), request: row[method.requestKey], requestDate: row[method.requestDateKey], conclusion: row[method.conclusionKey], conclusionDate: row[method.conclusionDateKey], defect: row[method.defectDescriptionKey],
     requestDocument: document(getSystemDocumentReferenceForField(row, method.requestKey)), conclusionDocument: document(getSystemDocumentReferenceForField(row, method.conclusionKey)),
   })).filter(present) })

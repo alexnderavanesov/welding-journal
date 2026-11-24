@@ -29,7 +29,7 @@ async function openExpanded(page: Page) {
   return { root, row }
 }
 async function createRequest(page: Page, row: Locator) {
-  await row.getByRole('button', { name: 'Выполнить: Создать заявку основного НК', exact: true }).click()
+  await row.getByRole('button', { name: 'Выполнить: Создать заявку НК', exact: true }).click()
   await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-02')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК', exact: true })).toBeHidden()
@@ -44,9 +44,9 @@ test('expanded report keeps visible rows through NK request and result saves wit
   const original = await row.elementHandle()
   const before = reads.length
   await createRequest(page, row)
-  await expect(row.getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true })).toBeVisible()
   expect(await original!.evaluate(element => element.isConnected)).toBe(true)
-  await row.getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
+  await row.getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true }).click()
   await page.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
   await page.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
@@ -75,7 +75,7 @@ test('expanded report keeps visible rows through NK request and result saves wit
 test('result warning and correction controls fit the fixed footer without internal scrolling', async ({ page }, info) => {
   const { row } = await openExpanded(page)
   await createRequest(page, row)
-  await row.getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
+  await row.getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true }).click()
   await page.getByLabel('Дата контроля', { exact: true }).fill('2026-08-01')
   await page.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   const footer = page.getByRole('group', { name: 'Сохранение результата', exact: true })

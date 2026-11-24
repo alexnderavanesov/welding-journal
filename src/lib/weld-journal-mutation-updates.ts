@@ -113,6 +113,7 @@ export function loadImportedWeldPreparationSettings(): ImportedWeldPreparationSe
 type PrepareImportedWeldRecordsOptions = {
   records: Array<WeldInput & { id?: number }>
   previousRows?: readonly WeldRow[]
+  checkStampsOnServer?: boolean
   skipManualJointNameValidation?: boolean
   skipLnkResultRuleValidation?: boolean
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
@@ -142,6 +143,7 @@ export function collectImportedWeldRecordPreparationErrors(
 }
 
 function getImportedWeldRecordPreparationSteps({
+  checkStampsOnServer,
   records,
   previousRows,
   skipManualJointNameValidation = false,
@@ -167,17 +169,19 @@ function getImportedWeldRecordPreparationSteps({
     () => normalizeWeldingMethodsForImport(records, dataListSettings.weldingTypes),
     () => normalizeConnectionTypesAndMaterialGroupsForImport(records, dataListSettings),
     () => normalizeTestTypesForImport(records, dataListSettings.testTypes),
-    () => validateWelderStampFieldsForImport(
-      recordsRequiringStampValidation(),
-      weldFormStampSelectOptions,
-      saveCheckSettings,
-    ),
-    () => validateOfficialStampCompatibilityForImport(recordsRequiringStampValidation(), welderStamps, {
-      saveCheckSettings,
-      weldingTypes: dataListSettings.weldingTypes,
-      materialGroups: dataListSettings.materialGroups,
-      suspensions: welderStampSuspensions,
-    }),
+    ...(!checkStampsOnServer ? [
+      () => validateWelderStampFieldsForImport(
+        recordsRequiringStampValidation(),
+        weldFormStampSelectOptions,
+        saveCheckSettings,
+      ),
+      () => validateOfficialStampCompatibilityForImport(recordsRequiringStampValidation(), welderStamps, {
+        saveCheckSettings,
+        weldingTypes: dataListSettings.weldingTypes,
+        materialGroups: dataListSettings.materialGroups,
+        suspensions: welderStampSuspensions,
+      }),
+    ] : []),
     ...(!skipLnkResultRuleValidation
       ? [() => assertNoLnkResultRuleIssues(records)]
       : []),

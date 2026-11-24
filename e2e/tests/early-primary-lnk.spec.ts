@@ -73,7 +73,7 @@ test('новая заявка основного ВИК доступна до П
     await page.goto('/lnk')
     const row = await lnkActionRow(page, joint)
     await row.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
-    await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'Основной', exact: true }).click()
+    await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК', exact: true }).click()
     // The stage switch is a React transition: wait for the new composer,
     // not a checkbox/date input with the same label in the outgoing one.
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК', exact: true })).toBeVisible()

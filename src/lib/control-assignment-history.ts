@@ -49,6 +49,12 @@ function getAssignmentHistory(row: WeldInput, field: WeldFieldKey, includeReques
   return null
 }
 
+function historyLabel(method: string, history: string) {
+  if (history === `${method}: основной этап`) return method
+  if (history === `${method}: НК до ТО`) return `${method} до ТО`
+  return history
+}
+
 /** Mandatory transition protection, independent of optional legacy-data checks. */
 export function getControlAssignmentRemovalReason(record: WeldInput, previous?: WeldInput): string {
   return getControlAssignmentRemovalIssues(record, previous).map(issue => issue.message).join(' ')
@@ -60,13 +66,14 @@ export function getControlAssignmentRemovalIssues(record: WeldInput, previous?: 
     const previousFact = previous && getControlAssignmentPerformedHistory(previous, enabledKey)
     const currentFact = getControlAssignmentPerformedHistory(record, enabledKey)
     const cancels = isControlCancelledValue(record[enabledKey]) && (!isControlCancelledValue(previous?.[enabledKey]) || (!previousFact && currentFact))
-    if (cancels && (previousFact || currentFact)) {
-      issues.push({ fieldKey: enabledKey, message: `${code}: нельзя отменить выполненный контроль (${previousFact || currentFact}). Годные и негодные результаты сохраняются; ошибочный результат исправляется в профильном процессе.` })
+    const fact = previousFact || currentFact
+    if (cancels && fact) {
+      issues.push({ fieldKey: enabledKey, message: `${code}: нельзя отменить выполненный контроль (${historyLabel(code, fact)}). Годные и негодные результаты сохраняются; ошибочный результат исправляется в профильном процессе.` })
       continue
     }
     if (!previous || !assigned(previous[enabledKey]) || assigned(record[enabledKey])) continue
     const history = getControlAssignmentRemovalHistory(previous, enabledKey) || getControlAssignmentRemovalHistory(record, enabledKey)
-    if (history) issues.push({ fieldKey: enabledKey, message: `${code}: нельзя снять назначение через «Пусто» — есть выполненная работа или её реквизиты (${history}). Исправьте ошибочный результат в профильном процессе; снятие не удаляет факты.` })
+    if (history) issues.push({ fieldKey: enabledKey, message: `${code}: нельзя снять назначение через «Пусто» — есть выполненная работа или её реквизиты (${historyLabel(code, history)}). Исправьте ошибочный результат в профильном процессе; снятие не удаляет факты.` })
   }
   return issues
 }

@@ -28,6 +28,16 @@ export type WeldTableDisplaySection = WeldTableSection & {
   collapsed: boolean
 }
 
+export function getWeldTableViewSections(sections: readonly WeldTableSection[], extraSections: readonly string[]) {
+  const ordered = [...sections]
+  for (const section of extraSections) {
+    const spoolIndex = section === 'Следующий шаг' ? ordered.findIndex(group => group.section === 'Спул') : -1
+    const position = spoolIndex < 0 ? ordered.length : spoolIndex + 1
+    ordered.splice(position, 0, { section, fields: [] })
+  }
+  return ordered
+}
+
 export function getAlwaysVisibleFieldKeys(mergePstoSections: boolean) {
   const fieldKeys = new Set(ALWAYS_VISIBLE_FIELD_KEYS)
   if (mergePstoSections) {

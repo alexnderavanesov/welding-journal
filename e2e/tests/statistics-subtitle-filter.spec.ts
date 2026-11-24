@@ -1,10 +1,11 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 import { resizeFilterPopup } from '../filter-popup'
 
-const project = 'E2E subtitle dropdown', otherProject = 'E2E other subtitle dropdown'
+const project = 'E2E subtitle dropdown', otherProject = `E2E other subtitle dropdown ${'A'.repeat(160)}`
 
 test('subtitle dropdown keeps a compact header, multiple choices, search and project reset', async ({ page }, info) => {
   const calls: string[] = []
@@ -22,16 +23,36 @@ test('subtitle dropdown keeps a compact header, multiple choices, search and pro
     await page.goto('/statistics')
     await page.getByRole('button', { name: 'Сварщики', exact: true }).click()
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
-    await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('custom')
+    const period = page.getByRole('combobox', { name: 'Период отчета', exact: true })
+    const trigger = page.getByRole('button', { name: /^Шифр / })
+    const projectTrigger = page.getByRole('button', { name: /^Проект / })
+    const settings = page.getByRole('group', { name: 'Параметры статистики' })
+    const projectBox = (await projectTrigger.boundingBox())!
+    const codeBox = (await trigger.boundingBox())!
+    const settingsBox = (await settings.boundingBox())!
+    for (const field of [period, trigger, settings.getByRole('group', { name: 'Единица', exact: true }), settings.getByRole('group', { name: 'Тип стыка', exact: true })]) {
+      const box = (await field.boundingBox())!
+      expect(box.y).toBeCloseTo(projectBox.y, 0)
+      expect(box.height).toBe(projectBox.height)
+    }
+    const periodLabel = (await settings.getByText('Период', { exact: true }).boundingBox())!
+    for (const label of ['Единица', 'Тип стыка', 'Проект', 'Шифр']) {
+      const box = (await settings.getByText(label, { exact: true }).boundingBox())!
+      expect(box.y).toBeCloseTo(periodLabel.y, 0)
+      expect(box.height).toBe(periodLabel.height)
+    }
+    expect(codeBox.x).toBeGreaterThan(projectBox.x + projectBox.width)
+    expect(codeBox.width).toBeCloseTo(projectBox.width, 0)
+    expect(codeBox.x + codeBox.width).toBeCloseTo(settingsBox.x + settingsBox.width, 0)
+    await selectStatisticsProjects(page, project)
+    await period.selectOption('custom')
     await page.getByLabel('Период с', { exact: true }).fill('2026-09-01')
     await page.getByLabel('Период по', { exact: true }).fill('2026-09-30')
     const grid = page.locator('[data-statistics-grid="welders"]')
     await expect(grid.getByText('W001', { exact: true })).toBeVisible()
-    const trigger = page.getByRole('button', { name: /^Шифр\/подтитул / })
     expect((await trigger.boundingBox())!.height).toBe(36)
     await trigger.click()
-    const dropdown = page.getByRole('dialog', { name: 'Шифр/подтитул', exact: true })
+    const dropdown = page.getByRole('dialog', { name: 'Шифр', exact: true })
     const search = dropdown.getByRole('searchbox', { name: 'Найти шифр' })
     await expect(dropdown.getByRole('checkbox')).toHaveCount(80)
     expect((await dropdown.boundingBox())!.height).toBeLessThan(350)
@@ -65,6 +86,8 @@ test('subtitle dropdown keeps a compact header, multiple choices, search and pro
     await page.screenshot({ path: info.outputPath('subtitle-dropdown.png') })
     await page.setViewportSize({ width: 900, height: 740 })
     await expect(dropdown).toHaveCount(0)
+    expect((await trigger.boundingBox())!.y).toBeGreaterThan((await period.boundingBox())!.y)
+    await expect(trigger).toBeInViewport()
     await trigger.click()
     const compactBounds = (await dropdown.boundingBox())!
     expect(compactBounds.y).toBeGreaterThanOrEqual(0)
@@ -75,7 +98,7 @@ test('subtitle dropdown keeps a compact header, multiple choices, search and pro
     await page.keyboard.press('Escape')
     await expect(dropdown).toHaveCount(0)
     await expect(trigger).toBeFocused()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(otherProject.toLowerCase())
+    await selectStatisticsProjects(page, otherProject)
     await expect(grid.getByText('OTHER-W', { exact: true })).toBeVisible()
     await expect(trigger).toContainText('Все шифры')
     const scrollBeforeOpen = await page.evaluate(() => scrollY)
@@ -89,6 +112,49 @@ test('subtitle dropdown keeps a compact header, multiple choices, search and pro
     await trigger.click()
     expect(await dropdown.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     await page.screenshot({ path: info.outputPath('subtitle-dropdown-compact.png') })
+    await page.keyboard.press('Escape')
+    await selectStatisticsProjects(page, project, otherProject)
+    await expect(page.getByRole('button', { name: 'Проект Выбрано проектов: 2' })).toBeVisible()
+    await expect(page.getByText('Сварщиков в срезе', { exact: true }).locator('..')).toHaveText(/Сварщиков в срезе\s*81/)
+    await trigger.click()
+    await expect(dropdown.getByRole('checkbox')).toHaveCount(81)
+    for (const code of ['OTHER-CODE', 'CODE-001']) await dropdown.getByRole('checkbox', { name: code, exact: true }).check()
+    await page.keyboard.press('Escape')
+    await expect(page.getByText('Сварщиков в срезе', { exact: true }).locator('..')).toHaveText(/Сварщиков в срезе\s*2$/)
+    await expect(grid.getByText('OTHER-W', { exact: true })).toBeVisible()
+    await expect(grid.getByText('W001', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Полинейная сводка', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Проект Все проекты' })).toBeVisible()
+    await selectStatisticsProjects(page, project, otherProject)
+    const lineBadge = page.getByText('Линий всего', { exact: true }).locator('..')
+    await expect(lineBadge).toContainText('81')
+    const toolbar = page.locator('[data-statistics-toolbar]')
+    await expect(toolbar.getByText('Срез', { exact: true })).toHaveCount(0)
+    await expect(toolbar).not.toContainText(otherProject)
+    expect(await toolbar.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    await page.getByRole('button', { name: 'Отчет PDF', exact: true }).click()
+    const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
+    const scope = preview.frameLocator('iframe').locator('.meta-item').filter({ hasText: /^Срез:/ })
+    await expect(scope).toContainText('проекты')
+    await expect(scope).toContainText(project)
+    await expect(scope).toContainText(otherProject)
+    expect(await scope.evaluate(el => el.getBoundingClientRect().right <= el.parentElement!.getBoundingClientRect().right + 1
+      && el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+    await selectStatisticsProjects(page, otherProject)
+    await expect(lineBadge).toHaveText(/Линий всего\s*1\D*$/)
+    await expect(page.locator('[data-statistics-grid="lines"]').getByText('OTHER', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Сварщики', exact: true }).click()
+    await expect(trigger).toContainText('Выбрано шифров: 2')
+    await expect(page.getByText('Сварщиков в срезе', { exact: true }).locator('..')).toHaveText(/Сварщиков в срезе\s*2$/)
+    await page.setViewportSize({ width: 420, height: 800 })
+    const narrowProject = (await projectTrigger.boundingBox())!
+    const narrowCode = (await trigger.boundingBox())!
+    expect(narrowCode.y).toBeGreaterThanOrEqual(narrowProject.y + narrowProject.height)
+    expect(narrowCode.x).toBeCloseTo(narrowProject.x, 0)
+    expect(narrowCode.width).toBeCloseTo(narrowProject.width, 0)
+    expect(narrowCode.x + narrowCode.width).toBeLessThanOrEqual(420)
   } finally {
     await page.close()
     await cleanupLineProgramProjects([project, otherProject])

@@ -138,8 +138,10 @@ for (const mode of ['single', 'bulk', 'import'] as const) for (const result of [
   officiality = await officialityDialog(page)
   await officiality.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
   await expect(officiality).toBeHidden()
+  await expect(lnkGridRow(page, joint)).toBeVisible()
   expect(await facts()).toEqual(original.filter(row => row.id !== removedId).map(row => row.id === remainingId ? { ...row, officiality: null } : row))
   await expectNoChainCodes()
+  await page.waitForLoadState('networkidle')
   await page.reload()
 
   // Backfill through the real operator dialog after restoration; the missing
@@ -166,6 +168,7 @@ for (const mode of ['single', 'bulk', 'import'] as const) for (const result of [
   const tasks = await chainTasks()
   expect(tasks.filter(task => task.kind === 'create')).toEqual([expect.objectContaining({ sourceJoint: joint, targetJoint: target })])
   expect(tasks.filter(task => ['rename', 'delete', 'duplicate-check', 'check'].includes(task.kind))).toEqual([])
+  await page.waitForLoadState('networkidle')
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
   await journalRow(page, remainingId).getByRole('button', { name: joint, exact: true }).click()
@@ -182,6 +185,7 @@ for (const mode of ['single', 'bulk', 'import'] as const) for (const result of [
   const limits = getLnkResultRestrictionReasons({ joint: target, d1: 108, d2: 108 }, 'УЗК', 'ремонт')
   expect(limits.length > 0).toBe(result === 'ремонт')
   if (result === 'ремонт') expect(limits.join(' ')).toContain('два ремонта')
+  await page.waitForLoadState('networkidle')
   await page.reload()
   expect((await facts()).map(row => row.joint)).toEqual(['S63', 'S63W1', joint, target])
   await expectNoChainCodes()

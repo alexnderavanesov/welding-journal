@@ -278,7 +278,7 @@ describe('joint next actions', () => {
       expect.objectContaining({
         kind: 'blocked',
         title: 'НК до ТО не годен',
-        description: expect.stringContaining('ПСТО, ТВМТ и основной этап НК для этого стыка не требуются'),
+        description: expect.stringContaining('ПСТО, ТВМТ и НК для этого стыка не требуются'),
       }),
     ])
   })
@@ -402,7 +402,7 @@ describe('joint next actions', () => {
 
     expect(buildJointNextActions(completedPhysicalCycle)[0]).toMatchObject({
       kind: 'primaryLnkRequest',
-      title: 'Создать заявку основного НК',
+      title: 'Создать заявку НК',
     })
   })
 
@@ -503,7 +503,7 @@ describe('joint next actions', () => {
 
     expect(buildJointNextActions(primaryStartedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
       kind: 'primaryLnkRequest',
-      title: 'Создать заявку основного НК',
+      title: 'Создать заявку НК',
       methodCode: 'РК',
       description: expect.stringContaining('СП-06: предыдущие этапы пропущены'),
     })
@@ -522,7 +522,7 @@ describe('joint next actions', () => {
 
     expect(buildJointNextActions(primaryCompletedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
       kind: 'complete',
-      title: 'Результаты основного НК внесены',
+      title: 'Результаты НК внесены',
       description: expect.stringContaining('СП-06 остаётся'),
       tone: 'warning',
     })
@@ -604,7 +604,7 @@ describe('joint next actions', () => {
 
     expect(buildJointNextActions(current)[0]).toMatchObject({
       kind: 'primaryLnkRequest',
-      title: 'Создать заявку основного НК',
+      title: 'Создать заявку НК',
     })
   })
 
@@ -656,7 +656,7 @@ describe('joint next actions', () => {
       hasVik: 'да',
     }))[0]).toMatchObject({
       kind: 'primaryLnkRequest',
-      title: 'Создать заявку основного НК',
+      title: 'Создать заявку НК',
     })
   })
 

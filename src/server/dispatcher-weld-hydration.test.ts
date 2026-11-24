@@ -9,7 +9,7 @@ it('selects all schema columns under their exact keys and preserves the schema d
   const raw: Record<string, unknown> = Object.fromEntries(Object.keys(columns).map(key => [key, null]))
   Object.assign(raw, { id: 7, weldDate: '0001-01-02', d1: '123.456', d2: '0.000',
     createdAt: '2026-10-13 23:59:58.123456+03', preHeatTreatmentLnkExempt: false,
-    joint: ' S01R1 ', boq: 'text not used by predicates but retained by task actions' })
+    joint: ' S01R1 ', isometry: 'text not used by predicates but retained by task actions' })
   const expected = { ...raw, d1: 123.456, d2: 0, createdAt: new Date('2026-10-13T20:59:58.123Z') }
   const execute = vi.fn().mockResolvedValue({ rows: [raw] })
   const result = await readDispatcherWeldBatch({ execute } as never, [7])

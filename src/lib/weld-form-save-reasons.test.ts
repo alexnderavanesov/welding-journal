@@ -221,8 +221,7 @@ describe('getWeldFormSaveBlockReason', () => {
       id: 1,
       joint: 'S1',
       pstoRequired: null,
-      pstoBoq: 'Акт-1',
-      pstoKs3: 'КС-3-1',
+      workClosureSummary: 'Акт-1',
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()

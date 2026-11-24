@@ -240,7 +240,7 @@ describe('LNK control stages', () => {
     })
 
     expect(access.status).toBe('blocked')
-    expect(access.reason).toContain('Основной этап НК для этого стыка не требуется')
+    expect(access.reason).toContain('НК для этого стыка не требуется')
     expect(access.debt).toBeNull()
   })
 
@@ -303,7 +303,7 @@ describe('LNK control stages', () => {
     }
 
     expect(getPrimaryPstoStartBlockReason(rejected)).toContain('ПСТО и ТВМТ для этого стыка не требуются')
-    expect(getPrimaryLnkStageBlockReason(rejected, 'ВИК')).toContain('Основной этап НК для этого стыка не требуется')
+    expect(getPrimaryLnkStageBlockReason(rejected, 'ВИК')).toContain('НК для этого стыка не требуется')
   })
 
   it('distinguishes a missing pre-TO request from an existing PSTO request', () => {

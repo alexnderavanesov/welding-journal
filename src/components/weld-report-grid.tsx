@@ -24,7 +24,14 @@ import { type IRowNode, type ColDef, type ColGroupDef, type GridApi, type CellPo
 import { AgGridProvider, AgGridReact, type CustomCellEditorProps } from 'ag-grid-react'
 import { useJournalInlineEdit } from '@/lib/use-journal-inline-edit'
 import { JOURNAL_INLINE_FIELDS } from '@/lib/journal-inline-edit'
-import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, Copy } from 'lucide-react'
+import { LargeDialogShell } from './large-dialog-shell'
+import { WorkClosureEditor, type ClosureMode } from './work-closure-editor'
+import { WorkClosureSummary } from './work-closure-summary'
+import { WorkClosureGridCell } from './work-closure-grid-cells'
+import { closureDimension, type ClosureDimension } from '@/lib/work-closure-columns'
+import { withClosureColumnFilters, type WorkClosureFilter } from '@/lib/work-closures'
+import { Button } from './ui/button'
+import { ClipboardList, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, Copy } from 'lucide-react'
 import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import { ContextActionMenu } from './context-action-menu'
 import { JournalGridToolbar } from './welding-journal-grid-toolbar'
@@ -38,7 +45,7 @@ import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { JOURNAL_SERVER_FILTER } from './welding-journal-grid-filter'
 import { useWeldReportViewState } from '@/lib/use-weld-report-view-state'
 import { useWeldTableEditability } from '@/lib/use-weld-table-editability'
-import { getAvailableWeldTableSections } from '@/lib/weld-table-sections'
+import { getAvailableWeldTableSections, getWeldTableViewSections } from '@/lib/weld-table-sections'
 import { FIELD_BY_KEY, isVirtualWeldField, type WeldFieldKey } from '@/lib/weld-fields'
 import { getCellKey, getDuplicateKey, getDuplicateKeys } from '@/lib/weld-table-utils'
 import { useJournalGridFocus } from '@/lib/use-journal-grid-focus'
@@ -82,6 +89,9 @@ function ReportGrid(props: WeldReportGridProps) {
   const { identity, can } = useAccess()
   const { report } = props
   const profile = WELD_GRID_PROFILES[report]
+  const [closureDialog, setClosureDialog] = useState<{ rows: WeldRow[]; mode: ClosureMode } | null>(null)
+  const [closureSummaryFilter, setClosureSummaryFilter] = useState<{ dimension: ClosureDimension; filter: WorkClosureFilter } | null>(null)
+  const canViewClosures = report === 'weldingJournal' && can('closures.view') && can('welding.view')
   const { rows, columnFilters, rowsReady = true, selectedRowIds = EMPTY_IDS, sort = null } = props
   const [api, setApi] = useState<GridApi<WeldRow> | null>(null)
   const { reportExportFieldsRef } = props
@@ -154,7 +164,7 @@ function ReportGrid(props: WeldReportGridProps) {
   const alwaysVisible = WELD_GRID_REQUIRED_FIELDS
   const extraSectionSignature = JSON.stringify([...new Set((props.extraColumns ?? []).filter(column => column.collapsible).map(column => column.section))])
   const extraSections = useMemo<string[]>(() => JSON.parse(extraSectionSignature), [extraSectionSignature])
-  const viewSections = useMemo(() => [...sections, ...extraSections.map(section => ({ section, fields: [] }))], [sections, extraSections])
+  const viewSections = useMemo(() => getWeldTableViewSections(sections, extraSections), [sections, extraSections])
   const reportView = useWeldReportViewState({
     storageKey: report, sections: viewSections, alwaysVisibleFieldKeys: alwaysVisible,
     defaultCollapsedSections: props.defaultCollapsedSections ?? EMPTY_SECTIONS,
@@ -187,11 +197,26 @@ function ReportGrid(props: WeldReportGridProps) {
     rowsReady, queryIdentity: props.queryIdentity ?? '', selectedIds: selectedRowIds, rows: contextRows,
     customQueryIdentity: JSON.stringify([props.queryIdentity, groupings]),
     loadRowsByIds: props.loadContextMenuRows, onError: props.onContextMenuError,
-    getItems: (row, selected, fieldKey) => [...(props.getContextMenuItems?.(row, selected, fieldKey) ?? []),
-      { type: 'separator', id: 'grid-copy-separator' }, {
+    getItems: (row, selected, fieldKey) => {
+      const items = [...(props.getContextMenuItems?.(row, selected, fieldKey) ?? [])]
+      if (canViewClosures && (selected.length === 1 || can('closures.edit'))) {
+        const editIndex = items.findIndex(item => item.id === 'edit-row')
+        items.splice(editIndex + 1, 0, {
+          id: 'work-closures', label: 'Закрытие работ', icon: ClipboardList,
+          onSelect: selected.length === 1 ? () => setClosureDialog({ rows: selected, mode: 'card' }) : NOOP,
+          children: selected.length === 1 ? undefined : [
+            { id: 'closure-rates', label: 'Назначить расценки', onSelect: () => setClosureDialog({ rows: selected, mode: 'rateCode' }) },
+            { id: 'closure-acts', label: 'Указать КС3', onSelect: () => setClosureDialog({ rows: selected, mode: 'actNumber' }) },
+          ],
+        })
+      }
+      const dangerSection = items.findIndex(item => item.id === 'danger-actions-separator')
+      items.splice(dangerSection < 0 ? items.length : dangerSection, 0, { type: 'separator', id: 'grid-copy-separator' }, {
         id: 'grid-copy', label: 'Копировать выделенные ячейки', icon: Copy,
         onSelect: copyRange,
-      }],
+      })
+      return items
+    },
   })
   const duplicates = useMemo(() => props.duplicateKeyOverrides ?? getDuplicateKeys(props.duplicateRows ?? rows), [props.duplicateKeyOverrides, props.duplicateRows, rows])
   const openMenu = useStableEventCallback((source: WeldRow, position: { x: number; y: number; anchorElement?: Element }, fieldKey?: WeldFieldKey) => {
@@ -276,6 +301,8 @@ function ReportGrid(props: WeldReportGridProps) {
       reportView.deleteSavedView(id)
     },
   }
+  const appearance = settings.appearance
+  const rowHeight = appearance.density === 'compact' ? (appearance.wrapText ? 42 : 34) : appearance.density === 'spacious' ? (appearance.wrapText ? 68 : 58) : (appearance.wrapText ? 54 : 46)
   const runtime = useRef({ props, getActionRow, canEditCell, canEditField, groupAnchor, inlineEdit })
   runtime.current = { props, getActionRow, canEditCell, canEditField, groupAnchor, inlineEdit }
   const previousGroupAnchor = useRef(groupAnchor)
@@ -321,9 +348,14 @@ function ReportGrid(props: WeldReportGridProps) {
         } : {}),
         valueGetter: ({ data, node }) => node?.group ? data && journalGroup(data)?.key || '' : data ? (runtime.current.props.getDisplayValue ? runtime.current.props.getDisplayValue(data, field.key) : data[field.key]) : '',
         valueFormatter: ({ data, value }) => data ? journalClipboardValue(data, field.key, value) : String(value ?? ''),
-        cellRendererSelector: ({ node }) => ({ component: node.group
+        ...(closureDimension(field.key) ? {
+          cellStyle: { paddingLeft: '8px', paddingRight: '8px' },
+          cellRenderer: ({ data, node }: { data?: WeldRow; node: IRowNode<WeldRow> }) => !data || node.group ? null :
+            <WorkClosureGridCell dimension={closureDimension(field.key)!} row={data}
+              onOpen={() => setClosureDialog({ rows: [data], mode: 'card' })} />,
+        } : { cellRendererSelector: ({ node }) => ({ component: node.group
           ? field.key !== runtime.current.groupAnchor ? JournalServerGroupValue : JournalGroupCell
-          : PLAIN_FIELDS.has(field.key) || report === 'weldingJournal' && JOURNAL_INLINE_FIELDS.has(field.key) ? JournalPlainCell : JournalCell }),
+          : PLAIN_FIELDS.has(field.key) || report === 'weldingJournal' && JOURNAL_INLINE_FIELDS.has(field.key) ? JournalPlainCell : JournalCell }) }),
         cellClass: REPORT_LEFT_ALIGNED_FIELDS.has(field.key) ? 'journal-cell-text-left' : undefined,
         cellClassRules: { 'journal-cell-highlight': ({ data }) => Boolean(data && runtime.current.props.highlightedCellKeys?.has(getCellKey(data.id, field.key))) },
       })) })
@@ -353,8 +385,6 @@ function ReportGrid(props: WeldReportGridProps) {
     loadingCellRenderer: JournalLoadingCell,
     suppressKeyboardEvent: ({ event, editing }) => !editing && event.key === 'Escape',
   }), [])
-  const appearance = settings.appearance
-  const rowHeight = appearance.density === 'compact' ? (appearance.wrapText ? 42 : 34) : appearance.density === 'spacious' ? (appearance.wrapText ? 68 : 58) : (appearance.wrapText ? 54 : 46)
   useJournalScrollPlaceholder(frame, api, true, rowHeight, appearance.theme, appearance.stripes)
   useEffect(() => { if (api && !api.isDestroyed()) api.resetRowHeights() }, [api, rowHeight])
   const rowClassRules = useMemo(() => ({
@@ -426,7 +456,8 @@ function ReportGrid(props: WeldReportGridProps) {
     return false
   }
   const context = useJournalCellContext(props, getActionRow, canEditCell, openMenu)
-  const filterContext = useMemo(() => ({ report, columnFilters, onColumnFiltersChange: props.onColumnFiltersChange, deferModelChanges: true }), [report, columnFilters, props.onColumnFiltersChange])
+  const filterContext = useMemo(() => ({ report, columnFilters, onColumnFiltersChange: props.onColumnFiltersChange,
+    deferModelChanges: true, onClosureSummary: canViewClosures ? (dimension: ClosureDimension, filter: WorkClosureFilter) => setClosureSummaryFilter({ dimension, filter }) : undefined }), [report, columnFilters, props.onColumnFiltersChange, canViewClosures])
   const progressServerSort = (target: Element) => {
     if (target.closest('button, input, .ag-header-cell-filter-button, .ag-header-cell-menu-button, .ag-header-cell-resize')) return false
     const id = target.closest('.ag-header-cell')?.getAttribute('col-id')
@@ -442,8 +473,22 @@ function ReportGrid(props: WeldReportGridProps) {
   const extrasContext = useMemo(() => ({ table: { rowsReady, extraColumns: props.extraColumns, rowActions: props.rowActions }, getActionRow }), [rowsReady, props.extraColumns, props.rowActions, getActionRow])
   return <JournalServerSelectionContext.Provider value={serverGrid.selectionContext}><JournalGridContext.Provider value={context}><JournalFilterContext.Provider value={filterContext}><JournalExtrasContext.Provider value={extrasContext}><JournalGroupAnchor.Provider value={groupAnchor}>
     <section data-weld-report-grid={report} data-welding-journal-grid={report === 'weldingJournal' ? '' : undefined} data-psto-grid={report === 'heatTreatment' ? '' : undefined} data-lnk-grid={report === 'lnk' ? '' : undefined} className="min-w-0 w-full journal-server-section" onContextMenuCapture={event => event.preventDefault()}>
+      {closureSummaryFilter && canViewClosures && <WorkClosureSummary {...closureSummaryFilter} columnFilters={columnFilters}
+        onClose={() => setClosureSummaryFilter(null)} onSelect={filter => {
+          props.onColumnFiltersChange(withClosureColumnFilters(columnFilters, filter))
+          setClosureSummaryFilter(null)
+        }} />}
+      {closureDialog && canViewClosures && (closureDialog.mode === 'card' || can('closures.edit')) ? <LargeDialogShell ariaLabel="Закрытие работ" onEscape={() => setClosureDialog(null)} maxWidthClassName="max-w-3xl">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div><h2 className="font-semibold text-slate-900">{closureDialog.mode === 'card' ? 'Карточка стыка · Закрытие работ' : closureDialog.mode === 'rateCode' ? 'Назначить расценки' : 'Указать КС3'}</h2>
+          <p className="text-sm text-slate-500">{closureDialog.mode === 'card' ? [closureDialog.rows[0].line, closureDialog.rows[0].joint].filter(Boolean).join(' · ') : 'Выбрано стыков: ' + closureDialog.rows.length}</p></div>
+          <Button variant="ghost" onClick={() => setClosureDialog(null)}>Закрыть</Button>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5"><WorkClosureEditor rows={closureDialog.rows} mode={closureDialog.mode} editable={can('closures.edit')}
+          onDone={closureDialog.mode === 'card' ? undefined : () => setClosureDialog(null)} /></div>
+      </LargeDialogShell> : null}
       <div className="journal-server-task-panels">{props.reportTaskPanels}</div>
-      <JournalGridToolbar settingsLabel={profile.settingsLabel} summary={props.renderSummary?.(<JournalGroupingControls scope="journal" groups={groupings} onChange={ids => api?.setRowGroupColumns(ids)} />)} sections={sections} extraSections={extraSections} alwaysVisible={alwaysVisible} view={view}
+      <JournalGridToolbar settingsLabel={profile.settingsLabel} summary={props.renderSummary?.(<JournalGroupingControls scope="journal" groups={groupings} onChange={ids => api?.setRowGroupColumns(ids)} />)} sections={viewSections} alwaysVisible={alwaysVisible} view={view}
         openColumnsRequest={openColumnsRequest} appearance={appearance}
         onAppearanceChange={appearance => updateSettings({ ...settingsRef.current, appearance })}
         onResetLayout={resetLayout}

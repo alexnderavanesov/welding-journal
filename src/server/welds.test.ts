@@ -415,13 +415,11 @@ describe('weld server pagination helpers', () => {
     expect(Object.keys(getReportContextSelect('lnk'))).toEqual(expect.arrayContaining([
       'pstoResult',
       'rkExposureConfirmedDiameter',
-      'rkBoq',
     ]))
     expect(getReportContextSelect('lnk')).not.toHaveProperty('materialCertificateNumber1')
     expect(getReportContextSelect('lnk')).not.toHaveProperty('testTypes')
 
     expect(Object.keys(getReportContextSelect('heatTreatment'))).toEqual(expect.arrayContaining([
-      'pstoBoq',
       'rkResult',
       'rkConclusion',
     ]))

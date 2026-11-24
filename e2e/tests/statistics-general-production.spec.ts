@@ -1,3 +1,4 @@
+import { selectStatisticsProjects } from '../statistics-filters'
 import { expect, test } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
@@ -15,7 +16,7 @@ test('general statistics: one physical connection, repair month, rejection and c
     })
     await page.goto('/statistics')
     await page.getByRole('button', { name: 'Настройки отчета', exact: true }).click()
-    await page.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(project.toLowerCase())
+    await selectStatisticsProjects(page, project)
     await page.getByRole('button', { name: 'WDI', exact: true }).click()
     await page.getByRole('combobox', { name: 'Период отчета', exact: true }).selectOption('custom')
     await page.getByLabel('Период с', { exact: true }).fill('2026-10-01')

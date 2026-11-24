@@ -45,10 +45,10 @@ export function getOfficialStampCompatibilitySaveBlockReason(
   options: OfficialStampCompatibilityOptions = {},
 ) {
   const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords, options)[0]
-  return issue ? formatIssueForSave(issue) : null
+  return issue ? formatOfficialStampIssueForSave(issue) : null
 }
 
-function formatIssueForSave(issue: OfficialStampCompatibilityIssue) {
+export function formatOfficialStampIssueForSave(issue: OfficialStampCompatibilityIssue) {
   const message = formatOfficialStampCompatibilityIssue(issue)
   const setting = getOfficialStampIssueSaveCheckSettingId(issue.reason)
   return setting ? formatSaveCheckBlockReason(setting, message) : message
@@ -93,7 +93,7 @@ export function validateOfficialStampCompatibilityForImport(
 
     const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
     throw new Error(
-      `Импорт остановлен: ${rowLabel}. ${[...new Set(issues.map(formatIssueForSave))].join(' ')}`,
+      `Импорт остановлен: ${rowLabel}. ${[...new Set(issues.map(formatOfficialStampIssueForSave))].join(' ')}`,
     )
   })
 }

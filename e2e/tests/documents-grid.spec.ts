@@ -532,6 +532,28 @@ test('document grid browser: registry return restores a distant position, explic
   await expect(grid.locator(`.ag-row[row-id="document:${firstId}"]`).getByRole('checkbox')).toBeChecked()
 })
 
+test('returning to a document in the first block reads that block only once', async ({ page }) => {
+  let reads = 0
+  page.on('request', request => {
+    if (!rpcName(request.url()).startsWith('listRemoteGeneratedDocumentHistoryGrid')) return
+    const { data } = deserializeRpcPayload(request.postData()!) as { data: DocumentHistoryGridRequest }
+    if (data.startRow === 0 && !data.groupKeys.length && !data.selectionOnly && !data.countRoutes) reads++
+  })
+  const first = page.locator('[data-document-history-grid] .ag-row[row-id^="document:"]').first()
+  let rowId: string | null = null
+  for (let visit = 0; visit < 3; visit++) {
+    const before = reads
+    await page.goto('/documents')
+    await expect(first).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    if (rowId === null) rowId = await first.getAttribute('row-id')
+    await expect(first).toHaveAttribute('row-id', rowId!)
+    expect(reads - before).toBe(1)
+    await page.goto('/account?tab=guide')
+    await expect(page.getByRole('heading', { name: 'Как работать в системе' })).toBeVisible()
+  }
+})
+
 for (const lateChild of [false, true]) test(lateChild ? `${distantRestoreTitle} (late child block)` : distantRestoreTitle, async ({ page }, info) => {
   let delayed = false
   if (lateChild) {

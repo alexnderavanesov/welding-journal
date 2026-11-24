@@ -6,6 +6,7 @@ import { FIELD_BY_KEY, DATE_TIME_WELD_FIELD_KEYS, type WeldFieldKey } from '@/li
 import { formatDate, formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 import { gridClipboardNumber } from './grid-clipboard-number'
+import { closureDimension, closureListText } from './work-closure-columns'
 
 export type JournalAppearance = {
   theme: 'quartz' | 'alpine' | 'balham'
@@ -57,6 +58,10 @@ export function readJournalGridStorage(storageKey = JOURNAL_GRID_STORAGE_KEY): J
     if (!value || typeof value !== 'object') return fallback
     const layout = (entry: Partial<JournalLayout>): JournalLayout => {
       const columns = journalColumnLayout(Array.isArray(entry?.columns) ? entry.columns.filter(Boolean) : [])
+      const closure = columns.findIndex(column => column.colId === 'workClosureSummary')
+      if (closure >= 0 && !columns.some(column => column.colId === 'workClosureRateCode' || column.colId === 'workClosureActNumber')) {
+        columns.splice(closure + 1, 0, ...['workClosureRateCode', 'workClosureActNumber'].map(colId => ({ colId, pinned: columns[closure].pinned })))
+      }
       // Old saved layouts know nothing about the new read-only flag. Insert it
       // beside PSTO once; preserve the operator's order after it has been saved.
       const psto = columns.findIndex(column => column.colId === 'pstoRequired')
@@ -77,6 +82,7 @@ export function writeJournalGridStorage(value: JournalGridStorage, storageKey = 
 }
 
 export function journalClipboardValue(row: WeldRow, fieldKey: WeldFieldKey, value: unknown): string {
+  if (typeof value === 'string' && value.includes('\n') && closureDimension(fieldKey)) return closureListText(value.split('\n'))
   if (fieldKey === 'preHeatTreatmentRequired') return getPreHeatTreatmentColumnText(row)
   const field = FIELD_BY_KEY.get(fieldKey)
   if (fieldKey === 'finalStatus') return formatFinalStatusDisplay(row, value)

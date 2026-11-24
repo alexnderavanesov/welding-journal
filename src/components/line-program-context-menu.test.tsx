@@ -82,7 +82,7 @@ describe('joint context menu editing boundaries', () => {
     const trigger = screen.getByRole('button', { name: 'Стык F1' })
     trigger.focus(); fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true })
     fireEvent.click(screen.getByRole('button', { name: 'Заявки и заключения' }))
-    fireEvent.click(screen.getByRole('button', { name: /Основной этап · ВИК · Заключение: ВИК-1/ }))
+    fireEvent.click(screen.getByRole('button', { name: /НК · ВИК · Заключение: ВИК-1/ }))
     expect(screen.getByRole('button', { name: 'Закрыть предпросмотр' })).toHaveFocus()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(trigger).toHaveFocus()

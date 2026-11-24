@@ -71,6 +71,24 @@ html:has([data-journal-workspace]) { overscroll-behavior-y: auto; }
 .journal-cell-tooltip { position: fixed; z-index: 10000; width: 320px; max-width: calc(100vw - 24px); padding: 12px 14px; border: 1px solid #dbe5ef; border-radius: 10px; background: #fff; box-shadow: 0 8px 28px #0f172a1f; color: #475569; font-size: 12px; line-height: 1.5; pointer-events: none; }
 .journal-cell-tooltip strong { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; color: #0f172a; }
 .journal-cell-tooltip p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+/* WebKit can show clipped text as a native tooltip even without a title.
+   Keep the ellipsis on the label and let its control receive the hover. */
+.journal-grid-frame [data-journal-tip-title] span:is(.truncate, .line-clamp-2, .ag-group-value),
+.journal-grid-frame .journal-group-summary[data-journal-tip-title] > span { pointer-events: none; }
+.journal-cell-tooltip[data-position-list] {
+  display: flex; flex-direction: column; width: max-content; min-width: min(176px, calc(100vw - 24px));
+  max-width: min(340px, calc(100vw - 24px)); padding: 0; overflow: hidden; pointer-events: auto;
+}
+.journal-cell-tooltip[data-position-list] strong {
+  padding: 8px 12px; margin: 0; background: #f5f9fc; border-bottom: 1px solid #e2eaf1; color: #334155;
+}
+.journal-cell-tooltip[data-position-list] ol { list-style: none; padding: 4px 12px; margin: 0; overflow-y: auto; overscroll-behavior: contain; }
+.journal-cell-tooltip[data-position-list] li { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; overflow-wrap: anywhere; }
+.journal-cell-tooltip[data-position-list] li + li { border-top: 1px solid #f1f5f9; }
+.journal-tip-number {
+  flex: none; min-width: 20px; padding: 0 4px; border-radius: 5px; background: #eef5fb;
+  color: #426784; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 18px; text-align: center;
+}
 /* Animate only surviving rows during a group toggle. Do not enable AG's row
    removal animation: it retains obsolete focusable rows after query changes. */
 .journal-server-section .journal-group-motion .ag-row { transition: transform 120ms ease-out; }

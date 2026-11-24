@@ -11,7 +11,7 @@ type Database = ReturnType<typeof requireDb>
 type Row = Record<string, any>
 type Executor = any // The wrapper preserves each public Drizzle builder's original type.
 const LOCK = 84192703
-const auditedTables: PgTable[] = [schema.weldJoints, schema.preHeatTreatmentControls, schema.pstoRepeatCycles,
+const auditedTables: PgTable[] = [schema.weldJoints, schema.workClosures, schema.preHeatTreatmentControls, schema.pstoRepeatCycles,
   schema.duplicateControls, schema.linePrograms, schema.pstoChainExceptions, schema.welderStamps,
   schema.welderStampSuspensions, schema.specialists, schema.technologyCards, schema.technologyCardNames,
   schema.generatedDocuments, schema.generatedDocumentWeldJoints, schema.documentTemplates,
@@ -94,7 +94,7 @@ function wrapMutation(tx: Executor, state: State, table: PgTable, kind: string, 
     }
     if (kind === 'delete' && table === schema.weldJoints && before.length) {
       const ids = before.map(row => row.id)
-      for (const child of [schema.preHeatTreatmentControls, schema.pstoRepeatCycles, schema.duplicateControls, schema.generatedDocumentWeldJoints]) {
+      for (const child of [schema.workClosures, schema.preHeatTreatmentControls, schema.pstoRepeatCycles, schema.duplicateControls, schema.generatedDocumentWeldJoints]) {
         const rows = await readBefore(tx, child, sql`${child.weldJointId} = any(${sql.param(ids)}::integer[])`)
         for (const row of rows) addChange(state, child, row, undefined)
       }
@@ -170,6 +170,7 @@ export function businessFieldChanges(before: Row | undefined, after: Row | undef
 function areaForTable(table: PgTable, row: Row, fallback: string) {
   if ([schema.preHeatTreatmentControls, schema.duplicateControls].includes(table as any)) return 'lnk'
   if (table === schema.pstoRepeatCycles || table === schema.pstoChainExceptions) return 'psto'
+  if (table === schema.workClosures) return 'closures'
   if (table === schema.weldJoints) return 'welding'
   if ([schema.generatedDocuments, schema.generatedDocumentWeldJoints].includes(table as any)) return 'documents'
   if (table === schema.documentTemplates) return 'templates'
@@ -208,7 +209,7 @@ async function flush(tx: Executor, state: State) {
     details.push({ operationId: state.context.operationId, entity: getTableName(table), entityId: identity(table, row),
       jointId: table === schema.weldJoints ? row.id : row.weldJointId ?? null,
       label: table === schema.weldJoints ? [row.projectTitle, row.subtitleCode, row.line, row.joint].filter(Boolean).join(' · ') || identity(table, row)
-        : String(row.title ?? row.name ?? row.key ?? identity(table, row)),
+        : table === schema.workClosures ? `Стык №${row.weldJointId} · ${row.workType}` : String(row.title ?? row.name ?? row.key ?? identity(table, row)),
       area: areaForTable(table, row, state.context.area), kind: !before ? 'create' : !after ? 'delete' : 'update', changes })
     if (details.length === 500) await writeBatch()
   }

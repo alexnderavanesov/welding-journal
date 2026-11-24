@@ -1,0 +1,1 @@
+ALTER TABLE "line_scheme_revisions" ADD COLUMN "page_rotations" jsonb DEFAULT '{}'::jsonb NOT NULL;

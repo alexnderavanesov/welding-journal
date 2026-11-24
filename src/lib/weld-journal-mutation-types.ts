@@ -8,6 +8,7 @@ export type StampSelectOptionLike = {
 
 export type UseWeldJournalMutationsOptions = {
   rows: WeldRow[]
+  checkStampsOnServer?: boolean
   editingRecord?: WeldRow
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]

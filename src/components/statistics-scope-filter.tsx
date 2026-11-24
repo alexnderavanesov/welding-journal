@@ -5,11 +5,19 @@ import { ChevronDown, Search } from 'lucide-react'
 import { Input } from './ui/input'
 import { FilterResizeHandles } from './filter-resize-handles'
 
-export function StatisticsSubtitleFilter({ options, value, onChange }: {
+const labels = {
+  project: { title: 'Проект', all: 'Все проекты', count: 'Выбрано проектов', search: 'Найти проект', empty: 'Проекты не найдены', reset: 'Сбросить проекты', unrestricted: 'Без ограничения по проекту' },
+  subtitle: { title: 'Шифр', all: 'Все шифры', count: 'Выбрано шифров', search: 'Найти шифр', empty: 'Шифры не найдены', reset: 'Сбросить шифры', unrestricted: 'Без ограничения по шифру' },
+}
+
+export function StatisticsScopeFilter({ field, options, value, onChange, loading }: {
+  field: keyof typeof labels
+  loading: boolean
   options: { value: string; label: string }[]
   value: string[]
   onChange: (value: string[]) => void
 }) {
+  const label = labels[field]
   const id = useId()
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -60,14 +68,14 @@ export function StatisticsSubtitleFilter({ options, value, onChange }: {
       if (frame !== null) cancelAnimationFrame(frame)
     }
   }, [open, updatePlacement])
-  const summary = value.length === 0 ? 'Все шифры' : value.length === 1
+  const summary = value.length === 0 ? label.all : value.length === 1
     ? options.find(option => option.value === value[0])?.label ?? value[0]
-    : `Выбрано шифров: ${value.length}`
+    : `${label.count}: ${value.length}`
 
   return <div ref={root} className="relative min-w-0" onBlur={event => {
     if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false)
   }}>
-    <span id={`${id}-label`} className="mb-1 block text-xs font-medium text-slate-600">Шифр/подтитул</span>
+    <span id={`${id}-label`} className="mb-1 block text-xs font-medium text-slate-600">{label.title}</span>
     <button ref={trigger} type="button" aria-labelledby={`${id}-label ${id}-value`} aria-haspopup="dialog" aria-expanded={open} aria-controls={`${id}-options`}
       className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 text-left text-sm text-slate-700 shadow-sm hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
       onClick={() => {
@@ -77,17 +85,17 @@ export function StatisticsSubtitleFilter({ options, value, onChange }: {
       <span id={`${id}-value`} className="truncate" {...overflowTitle(summary)}>{summary}</span><ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-400 ${open ? 'rotate-180' : ''}`} />
     </button>
     {open ? <div ref={panel} id={`${id}-options`} role="dialog" aria-labelledby={`${id}-label`} style={{ maxHeight: placement.maxHeight }} className={`absolute left-0 right-0 z-40 flex flex-col rounded-lg border border-slate-200 bg-white shadow-lg ${placement.above ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
-      <div className="shrink-0 border-b border-slate-100 p-2"><label className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input autoFocus aria-label="Найти шифр" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Найти шифр…" className="h-9 pl-9" /></label></div>
+      <div className="shrink-0 border-b border-slate-100 p-2"><label className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input autoFocus aria-label={label.search} type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={`${label.search}…`} className="h-9 pl-9" /></label></div>
       <div data-filter-scroll className="min-h-0 max-h-60 overflow-y-auto overscroll-contain p-1">
         {filtered.map(option => <label key={option.value} className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-sky-50 focus-within:bg-sky-50">
-          <Checkbox checked={selected.has(option.value)} onChange={event => onChange(event.target.checked ? [...value, option.value] : value.filter(item => item !== option.value))} className="mt-0.5 shrink-0" />
+          <Checkbox checked={selected.has(option.value)} onChange={event => onChange(event.target.checked ? [...value, option.value].sort() : value.filter(item => item !== option.value))} className="mt-0.5 shrink-0" />
           <span className="min-w-0 break-words">{option.label}</span>
         </label>)}
-        {!filtered.length ? <p className="px-3 py-4 text-sm text-slate-400">Шифры не найдены</p> : null}
+        {!filtered.length ? <p className="px-3 py-4 text-sm text-slate-400">{loading && !options.length ? 'Загрузка…' : label.empty}</p> : null}
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 px-3 py-2 text-xs">
-        <span className="text-slate-500">{value.length ? `Выбрано: ${value.length}` : 'Без ограничения по шифру'}</span>
-        <button type="button" disabled={!value.length} onClick={() => onChange([])} className="rounded text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:text-slate-300">Сбросить шифры</button>
+        <span className="text-slate-500">{value.length ? `Выбрано: ${value.length}` : label.unrestricted}</span>
+        <button type="button" disabled={!value.length} onClick={() => onChange([])} className="rounded text-sky-700 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:text-slate-300">{label.reset}</button>
       </div>
       <FilterResizeHandles panel={panel} />
     </div> : null}

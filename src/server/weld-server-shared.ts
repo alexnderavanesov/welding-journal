@@ -1,5 +1,8 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
+import { closureDimension, closureFieldKeys } from '@/lib/work-closure-columns'
+import { readClosureColumnFilters } from '@/lib/work-closures'
+import { workClosureWhere } from './work-closure-query'
 import { requireDb } from '@/db'
 import { buildNormalizedLnkResultText } from './lnk-system-order-sql'
 import { isLayeredControlCompositeFieldKey, LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
@@ -189,10 +192,12 @@ export function addBaseFilterClauses(clauses: SQL[], filters: WeldFilters) {
 }
 
 export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, string>) {
+  if (closureFieldKeys.some(key => columnFilters[key]?.trim())) clauses.push(workClosureWhere(readClosureColumnFilters(columnFilters)))
   for (const [key, value] of Object.entries(columnFilters)) {
     const query = value.trim()
     if (!query) continue
 
+    if (closureDimension(key)) continue
     if (key === ROW_ID_LIST_FILTER_KEY) {
       const filter = parseRowIdListFilter(query)
       if (filter) clauses.push(buildRowIdListWhere(filter))

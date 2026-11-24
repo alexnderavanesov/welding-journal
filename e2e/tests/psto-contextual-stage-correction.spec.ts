@@ -247,8 +247,8 @@ test('назначение ПСТО не включает снятую отме�
   const before = await snapshot(fixture.moved.id)
   const assignment = await openAssignment(page)
   for (const joint of ['F881', 'F882']) {
-    await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
-    await expect(choices(assignment, joint).getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
+    await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
+    await expect(choices(assignment, joint).getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true })).toBeDisabled()
   }
   await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
@@ -264,7 +264,7 @@ test('отмена ПСТО: явный перенос одного стыка �
   const fixture = await seed('beforeHeatTreatment')
   const cancellation = await openCancellation(page)
   await expect(choices(cancellation, 'F881').getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
-  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной' }).check()
+  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК' }).check()
   await cancellation.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
   await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
   await expectPackage(fixture.moved.id, 'primary')
@@ -300,8 +300,8 @@ test('исключение ПСТО: включение, снятие и пов�
     if (await details.count()) await details.click()
   }
   await add()
-  await expect(choices(program, 'F881').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
-  await choices(program, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
+  await expect(choices(program, 'F881').getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
+  await choices(program, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true }).check()
   await save()
   await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
   await expectSharedDocument(page, fixture, 'beforeHeatTreatment')
@@ -318,7 +318,7 @@ test('исключение ПСТО: включение, снятие и пов�
   await save()
   await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
   await remove()
-  await choices(program, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true }).check()
+  await choices(program, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true }).check()
   await save(true)
   await expectPackage(fixture.moved.id, 'primary')
   await expectPackage(fixture.kept.id, 'primary')
@@ -332,7 +332,7 @@ test('возобновление после отмены: явный перен�
   const fixture = await seed('primary')
   const assignment = await openAssignment(page)
   for (const joint of ['F881', 'F882']) {
-    await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+    await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   }
   await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
@@ -369,14 +369,14 @@ test('возобновление после отмены: явный перен�
   await program.getByRole('button', { name: 'Возобновить', exact: true }).click()
   const reactivation = dialog(page, 'Возобновление ПСТО')
   for (const joint of ['F881', 'F882']) {
-    await expect(choices(reactivation, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+    await expect(choices(reactivation, joint).getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   }
-  const transferLabel = 'Весь основной НК → до ТО'
+  const transferLabel = 'Весь НК → НК до ТО'
   await expect(choices(reactivation, 'F881').getByRole('radio', { name: transferLabel, exact: true })).toBeEnabled()
   await expect(choices(reactivation, 'F882').getByRole('radio', { name: transferLabel, exact: true })).toBeDisabled()
   await expect(choices(reactivation, 'F882')).toContainText('заявка или история ПСТО/ТВМТ')
   await choices(reactivation, 'F881').getByRole('radio', { name: transferLabel, exact: true }).check()
-  await expect(choices(reactivation, 'F882').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await expect(choices(reactivation, 'F882').getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   await reactivation.getByRole('button', { name: 'Возобновить ПСТО', exact: true }).click()
   await expect(program).toBeVisible()
   await page.reload()
@@ -401,8 +401,8 @@ test('возобновление после отмены: явный перен�
 test('после переноса: переход из документа и исправление названия до ТО сохраняют исходный этап соседа и специалистов', async ({ page }) => {
   const fixture = await seed('primary')
   const assignment = await openAssignment(page)
-  await choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
-  await expect(choices(assignment, 'F882').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await choices(assignment, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true }).check()
+  await expect(choices(assignment, 'F882').getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
   await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
@@ -418,7 +418,7 @@ test('после переноса: переход из документа и и�
   await expect(page.locator(`.ag-row[row-id="${fixture.kept.id}"]`)).toHaveCount(0)
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
-  await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'НК до ТО', exact: true }).click()
   const manager = dialog(page, 'Все результаты ЛНК до ТО')
   await manager.getByLabel('Вид контроля в реестре').selectOption('ВИК')
   await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill(SOURCE)
@@ -483,7 +483,7 @@ for (const scenario of ['cancel', 'moveWithPsto'] as const) test(`новый с�
   await ensureDispatcherTaskIndexFresh()
   const moveState = scenario === 'moveWithPsto' ? await openMove(page, fixture.moved.id) : null
   const window = moveState?.move ?? await openCancellation(page)
-  const label = scenario === 'cancel' ? 'Весь НК до ТО → основной' : 'Весь основной НК → до ТО'
+  const label = scenario === 'cancel' ? 'Весь НК до ТО → НК' : 'Весь НК → НК до ТО'
   await expect(choices(window, 'F881').getByRole('radio', { name: label })).toBeDisabled()
   await expect(choices(window, 'F881')).toContainText('заявка или история ПСТО/ТВМТ')
   if (scenario === 'cancel') await expect(choices(window, 'F882').getByRole('radio', { name: label })).toBeEnabled()
@@ -508,7 +508,7 @@ test('подтверждение очистки не действует посл
   const fixture = await seed('beforeHeatTreatment')
   const targetId = await addTarget(fixture, false, true)
   const cancellation = await openCancellation(page)
-  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной' }).check()
+  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК' }).check()
   await cancellation.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' }).check()
   const before = await snapshot(fixture.moved.id)
   await withE2eDatabase(db => db.query(`update generated_documents set specialists=jsonb_set(specialists,'{first,certificate}','"ЕЩЁ НОВЕЕ"'),specialists_revision=specialists_revision+1 where id=$1`, [targetId]))
@@ -544,7 +544,7 @@ test('предкоммит: удаление старой позиции цел�
     await index.syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
   })
   const cancellation = await openCancellation(page)
-  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной' }).check()
+  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК' }).check()
   await cancellation.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' }).check()
   const before = await snapshot(fixture.moved.id)
   const targetBefore = await withE2eDatabase(async db => (await db.query('select updated_at,row_count from generated_documents where id=$1', [targetId])).rows[0])
@@ -574,7 +574,7 @@ test('цепочка на назначенную линию: подтвержд�
       from weld_joints where id=$1 returning id`, [fixture.moved.id])).rows[0].id as number
   })
   const { editor, move } = await openMove(page, fixture.moved.id, true)
-  await choices(move, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО' }).check()
+  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО' }).check()
   await move.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' }).check()
   await move.getByRole('button', { name: 'Подтвердить перенос цепочки', exact: true }).click()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -596,8 +596,8 @@ test('перенос на назначенную линию: основной к
   const fixture = await seed('primary')
   await addTarget(fixture, true)
   const { editor, move } = await openMove(page, fixture.moved.id)
-  await expect(choices(move, 'F881').getByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
-  await choices(move, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО' }).check()
+  await expect(choices(move, 'F881').getByRole('radio', { name: 'Оставить НК' })).toBeChecked()
+  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО' }).check()
   await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
@@ -615,7 +615,7 @@ for (const scenario of ['assign', 'moveWithoutPsto', 'cancel', 'moveWithPsto'] a
     const before = await snapshot(fixture.moved.id)
     const editorAndMove = scenario.startsWith('move') ? await openMove(page, fixture.moved.id) : null
     const window = editorAndMove?.move ?? (scenario === 'assign' ? await openAssignment(page) : await openCancellation(page))
-    await choices(window, 'F881').getByRole('radio', { name: toPre ? 'Весь основной НК → до ТО' : 'Весь НК до ТО → основной' }).check()
+    await choices(window, 'F881').getByRole('radio', { name: toPre ? 'Весь НК → НК до ТО' : 'Весь НК до ТО → НК' }).check()
     const submit = window.getByRole('button', { name: scenario === 'assign' ? 'Назначить ПСТО' : scenario === 'cancel' ? 'Отменить ПСТО на линии' : 'Подтвердить перенос', exact: true })
     await expect(window.getByText(/В итоговых заключениях будут очищены обе роли/)).toBeVisible()
     await expect(submit).toBeDisabled()
@@ -719,13 +719,13 @@ for (const scenario of ['assign', 'moveWithoutPsto', 'cancel', 'moveWithPsto'] a
       return { move, window: move?.move ?? (scenario === 'assign' ? await openAssignment(page) : await openCancellation(page)) }
     }
     let opened = await open()
-    const transferLabel = toPre ? 'Весь основной НК → до ТО' : 'Весь НК до ТО → основной'
+    const transferLabel = toPre ? 'Весь НК → НК до ТО' : 'Весь НК до ТО → НК'
     await choices(opened.window, 'F881').getByRole('radio', { name: transferLabel, exact: true }).check()
     // Navigation discards the complete unsaved operation, not just a select.
     await page.goto('/journal')
     expect(await snapshot(fixture.moved.id)).toEqual(before)
     opened = await open()
-    await expect(choices(opened.window, 'F881').getByRole('radio', { name: toPre ? 'Оставить основной НК' : 'Оставить НК до ТО', exact: true })).toBeChecked()
+    await expect(choices(opened.window, 'F881').getByRole('radio', { name: toPre ? 'Оставить НК' : 'Оставить НК до ТО', exact: true })).toBeChecked()
     await choices(opened.window, 'F881').getByRole('radio', { name: transferLabel, exact: true }).check()
     await opened.window.getByRole('button', { name: scenario === 'assign' ? 'Назначить ПСТО' : scenario === 'cancel' ? 'Отменить ПСТО на линии' : 'Подтвердить перенос', exact: true }).click()
     if (opened.move) {
@@ -755,9 +755,9 @@ test(`назначение ПСТО: ${unnamed ? 'старые пустые им
   const fixture = await seed('primary')
   if (unnamed) await clearOptionalNames(fixture.moved.id, 'primary')
   const assignment = await openAssignment(page)
-  for (const joint of ['F881', 'F882']) await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  for (const joint of ['F881', 'F882']) await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   if (unnamed) {
-    await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
+    await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true })).toBeDisabled()
     await expect(choices(assignment, 'F881')).toContainText('наименование заключения')
     await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
     await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
@@ -765,8 +765,8 @@ test(`назначение ПСТО: ${unnamed ? 'старые пустые им
     await expectPackage(fixture.kept.id, 'primary')
     return
   }
-  await choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
-  await expect(choices(assignment, 'F882').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await choices(assignment, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true }).check()
+  await expect(choices(assignment, 'F882').getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   const screenshot = testInfo.outputPath('assignment-contextual-choice.png')
   await assignment.screenshot({ path: screenshot })
   await testInfo.attach('assignment-contextual-choice', { path: screenshot, contentType: 'image/png' })
@@ -785,7 +785,7 @@ test(`перенос на линию без ПСТО: ${unnamed ? 'старые 
   const { editor, move } = await openMove(page, fixture.moved.id)
   await expect(choices(move, 'F881').getByRole('radio', { name: 'Оставить НК до ТО', exact: true })).toBeChecked()
   if (unnamed) {
-    await expect(choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true })).toBeDisabled()
+    await expect(choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true })).toBeDisabled()
     await expect(choices(move, 'F881')).toContainText('наименование заключения')
     await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
     await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -794,7 +794,7 @@ test(`перенос на линию без ПСТО: ${unnamed ? 'старые 
     await expectPackage(fixture.kept.id, 'beforeHeatTreatment')
     return
   }
-  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true }).check()
+  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true }).check()
   const screenshot = testInfo.outputPath('move-contextual-choice.png')
   await move.screenshot({ path: screenshot })
   await testInfo.attach('move-contextual-choice', { path: screenshot, contentType: 'image/png' })
@@ -813,7 +813,7 @@ test('подтверждённый выбор этапа сохраняется 
   const fixture = await seed('beforeHeatTreatment')
   const before = await snapshot(fixture.moved.id)
   const { editor, move } = await openMove(page, fixture.moved.id)
-  const promote = choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true })
+  const promote = choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true })
   await promote.check()
   await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   await expect(move).toBeHidden()
@@ -845,8 +845,8 @@ test('весь комплект без названий: перенос запр
   const before = await snapshot(fixture.moved.id)
   const sibling = await snapshot(fixture.kept.id)
   const assignment = await openAssignment(page)
-  await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
-  await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true })).toBeDisabled()
+  await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
   await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
   const after = await snapshot(fixture.moved.id)
@@ -966,7 +966,7 @@ for (const isChain of [false, true]) test(`KEEP: ${isChain ? 'цепочка' : 
   const { editor, move } = await openMove(page, fixture.moved.id, isChain)
   const group = choices(move, 'F881')
   await expect(group.getByRole('radio', { name: 'Оставить НК до ТО', exact: true })).toBeChecked()
-  await expect(group.getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true })).toBeDisabled()
+  await expect(group.getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true })).toBeDisabled()
   if (isChain) await expect(move.getByText('F881R1', { exact: true })).toBeVisible()
   await move.getByRole('button', { name: isChain ? 'Подтвердить перенос цепочки' : 'Подтвердить перенос', exact: true }).click()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -1008,8 +1008,8 @@ test('хронология блокирует исправление этапа 
   const before = await Promise.all([snapshot(fixture.moved.id), snapshot(fixture.kept.id)])
   for (const joint of ['F881', 'F882']) {
     const group = choices(assignment, joint)
-    await expect(group.getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
-    await expect(group.getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+    await expect(group.getByRole('radio', { name: 'Весь НК → НК до ТО', exact: true })).toBeDisabled()
+    await expect(group.getByRole('radio', { name: 'Оставить НК', exact: true })).toBeChecked()
     await expect(group.getByText(/Перенос недоступен:/)).toBeVisible()
     await expect(group).toContainText(/дат|раньше|позже|ВИК/i)
   }
@@ -1023,7 +1023,7 @@ test('перенос сохраняет историческую формули�
     set result='годен (отменен)',defect_description='Историческое описание без замены'
     where weld_joint_id=$1 and method='ВИК'`, [fixture.moved.id]))
   const { editor, move } = await openMove(page, fixture.moved.id)
-  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true }).check()
+  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true }).check()
   await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
@@ -1040,7 +1040,7 @@ test('одна заявка ПСТО запрещает перенос НК: з�
   await withE2eDatabase(db => db.query("update weld_joints set psto_request='CTX-PSTO-REQUEST',psto_request_date='2026-09-06' where id=$1", [fixture.moved.id]))
   const { editor, move } = await openMove(page, fixture.moved.id)
   const group = choices(move, 'F881')
-  await expect(group.getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true })).toBeDisabled()
+  await expect(group.getByRole('radio', { name: 'Весь НК до ТО → НК', exact: true })).toBeDisabled()
   await expect(group).toContainText(/заявка|история ПСТО/)
   await expect(group.getByRole('radio', { name: 'Оставить НК до ТО', exact: true })).toBeChecked()
   const before = await snapshot(fixture.moved.id)

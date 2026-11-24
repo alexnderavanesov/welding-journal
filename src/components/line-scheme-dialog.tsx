@@ -62,11 +62,13 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   const [updatingDraft, setUpdatingDraft] = useState(false)
   const draftRefreshAbort = useRef<AbortController | null>(null), draftRef = useRef(draft); draftRef.current = draft
   const alive = useRef(true), bundleRef = useRef(bundle); bundleRef.current = bundle
-  const changeCount = draft.size + removed.size + dimensionDraft.size + removedDimensions.size + annotationDraft.size + removedAnnotations.size
+  const [rotationDraft, setRotationDraft] = useState<Record<string, number>>({})
+  const changeCount = Object.keys(rotationDraft).length + draft.size + removed.size + dimensionDraft.size + removedDimensions.size + annotationDraft.size + removedAnnotations.size
   const inputDirty = dimensionInputDirty || annotationInputDirty
   const dirty = changeCount > 0 || inputDirty || !!placingAnnotation, revision = bundle?.revisions.find(item => item.id === revisionId)
   const current = !!revision && revisionId === bundle?.activeRevisionId
-  const editable = current && !bundle?.deleted && lease.owned && can('schemes.edit') && !busy && !retry
+  const canEditDrawing = current && !bundle?.deleted && lease.owned && can('schemes.edit')
+  const editable = canEditDrawing && !busy && !retry
   const search = useDebouncedValue(text, 250)
   const pointKey = ['line-scheme-points', token, revisionId, page] as const
   const pointsQuery = useQuery({ queryKey: pointKey, enabled: !!revisionId,
@@ -207,16 +209,27 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
   }, !!busy)
   function clearSelection() { setPlacingLeaderId(null); if (!annotationInputDirty) { setSelectedAnnotationIds(new Set()); setAnnotationEditor(null); setPlacingAnnotation(null) }; setSelectedJoint(null); setSelectedPoint(null); setFocusPoint(null); setMeasureFrom(null); setNotice(''); setPointMenu(null); setObjectMenu(null) }
   function cancelDimension() { dimensionBuffer.current = null; setDimensionEditor(null); setDimensionInputDirty(false); setMeasuring(false); clearSelection() }
-  function discard() { setAnnotationDraft(new Map()); setRemovedAnnotations(new Set()); cancelAnnotation(); dimensionBuffer.current = null; setDimensionInputDirty(false); setDraft(new Map()); setRemoved(new Set()); setRemovedJoints(new Map()); setDimensionDraft(new Map()); setRemovedDimensions(new Set()); setMeasuring(false); setDimensionEditor(null); clearSelection(); setRetry(null); setError('') }
+  function discard() { setRotationDraft({}); setAnnotationDraft(new Map()); setRemovedAnnotations(new Set()); cancelAnnotation(); dimensionBuffer.current = null; setDimensionInputDirty(false); setDraft(new Map()); setRemoved(new Set()); setRemovedJoints(new Map()); setDimensionDraft(new Map()); setRemovedDimensions(new Set()); setMeasuring(false); setDimensionEditor(null); clearSelection(); setRetry(null); setError('') }
+  function changePageRotation(angle: number) {
+    setRotationDraft(previous => {
+      const next: Record<string, number> = { ...previous }
+      if (angle === (revision?.pageRotations?.[page] ?? 0)) delete next[page]
+      else next[page] = angle
+      return next
+    })
+  }
   function writeRequest() {
     if (!bundle) throw new Error('Схема не открыта.')
     return { bundleId: bundle.id, token, version: bundle.version, operationId: crypto.randomUUID() }
   }
   async function save(closeAfter = false) {
     if (!bundle || !revision || !dirty || !lease.owned || inputDirty || placingAnnotation) return
-    const data = { ...writeRequest(), revisionId: revision.id, revisionVersion: revision.version, changes: { upsert: [...draft.values()].map(item => item.change), remove: [...removed],
+    const pageRotations = { ...revision.pageRotations, ...rotationDraft }
+    for (const sheet of Object.keys(rotationDraft)) if (!pageRotations[sheet]) delete pageRotations[sheet]
+    const data = { ...writeRequest(), revisionId: revision.id, revisionVersion: revision.version, changes: { ...(Object.keys(rotationDraft).length ? { pageRotations } : {}), upsert: [...draft.values()].map(item => item.change), remove: [...removed],
       ...(annotationDraft.size || removedAnnotations.size ? { annotations: { upsert: [...annotationDraft.values()], remove: [...removedAnnotations] } } : {}),
       ...(dimensionDraft.size || removedDimensions.size ? { dimensions: { upsert: [...dimensionDraft.values()], remove: [...removedDimensions] } } : {}) } }
+    const markupChanged = draft.size || removed.size || data.changes.dimensions || data.changes.annotations
     const placementChanged = hasSchemePlacementChanges(data.changes, draft.size
       ? client.getQueriesData<{ points: SchemePoint[] }>({ queryKey: ['line-scheme-points', token, revision.id] }).flatMap(([, cached]) => cached?.points ?? []) : [])
     let attempts = 0
@@ -249,6 +262,10 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
         }
         for (const [key, old] of client.getQueriesData<{ points: SchemePoint[]; dimensions: SchemeDimension[]; annotations: SchemeAnnotation[]; version: number; updatedAt: string }>({ queryKey: ['line-scheme-points', token, revision.id] })) {
           if (!old || !receiptIsCurrent) continue
+          if (!markupChanged) {
+            client.setQueryData(key, { ...old, version: result.revisionVersion })
+            continue
+          }
           const points = new Map(old.points.filter(point => !removed.has(point.id)).map(point => [point.id, point]))
           for (const { point } of draft.values()) {
             const fresh = points.get(point.id)?.joint ?? point.joint
@@ -264,13 +281,13 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
         if (latest) {
           setBundle(latest.bundle); setLease(latest.lease)
           if (!latest.bundle?.revisions.some(item => item.id === revision.id)) { setRevisionId(latest.bundle?.activeRevisionId ?? null); setPage(1) }
-        } else setBundle(previous => previous && ({ ...previous, revisions: previous.revisions.map(item => item.id === revision.id ? { ...item, version: result.revisionVersion } : item) }))
+        } else setBundle(previous => previous && ({ ...previous, revisions: previous.revisions.map(item => item.id === revision.id ? { ...item, version: result.revisionVersion, pageRotations } : item) }))
         discard(); setNotice('Разметка сохранена')
         // A geometry-only save cannot change the list's placement badges or
         // filters. Avoid rereading every loaded infinite-query page. A replay
         // can follow another editor's changes, so it always refreshes the list.
-        if (replay || placementChanged) void client.invalidateQueries({ queryKey: ['line-scheme-joints', token] })
-        void client.invalidateQueries({ queryKey: ['line-scheme-points', token, revision.id], refetchType: 'active' })
+        if (!closeAfter && (replay || placementChanged)) void client.invalidateQueries({ queryKey: ['line-scheme-joints', token] })
+        if (!closeAfter && (replay || markupChanged)) void client.invalidateQueries({ queryKey: ['line-scheme-points', token, revision.id], refetchType: 'active' })
         if (closeAfter) onClose()
       } catch (reason) { setError(errorMessage(reason)); setRetry(() => run) }
       finally { if (alive.current) setBusy('') }
@@ -508,7 +525,8 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
         </div>
       </header>
       <div className="line-scheme-workspace">
-        <div className="line-scheme-canvas">{revision ? <Suspense fallback={<div className="p-8 text-slate-500">Загружаем просмотрщик PDF…</div>}><Pdf key={revision.id} revision={revision} page={page} onPage={value => { if (placingAnnotation || placingLeaderId) { setNotice('Завершите размещение или нажмите Esc.'); return }; if (inputDirty) { setNotice('Сначала примените или отмените введённый размер.'); return }; clearSelection(); setPage(value) }} controlsTarget={pdfControls} points={visiblePoints} editable={editable && !inputDirty && !pointsQuery.isFetching && !pointsQuery.error} placing={!!selectedJoint || !!placingAnnotation || !!placingLeaderId} placingLeader={!!placingLeaderId || placingAnnotation?.shape === 'text'} focusPoint={focusPoint} selectedIds={selectedPointIds} onPlace={addPoint} onMove={movePoint} onMenu={(point, event) => {
+        <div className="line-scheme-canvas">{revision ? <Suspense fallback={<div className="p-8 text-slate-500">Загружаем просмотрщик PDF…</div>}><Pdf key={revision.id} revision={revision} page={page} rotation={rotationDraft[page] ?? revision.pageRotations?.[page] ?? 0}
+          onRotation={canEditDrawing ? changePageRotation : undefined} rotationDisabled={!!busy || !!retry} onPage={value => { if (placingAnnotation || placingLeaderId) { setNotice('Завершите размещение или нажмите Esc.'); return }; if (inputDirty) { setNotice('Сначала примените или отмените введённый размер.'); return }; clearSelection(); setPage(value) }} controlsTarget={pdfControls} points={visiblePoints} editable={editable && !inputDirty && !pointsQuery.isFetching && !pointsQuery.error} placing={!!selectedJoint || !!placingAnnotation || !!placingLeaderId} placingLeader={!!placingLeaderId || placingAnnotation?.shape === 'text'} focusPoint={focusPoint} selectedIds={selectedPointIds} onPlace={addPoint} onMove={movePoint} onMenu={(point, event) => {
           if (blockPendingPlacement()) return
           setObjectMenu(null); if (!inputDirty) cancelAnnotation(selectedPointIds.has(point.id)); setMeasuring(false); setMeasureFrom(null); setSelectedJoint(null); setFocusPoint(null)
           if (!inputDirty && !selectedPointIds.has(point.id)) setSelectedPoint(point)
@@ -556,7 +574,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
             title: !current ? 'Архив доступен только для просмотра' : !editable ? 'Редактирование недоступно' : 'Удалить отметку с чертежа; стык останется в журнале', onSelect: () => removePoints(selectedPointIds.has(menuPoint.id) ? selectedPoints : [menuPoint]) },
         ],
       } : objectMenu && objectMenuItems.length ? { ...objectMenu, heading: menuAnnotation ? selectedCount > 1 ? `Выбрано объектов: ${selectedCount}` : menuAnnotation.label : 'Размер', items: objectMenuItems } : null} />
-      {discardPrompt && <ConfirmActionDialog title="Отменить изменения разметки?" description="Несохранённые изменения точек, обозначений и размеров будут отменены. Сохранённая разметка останется." confirmLabel="Отменить изменения" tone="warning" onClose={() => setDiscardPrompt(false)} onConfirm={() => { setDiscardPrompt(false); discard(); void reopen(false, true).then(refreshStates).catch(reason => setError(errorMessage(reason))) }} />}
+      {discardPrompt && <ConfirmActionDialog title="Отменить изменения разметки?" description="Несохранённые изменения поворота листов, точек, обозначений и размеров будут отменены. Сохранённая разметка останется." confirmLabel="Отменить изменения" tone="warning" onClose={() => setDiscardPrompt(false)} onConfirm={() => { setDiscardPrompt(false); discard(); void reopen(false, true).then(refreshStates).catch(reason => setError(errorMessage(reason))) }} />}
       {closePrompt && <SchemeClosePrompt dirty={dirty} uncertain={!!retry} canSave={editable && !retry && !inputDirty && !placingAnnotation} onSave={() => { setClosePrompt(false); void save(true) }} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
     </div>
   </LargeDialogShell>

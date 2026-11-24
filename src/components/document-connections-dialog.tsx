@@ -29,7 +29,18 @@ export function DocumentConnectionsDialog({ reference, onClose }: { reference: S
   const actual = data?.reference ?? current
   const area = actual.type.startsWith('psto') || actual.methodCode === 'ТВМТ' ? 'psto' : 'lnk'
   const canPreview = can('documents.export') && can(`${area}.view`) && can('references.view')
-  const caption = (item: SystemDocumentReference) => [getSystemDocumentLabel(item), item.methodCode, item.sourceKind === 'beforeHeatTreatment' ? 'до ТО' : item.cycleSequences?.length ? `циклы ${item.cycleSequences.join(', ')}` : item.sourceKind === 'pstoRepeat' ? 'повторный цикл' : item.sourceKind === 'pstoCycle' ? 'цикл ПСТО' : item.type.startsWith('psto') || item.methodCode === 'ТВМТ' ? 'цикл 1' : 'основной', formatDisplayDate(item.date)].filter(Boolean).join(' · ')
+  const caption = (item: SystemDocumentReference) => {
+    const beforeHeatTreatment = item.sourceKind === 'beforeHeatTreatment'
+    const method = beforeHeatTreatment ? `${item.methodCode || 'НК'} до ТО` : item.methodCode
+    let cycle = ''
+    if (!beforeHeatTreatment) {
+      if (item.cycleSequences?.length) cycle = `циклы ${item.cycleSequences.join(', ')}`
+      else if (item.sourceKind === 'pstoRepeat') cycle = 'повторный цикл'
+      else if (item.sourceKind === 'pstoCycle') cycle = 'цикл ПСТО'
+      else if (item.type.startsWith('psto') || item.methodCode === 'ТВМТ') cycle = 'цикл 1'
+    }
+    return [getSystemDocumentLabel(item), method, cycle, formatDisplayDate(item.date)].filter(Boolean).join(' · ')
+  }
   if (preview) return preview
   return <LargeDialogShell ariaLabel="Связи документов" maxWidthClassName="max-w-2xl" maxHeightClassName="max-h-[88dvh]" panelClassName="h-[min(38rem,88dvh)]" panelRadiusClassName="rounded-xl" overlayClassName="z-[170] bg-slate-950/30">
     <div ref={panelRef} className="flex min-h-0 flex-1 flex-col">

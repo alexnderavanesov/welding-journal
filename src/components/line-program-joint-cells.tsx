@@ -5,7 +5,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { programAssignment, type ProgramMethod } from '@/lib/line-program-workspace'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getLnkDisplayValue, isLnkMethodNoNeed } from '@/lib/lnk-status'
-import { LAYERED_CONTROL_DOCUMENT_PROFILES } from '@/lib/layered-control-documents'
+import { LAYERED_CONTROL_DOCUMENT_PROFILES, LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 import { getLineProgramOfficialStamps, isCompletedLineProgramResult, isRejectedLineProgramResult } from '@/lib/line-program-calculation'
 import { calculateFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
@@ -41,7 +41,7 @@ export function programResultDisplay(row: WeldRow, method: ProgramMethod | 'ВИ
     const profile = LNK_METHODS.find(item => item.code === method)
     const reference = profile ? getSystemDocumentReferenceForField(row, profile.conclusionKey) : null
     const layeredCount = method === 'Послойный ПВК' ? Object.values(LAYERED_CONTROL_DOCUMENT_PROFILES).filter(item => item.fieldKey.toLowerCase().includes('pvk') && (row[item.fieldKey] || row[item.idKey])).length : 0
-    const value = method === 'Послойный ПВК' ? layeredCount ? `Заключения: ${layeredCount}/2` : row.layeredControlAssigned ? isCompletedLineProgramResult(row.pvkResult) ? 'Назначен · нет послойных заключений' : 'Назначен · ожидает основного ПВК' : '' : String(profile ? (isLnkMethodNoNeed(row, profile) ? getLnkDisplayValue(row, profile.resultKey) : row[profile.resultKey]) ?? '' : '')
+    const value = method === 'Послойный ПВК' ? layeredCount ? `Заключения: ${layeredCount}/2` : row.layeredControlAssigned ? isCompletedLineProgramResult(row.pvkResult) ? 'Назначен · нет послойных заключений' : LAYERED_CONTROL_WAITING_LABEL : '' : String(profile ? (isLnkMethodNoNeed(row, profile) ? getLnkDisplayValue(row, profile.resultKey) : row[profile.resultKey]) ?? '' : '')
     return { value, text: !value && !reference ? '' : `${method} ${value || 'Заключение'}${method !== 'ВИК' && programAssignment(row, method) === 'отменен' ? ' · назначение отменено' : ''}` }
 }
 

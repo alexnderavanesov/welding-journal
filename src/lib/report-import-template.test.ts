@@ -18,28 +18,10 @@ import {
 import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader } from './weld-fields'
 import { CONTROL_BASIS_FIELD_KEYS, CONTROL_BASIS_SUMMARY_FIELD_KEY } from './control-assignment-basis'
 
-const WORK_CODE_AND_ACCEPTANCE_KEYS = [
+const TESTING_KEYS = [
   'testContour',
   'testDate',
   'piDate',
-  'boq',
-  'testBoq',
-  'piBoq',
-  'pstoBoq',
-  'vikBoq',
-  'rkBoq',
-  'uzkBoq',
-  'pvkBoq',
-  'tvmtBoq',
-  'ks3',
-  'testKs3',
-  'piKs3',
-  'pstoKs3',
-  'vikKs3',
-  'rkKs3',
-  'uzkKs3',
-  'pvkKs3',
-  'tvmtKs3',
 ] as const
 
 const WELDING_MATERIAL_KEYS = [
@@ -67,14 +49,15 @@ describe('welding journal import template', () => {
     saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
   })
 
-  it('keeps work code and acceptance fields editable in the welding journal import', () => {
-    for (const fieldKey of WORK_CODE_AND_ACCEPTANCE_KEYS) {
+  it('keeps testing fields editable and excludes closure records from imports', () => {
+    expect(getReportImportTemplateFields('weldingJournal').map(field => field.key)).not.toContain('workClosureSummary')
+    for (const fieldKey of TESTING_KEYS) {
       expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('free')
     }
   })
 
   it('keeps GI and PI fields in welding journal import templates', () => {
-    const testingFieldKeys = ['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']
+    const testingFieldKeys = ['testTypes', 'testContour', 'testDate', 'piDate']
 
     for (const fieldKey of testingFieldKeys) {
       expect(getReportImportTemplateFields('weldingJournal').some((field) => field.key === fieldKey)).toBe(true)
@@ -311,8 +294,8 @@ describe('welding journal import template', () => {
     }
   })
 
-  it('imports work code and acceptance values instead of stripping them as service fields', () => {
-    const record = Object.fromEntries(WORK_CODE_AND_ACCEPTANCE_KEYS.map((fieldKey) => [fieldKey, `${fieldKey}-value`]))
+  it('imports testing values instead of stripping them as service fields', () => {
+    const record = Object.fromEntries(TESTING_KEYS.map((fieldKey) => [fieldKey, `${fieldKey}-value`]))
 
     expect(stripIgnoredImportFields(record, 'weldingJournal')).toEqual(record)
   })

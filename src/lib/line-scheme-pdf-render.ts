@@ -14,7 +14,7 @@ export function mountSchemePdfPage(page: PDFPageProxy, stage: HTMLDivElement, sp
   let baseReady = false, generation = 0
   let detailRegion: { left: number; top: number; right: number; bottom: number; scale: number } | undefined
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  const fit = pdfFitScale(pdfFootprint(size, page.rotate), { width: stage.clientWidth, height: stage.clientHeight }, 'fit-page')
+  const fit = pdfFitScale(pdfFootprint(size, page.rotate + (initial?.rotation ?? 0)), { width: stage.clientWidth, height: stage.clientHeight }, 'fit-page')
   let baseScale = Math.min(fit * dpr, Math.sqrt(4_000_000 / (size.width * size.height)), 4096 / Math.max(size.width, size.height))
   const baseWidth = Math.max(1, Math.ceil(size.width * baseScale)), baseHeight = Math.max(1, Math.ceil(size.height * baseScale))
   const reused = previewKey ? takeSchemePdfPreview(previewKey, baseWidth, baseHeight) : undefined

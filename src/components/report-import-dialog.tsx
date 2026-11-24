@@ -7,6 +7,7 @@ import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
 import { getActiveReportTitle } from '@/lib/report-display-state'
+import { isUncertainDocumentSave } from '@/lib/document-save-recovery'
 import {
   buildImportTemplateXlsxBytes,
   buildMassFillTemplateXlsxBytes,
@@ -27,15 +28,16 @@ import {
   type ReportImportRecord,
 } from '@/lib/report-import-preview'
 import { cn } from '@/lib/utils'
-import { addLineProgramImportErrors } from '@/lib/line-program-import'
-import { getLineProgramIdentityKey, normalizeLineProgramIdentity, type LineProgramRecord } from '@/lib/line-program'
+import { addLineProgramImportErrors, type ImportLineProgram } from '@/lib/line-program-import'
+import { getLineProgramIdentityKey, normalizeLineProgramIdentity } from '@/lib/line-program'
 import { getLineProgramsForImport } from '@/server/line-program'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import { WELD_IMPORT_MAX_ROWS } from '@/lib/weld-import-limits'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import { listWeldingJournalImportScope } from '@/server/weld-import-api'
+import { reviewImportStamps } from '@/lib/import-stamp-review'
+import { listWeldingJournalImportScope, reviewWeldImportStamps } from '@/server/weld-import-api'
 
 import { ReadOnlyGrid } from './read-only-grid'
 import type { ColDef, GridApi } from 'ag-grid-community'
@@ -44,6 +46,7 @@ type PreviewRowLimit = 50 | 100 | 'all'
 
 export type ReportImportDialogProps = {
   open: boolean
+  checkStampsOnServer?: boolean
   activeReport: ImportableReport
   isPending: boolean
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
@@ -51,13 +54,14 @@ export type ReportImportDialogProps = {
   welderStampSuspensions: WelderStampSuspensionRecord[]
   columnFilters: Record<string, string>
   onClose: () => void
-  onImportRecords: (records: WeldInput[], skippedRows: number) => Promise<boolean>
+  onImportRecords: (records: WeldInput[], skippedRows: number, importId: string) => Promise<boolean>
   onMassFillRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<boolean>
   onReplaceDataRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<boolean>
 }
 
 export function ReportImportDialog({
   open,
+  checkStampsOnServer,
   activeReport,
   isPending,
   weldFormStampSelectOptions,
@@ -73,7 +77,7 @@ export function ReportImportDialog({
   const [mode, setMode] = useState<ReportImportMode>('newRecords')
   const [templateDownloaded, setTemplateDownloaded] = useState(false)
   const [preview, setPreview] = useState<ReportImportPreview | null>(null)
-  const [previewPrograms, setPreviewPrograms] = useState<LineProgramRecord[]>([])
+  const [previewPrograms, setPreviewPrograms] = useState<ImportLineProgram[]>([])
   const [previewRowLimit, setPreviewRowLimit] = useState<PreviewRowLimit>(50)
   const [errorsCollapsed, setErrorsCollapsed] = useState(false)
   const [showOnlyErrorRows, setShowOnlyErrorRows] = useState(false)
@@ -82,6 +86,7 @@ export function ReportImportDialog({
   const [readError, setReadError] = useState<string | null>(null)
   const [isReading, setIsReading] = useState(false)
   const readGeneration = useRef(0)
+  const importId = useRef<string | null>(null)
   useEffect(() => () => { readGeneration.current++ }, [open, activeReport])
 
   const importScopeQuery = useQuery({
@@ -104,14 +109,14 @@ export function ReportImportDialog({
       : null
 
   const { changedPreviewCellKeys, errorPreviewCellKeys, errorPreviewRowKeys, stickyPreviewColumns } = useMemo(() => ({
-    changedPreviewCellKeys: preview ? buildPreviewChangedCellKeys(preview) : new Map<string, Set<string>>(),
-    errorPreviewCellKeys: preview ? buildPreviewErrorCellKeys(preview) : new Map<string, Set<string>>(),
-    errorPreviewRowKeys: new Set(preview?.errors.map(getPreviewErrorRowKey)),
+    changedPreviewCellKeys: preview ? buildPreviewChangedCellKeys(preview) : new Map<number, Set<string>>(),
+    errorPreviewCellKeys: preview ? buildPreviewErrorCellKeys(preview) : new Map<number, Set<string>>(),
+    errorPreviewRowKeys: new Set(preview?.errors.map(error => error.rowNumber)),
     stickyPreviewColumns: preview ? getStickyPreviewColumns(preview) : [],
   }), [preview])
   const previewRecordsWithIndexes = useMemo(() => preview
-    ? preview.records.map((record, index) => ({ record, index })).filter(({ record, index }) =>
-        !showOnlyErrorRows || errorPreviewRowKeys.has(getPreviewRowKey(record, index)))
+    ? preview.records.map((record, index) => ({ record, index, rowNumber: preview.recordRowNumbers?.[index] ?? index + 2 }))
+      .filter(row => !showOnlyErrorRows || errorPreviewRowKeys.has(row.rowNumber))
     : [], [preview, showOnlyErrorRows, errorPreviewRowKeys])
   const visiblePreviewRecords = useMemo(() => getVisiblePreviewRecords(previewRecordsWithIndexes, previewRowLimit), [previewRecordsWithIndexes, previewRowLimit])
 
@@ -120,7 +125,7 @@ export function ReportImportDialog({
   const validCount = preview?.validRecords.length ?? 0
   const errorCount = preview?.errors.length ?? 0
   const deleteCount = preview?.validRecords.filter((record) => record.deleteRequested).length ?? 0
-  const errorRowCount = preview ? new Set(preview.errors.map((error) => error.id ? `id:${error.id}` : `row:${error.rowNumber}`)).size : 0
+  const errorRowCount = errorPreviewRowKeys.size
   const errorGroups = preview ? groupImportPreviewErrors(preview.errors) : []
   const isPreviewLimited = visiblePreviewRecords.length < previewRecordsWithIndexes.length
   const modeCopy = getImportModeCopy(mode, activeReport)
@@ -152,6 +157,7 @@ export function ReportImportDialog({
 
   const resetImportState = () => {
     readGeneration.current++
+    importId.current = null
     setTemplateDownloaded(false)
     setPreview(null)
     setPreviewFocus(null)
@@ -169,49 +175,33 @@ export function ReportImportDialog({
     resetImportState()
   }
 
+  const reviewStamps = (next: ReportImportPreview) => checkStampsOnServer
+    ? reviewImportStamps(next, mode === 'newRecords' ? [] : rows, records => reviewWeldImportStamps({ data: { records } }))
+    : next
+
   const handleFileChange = async (file: File | undefined) => {
     if (!file) return
+    importId.current = null
     const generation = ++readGeneration.current
     setPreviewFocus(null)
     setIsReading(true)
     setReadError(null)
     try {
-      const nextPreview =
-        mode === 'replaceData'
-          ? await buildReportReplaceDataPreview({
-              activeReport,
-              file,
-              rows,
-              pstoLinePolicies,
-              weldFormStampSelectOptions,
-              welderStamps,
-              welderStampSuspensions,
-            })
-          : mode === 'massFill'
-          ? await buildReportMassFillPreview({
-              activeReport,
-              file,
-              rows,
-              pstoLinePolicies,
-              weldFormStampSelectOptions,
-              welderStamps,
-              welderStampSuspensions,
-            })
-          : await buildReportImportPreview({
-              activeReport,
-              file,
-              weldFormStampSelectOptions,
-              welderStamps,
-              welderStampSuspensions,
-            })
+      const options = { activeReport, file, weldFormStampSelectOptions, welderStamps, welderStampSuspensions, checkStampsOnServer }
+      const nextPreview = mode === 'replaceData' ? await buildReportReplaceDataPreview({ ...options, rows, pstoLinePolicies })
+        : mode === 'massFill' ? await buildReportMassFillPreview({ ...options, rows, pstoLinePolicies })
+        : await buildReportImportPreview(options)
       // Switching modes or closing the dialog retires this read. Its records
       // must never become eligible for a different import operation.
       if (generation !== readGeneration.current) return
       const identities = [...new Map(nextPreview.records.filter((row) => !row.deleteRequested && String(row.line ?? '').trim()).map((row) => [getLineProgramIdentityKey(row), normalizeLineProgramIdentity(row)])).values()]
-      const programs = identities.length ? await getLineProgramsForImport({ data: { identities } }) : []
+      const [programs, checked] = await Promise.all([
+        identities.length ? getLineProgramsForImport({ data: { identities } }) : [],
+        reviewStamps(nextPreview),
+      ])
       if (generation !== readGeneration.current) return
       setPreviewPrograms(programs)
-      setPreview(addLineProgramImportErrors(nextPreview, programs, rows))
+      setPreview(addLineProgramImportErrors(checked, programs, rows))
       setPreviewRowLimit(50)
       setErrorsCollapsed(false)
       setShowOnlyErrorRows(false)
@@ -235,25 +225,39 @@ export function ReportImportDialog({
         ? await onReplaceDataRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
         : mode === 'massFill'
           ? await onMassFillRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
-          : await onImportRecords(preview.validRecords, preview.skippedRows)
+          : await onImportRecords(preview.validRecords, preview.skippedRows, importId.current ??= crypto.randomUUID())
       if (!saved) return
       resetImportState()
       onClose()
     } catch (error) {
-      setReadError(
-        `Сохранение не выполнено. ${error instanceof Error ? error.message : 'Сервер отклонил данные импорта.'}`,
-      )
+      setReadError(mode === 'newRecords' && isUncertainDocumentSave(error)
+        ? 'Подтверждение от сервера не получено. Нажмите «Импортировать» ещё раз в этом окне. Если стыки уже созданы, они сохранятся в одном экземпляре.'
+        : `Сохранение не выполнено. ${error instanceof Error ? error.message : 'Сервер отклонил данные импорта.'}`)
     }
   }
 
-  const handleFixPreviewErrors = () => {
-    if (mode !== 'newRecords' || !preview || preview.errors.length === 0) return
-    setPreview(addLineProgramImportErrors(fixReportImportPreviewErrors(preview, {
-      activeReport,
-      weldFormStampSelectOptions,
-      welderStamps,
-      welderStampSuspensions,
-    }), previewPrograms, rows))
+  const handleFixPreviewErrors = async () => {
+    if (mode !== 'newRecords' || !preview || !preview.errors.length) return
+    const generation = ++readGeneration.current
+    setReadError(null)
+    setIsReading(true)
+    try {
+      const fixed = fixReportImportPreviewErrors(preview, {
+        activeReport, weldFormStampSelectOptions, welderStamps, welderStampSuspensions, checkStampsOnServer,
+      })
+      const checked = await reviewStamps(fixed)
+      if (generation === readGeneration.current) {
+        importId.current = null
+        setPreview(addLineProgramImportErrors(checked, previewPrograms, rows))
+      }
+    } catch (error) {
+      if (generation === readGeneration.current) {
+        setPreview(null)
+        setReadError(error instanceof Error ? error.message : 'Не удалось проверить данные импорта. Загрузите файл ещё раз.')
+      }
+    } finally {
+      if (generation === readGeneration.current) setIsReading(false)
+    }
   }
 
   const handleNextError = () => {
@@ -492,7 +496,7 @@ export function ReportImportDialog({
                           type="button"
                           key={`${error.rowNumber}-${error.title}-${errorIndex}`}
                           onClick={() => {
-                            const index = preview.records.findIndex((record, index) => getPreviewRowKey(record, index) === getPreviewErrorRowKey(error))
+                            const index = preview.records.findIndex((_, index) => (preview.recordRowNumbers?.[index] ?? index + 2) === error.rowNumber)
                             if (index < 0) return
                             setPreviewRowLimit('all')
                             setActiveErrorIndex(errorIndex)
@@ -715,7 +719,7 @@ function getPreviewCellClass({
 }
 
 function buildPreviewChangedCellKeys(preview: ReportImportPreview) {
-  const result = new Map<string, Set<string>>()
+  const result = new Map<number, Set<string>>()
   const validRecordsById = new Map<number, ReportImportRecord>()
   preview.validRecords.forEach((record) => {
     if (record.id) validRecordsById.set(record.id, record)
@@ -724,7 +728,7 @@ function buildPreviewChangedCellKeys(preview: ReportImportPreview) {
 
   preview.records.forEach((record, index) => {
     if (record.deleteRequested) return
-    const rowKey = getPreviewRowKey(record, index)
+    const rowKey = preview.recordRowNumbers?.[index] ?? index + 2
     if (record.id) {
       const source = validRecordsById.get(record.id)
       if (!source) return
@@ -733,7 +737,7 @@ function buildPreviewChangedCellKeys(preview: ReportImportPreview) {
       return
     }
 
-    if (errorRows.has(index + 2)) return
+    if (errorRows.has(rowKey)) return
 
     const fieldKeys = preview.fields
       .map((field) => field.key)
@@ -746,10 +750,10 @@ function buildPreviewChangedCellKeys(preview: ReportImportPreview) {
 }
 
 function buildPreviewErrorCellKeys(preview: ReportImportPreview) {
-  const result = new Map<string, Set<string>>()
+  const result = new Map<number, Set<string>>()
   preview.errors.forEach((error) => {
     if (!error.fieldKeys?.length) return
-    const rowKey = getPreviewErrorRowKey(error)
+    const rowKey = error.rowNumber
     const fieldKeys = result.get(rowKey) ?? new Set<string>()
     error.fieldKeys.forEach((fieldKey) => fieldKeys.add(fieldKey))
     result.set(rowKey, fieldKeys)
@@ -757,23 +761,15 @@ function buildPreviewErrorCellKeys(preview: ReportImportPreview) {
   return result
 }
 
-function getPreviewRowKey(record: ReportImportRecord, index: number) {
-  return record.id ? `id:${record.id}` : `row:${index + 2}`
-}
-
-function getPreviewErrorRowKey(error: ReportImportPreviewError) {
-  return error.id ? `id:${error.id}` : `row:${error.rowNumber}`
-}
-
-type PreviewGridRow = { record: ReportImportRecord; index: number }
+type PreviewGridRow = { record: ReportImportRecord; index: number; rowNumber: number }
 const previewGridRowId = ({ data }: { data: PreviewGridRow }) => String(data.index)
 
 function ImportPreviewGrid({ records, fields, stickyColumns, changedCells, errorCells, focus }: {
   records: PreviewGridRow[]
   fields: ReportImportPreview['fields']
   stickyColumns: string[]
-  changedCells: Map<string, Set<string>>
-  errorCells: Map<string, Set<string>>
+  changedCells: Map<number, Set<string>>
+  errorCells: Map<number, Set<string>>
   focus: { index: number; field?: string } | null
 }) {
   const api = useRef<GridApi<PreviewGridRow> | null>(null)
@@ -789,8 +785,8 @@ function ImportPreviewGrid({ records, fields, stickyColumns, changedCells, error
       focusRequest={data?.index === focus?.index && field.key === (focus?.field ?? fields[0]?.key) ? focus : null}
       completedFocus={completedFocus} />,
     cellClass: ({ data }) => getPreviewCellClass({
-      isErrorCell: !!data && !!errorCells.get(getPreviewRowKey(data.record, data.index))?.has(field.key),
-      isChangedCell: !!data && !!changedCells.get(getPreviewRowKey(data.record, data.index))?.has(field.key),
+      isErrorCell: !!data && !!errorCells.get(data.rowNumber)?.has(field.key),
+      isChangedCell: !!data && !!changedCells.get(data.rowNumber)?.has(field.key),
       isStickyCell: stickyColumns.includes(field.key),
     }),
   })), [fields, stickyColumns, changedCells, errorCells, focus])

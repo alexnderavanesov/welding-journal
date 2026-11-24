@@ -10,7 +10,6 @@ import {
   LNK_WORKFLOW_ROW_SELECT,
 } from '@/server/lnk-workflow-context'
 import { normalizeLnkWorkflowRowsRequest } from '@/server/weld-contracts'
-import { WELD_TABLE_SELECT } from '@/server/weld-server-shared'
 
 describe('LNK modal workflow queries', () => {
   it.each(['preHeatTreatmentRequestRegistry', 'preHeatTreatmentResultRegistry'] as const)(
@@ -57,7 +56,8 @@ describe('LNK modal workflow queries', () => {
       'lnkNote',
       'createdAt',
     ]))
-    expect(keys.length).toBeLessThan(Object.keys(WELD_TABLE_SELECT).length / 2)
+    // The journal retired its financial columns. The workflow still reads the same 62 fields.
+    expect(keys.length).toBeLessThanOrEqual(62)
   })
 
   it('aggregates the workflow summary in SQL instead of returning source weld rows', () => {

@@ -377,6 +377,7 @@ async function explainGroupRepro(client, args, sqlText) {
 const releaseReadinessStatements = new Set([
   "select to_regclass('public.app_settings') is not null as available",
   'select (select value from public.app_settings where key = $1) as release, (select value from public.app_settings where key = $2) as transition, (select value from public.app_settings where key = $3) as preliminary',
+  'select (select value from public.app_settings where key = $1) as release, (select value from public.app_settings where key = $2) as transition, (select value from public.app_settings where key = $3) as preliminary, (select value from public.app_settings where key = $4) as document_identities',
 ])
 pg.Client.prototype.query = function (...args) {
   counts.statements++

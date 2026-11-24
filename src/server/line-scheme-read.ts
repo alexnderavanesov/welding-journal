@@ -128,7 +128,7 @@ const registryCte = sql`with registry_lines as (
   where not exists(select 1 from ${linePrograms} l where l.id=b.line_program_id)
     and exists(select 1 from ${lineSchemeRevisions} r where r.bundle_id=b.id)
 ), registry as (
-  select l.*, main.file_name, regexp_replace(coalesce(main.file_name,''), '[.]pdf$', '', 'i') as pdf_name,
+  select l.*, main.id as main_revision_id, main.file_name, regexp_replace(coalesce(main.file_name,''), '[.]pdf$', '', 'i') as pdf_name,
     coalesce(files.count,0)::integer as revision_count
   from registry_lines l
   left join ${lineSchemeBundles} b on b.id=l.bundle_id
@@ -219,15 +219,37 @@ export async function readSchemeLineMetrics(db: SchemeDb, selected: { line_id: n
 
 export async function readSchemeLines(data: SchemeRegistryRequest) {
   const page = Math.max(0, Math.trunc(Number(data?.page) || 0)), filter = registryWhere(data ?? {})
+  const sort = data?.sort
+  if (sort && (!SCHEME_FILTER_FIELDS.includes(sort.field) || !['asc', 'desc'].includes(sort.direction))) throw new Error('Недопустимая сортировка схем.')
+  const sortColumn = sort?.field === 'placedCount'
+    ? sql`(select count(*) from ${lineSchemePoints} where ${lineSchemePoints.revisionId} = registry.main_revision_id)`
+    : sort && registryColumns[sort.field]
+  const calculatedSort = sort && !sortColumn ? sort : null
+  const order = sortColumn ? sql`${sortColumn} ${sort?.direction === 'desc' ? sql`desc` : sql`asc`},` : sql``
   const metricFilters = hasMetricFilters(data ?? {})
   return schemeSnapshot(async db => {
     const result = await db.execute(sql`${registryCte}
       select *, count(*) over()::integer as matching from registry where ${filter}
-      order by project_title,subtitle_code,line,line_id
-      ${metricFilters ? sql`` : sql`limit ${SCHEME_PAGE_SIZE} offset ${page * SCHEME_PAGE_SIZE}`}`)
+      order by ${order} project_title,subtitle_code,line,line_id
+      ${metricFilters || calculatedSort ? sql`` : sql`limit ${SCHEME_PAGE_SIZE} offset ${page * SCHEME_PAGE_SIZE}`}`)
     const selected = result.rows as unknown as RegistryRow[]
-    const lines = filterMetricRows(await registryRowsWithMetrics(db, selected), data ?? {})
-    return metricFilters ? { rows: lines.slice(page * SCHEME_PAGE_SIZE, (page + 1) * SCHEME_PAGE_SIZE), total: lines.length }
+    let lines: SchemeLine[]
+    if (calculatedSort) {
+      // Only the compact totals have to survive from one batch to the next.
+      lines = []
+      for (let offset = 0; offset < selected.length; offset += SCHEME_PAGE_SIZE) {
+        lines.push(...await registryRowsWithMetrics(db, selected.slice(offset, offset + SCHEME_PAGE_SIZE)))
+      }
+    } else {
+      lines = await registryRowsWithMetrics(db, selected)
+    }
+    if (metricFilters) lines = filterMetricRows(lines, data)
+    if (calculatedSort) {
+      const field = calculatedSort.field as 'total' | 'welded' | 'placedPercent'
+      const sign = calculatedSort.direction === 'asc' ? 1 : -1
+      lines.sort((a, b) => ((a[field] ?? -1) - (b[field] ?? -1)) * sign)
+    }
+    return metricFilters || calculatedSort ? { rows: lines.slice(page * SCHEME_PAGE_SIZE, (page + 1) * SCHEME_PAGE_SIZE), total: lines.length }
       : { rows: lines, total: selected[0]?.matching ?? 0 }
   })
 }
@@ -241,15 +263,19 @@ export async function readSchemeBundle(db: SchemeDb, bundleId: number): Promise<
   const name = entry.line ?? entry.bundle
   return { id: bundleId, lineId: entry.bundle.lineProgramId, projectTitle: name.projectTitle, subtitleCode: name.subtitleCode, line: name.line,
     deleted: !entry.line, activeRevisionId: entry.bundle.activeRevisionId, version: entry.bundle.version,
-    revisions: revisions.map(row => ({ id: row.id, fileName: row.fileName, changeNumber: row.changeNumber, size: row.size, pageCount: row.pageCount, version: row.version, authorName: row.authorName, createdAt: row.createdAt.toISOString() })) }
+    revisions: revisions.map(row => ({ id: row.id, fileName: row.fileName, changeNumber: row.changeNumber, size: row.size, pageCount: row.pageCount, pageRotations: row.pageRotations, version: row.version, authorName: row.authorName, createdAt: row.createdAt.toISOString() })) }
 }
 
 export async function readSchemeJoints(data: { bundleId: number; revisionId?: string; page?: number; search?: string; unplaced?: boolean }) {
   schemeId(data.bundleId)
   if (data.revisionId) schemeToken(data.revisionId)
   return schemeSnapshot(async db => {
-    const bundle = await readSchemeBundle(db, data.bundleId)
-    if (data.revisionId && !bundle.revisions.some(row => row.id === data.revisionId)) throw new Error('Редакция не принадлежит этой линии.')
+    const [bundle] = await db.select({ lineId: lineSchemeBundles.lineProgramId, deleted: sql<boolean>`${linePrograms.id} is null`,
+      hasRevision: data.revisionId ? sql<boolean>`exists(select 1 from ${lineSchemeRevisions}
+        where ${lineSchemeRevisions.bundleId} = ${lineSchemeBundles.id} and ${lineSchemeRevisions.id} = ${data.revisionId})` : sql<boolean>`true`,
+    }).from(lineSchemeBundles).leftJoin(linePrograms, eq(linePrograms.id, lineSchemeBundles.lineProgramId)).where(eq(lineSchemeBundles.id, data.bundleId))
+    if (!bundle) throw new Error('Схема не найдена. Обновите список линий.')
+    if (!bundle.hasRevision) throw new Error('Редакция не принадлежит этой линии.')
     const topology = await readSchemeTopology(db, bundle.deleted ? [] : [bundle.lineId])
     const placed = data.revisionId ? await db.select({ physicalId: lineSchemePoints.physicalId, page: lineSchemePoints.page }).from(lineSchemePoints).where(eq(lineSchemePoints.revisionId, data.revisionId)) : []
     const placedById = new Map(placed.map(row => [row.physicalId, row.page]))
@@ -297,23 +323,25 @@ export async function readSchemePointPage(data: { revisionId: string; page: numb
   schemeToken(data.revisionId); schemeId(data.page, 'Лист')
   if (data.after) schemeToken(data.after)
   return schemeSnapshot(async db => {
-    const [revision] = await db.select().from(lineSchemeRevisions).where(eq(lineSchemeRevisions.id, data.revisionId))
+    const [revision] = await db.select({ id: lineSchemeRevisions.id, pageCount: lineSchemeRevisions.pageCount, version: lineSchemeRevisions.version,
+      lineId: lineSchemeBundles.lineProgramId, deleted: sql<boolean>`${linePrograms.id} is null`,
+    }).from(lineSchemeRevisions).innerJoin(lineSchemeBundles, eq(lineSchemeBundles.id, lineSchemeRevisions.bundleId))
+      .leftJoin(linePrograms, eq(linePrograms.id, lineSchemeBundles.lineProgramId)).where(eq(lineSchemeRevisions.id, data.revisionId))
     if (!revision || data.page > revision.pageCount) throw new Error('Лист или редакция больше не существуют.')
-    const bundle = await readSchemeBundle(db, revision.bundleId)
     const points = await db.select({ point: lineSchemePoints, physical: lineSchemePhysicals }).from(lineSchemePoints)
       .innerJoin(lineSchemePhysicals, eq(lineSchemePhysicals.id, lineSchemePoints.physicalId))
       .where(and(eq(lineSchemePoints.revisionId, revision.id), eq(lineSchemePoints.page, data.page), data.after ? sql`${lineSchemePoints.id} > ${data.after}` : undefined))
       .orderBy(asc(lineSchemePoints.id)).limit(501)
     const selected = points.slice(0, 500), physicalIds = new Set(selected.map(row => row.point.physicalId))
-    const topology = selected.length && !bundle.deleted ? await readSchemePointTopology(db, bundle.lineId, [...physicalIds]) : null
-    const groups = (topology?.groups.get(bundle.lineId) ?? []).filter(group => group.physicalId && physicalIds.has(group.physicalId))
+    const topology = selected.length && !revision.deleted ? await readSchemePointTopology(db, revision.lineId, [...physicalIds]) : null
+    const groups = (topology?.groups.get(revision.lineId) ?? []).filter(group => group.physicalId && physicalIds.has(group.physicalId))
     const states = topology ? await hydrateSchemeGroups(db, groups, topology) : new Map<string, SchemeJoint>()
     const live = physicalIds.size ? await db.select({ physicalId: lineSchemeMembers.physicalId, lineId: weldJoints.lineProgramId }).from(lineSchemeMembers)
       .innerJoin(weldJoints, eq(weldJoints.id, lineSchemeMembers.weldJointId)).where(buildNumberArrayMatch(lineSchemeMembers.physicalId, [...physicalIds])) : []
     const existing = new Set(live.map(row => row.physicalId))
     const result: SchemePoint[] = selected.map(({ point, physical }) => ({ id: point.id, physicalId: point.physicalId, page: point.page, x: point.x, y: point.y,
       joint: states.get(`p:${point.physicalId}`) ?? { key: `p:${point.physicalId}`, rootId: 0, physicalId: point.physicalId, rowId: null, label: physical.lastLabel,
-        color: 'inactive', reason: bundle.deleted ? 'Линия удалена.' : existing.has(point.physicalId) ? 'Стык перенесён в другую линию.' : 'Стык удалён.', welded: false, placedPage: point.page } }))
+        color: 'inactive', reason: revision.deleted ? 'Линия удалена.' : existing.has(point.physicalId) ? 'Стык перенесён в другую линию.' : 'Стык удалён.', welded: false, placedPage: point.page } }))
     const dimensions = data.after ? [] : await db.select({ id: lineSchemeDimensions.id, fromPointId: lineSchemeDimensions.fromPointId, toPointId: lineSchemeDimensions.toPointId,
       fromAnnotationId: lineSchemeDimensions.fromAnnotationId, toAnnotationId: lineSchemeDimensions.toAnnotationId,
       color: lineSchemeDimensions.color, strokeWidth: lineSchemeDimensions.strokeWidth, page: lineSchemeDimensions.page, distanceMm: lineSchemeDimensions.distanceMm, offsetX: lineSchemeDimensions.offsetX, offsetY: lineSchemeDimensions.offsetY }).from(lineSchemeDimensions)

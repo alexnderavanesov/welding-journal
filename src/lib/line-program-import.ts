@@ -1,13 +1,13 @@
 import type { WeldInput, WeldFieldKey } from '@/lib/weld-fields'
-import type { ReportImportPreview } from '@/lib/report-import-preview'
+import { excludeImportPreviewRows, type ReportImportPreview } from '@/lib/report-import-preview'
 import { getLineProgramIdentityKey, getLineProgramMetadataConflicts, type LineProgramProperties, type LineProgramIdentity } from '@/lib/line-program'
 import { parseLineProgramPercent } from '@/lib/line-program-calculation'
 
-type Program = LineProgramIdentity & LineProgramProperties
+export type ImportLineProgram = LineProgramIdentity & Pick<LineProgramProperties, 'category' | 'groupName' | 'weldControlPercent'>
 const labels = { category: 'Категория', groupName: 'Группа', weldControlPercent: 'Базовый процент' }
 
 /** Checks complete merged preview records, including rows that already have other errors. */
-export function addLineProgramImportErrors(preview: ReportImportPreview, programs: readonly Program[], previousRows: readonly WeldInput[] = []): ReportImportPreview {
+export function addLineProgramImportErrors(preview: ReportImportPreview, programs: readonly ImportLineProgram[], previousRows: readonly WeldInput[] = []): ReportImportPreview {
   const byLine = new Map(programs.map((line) => [getLineProgramIdentityKey(line), line]))
   const previousById = new Map(previousRows.map((row) => [Number(row.id), row]))
   const newGroups = new Map<string, WeldInput[]>()
@@ -27,22 +27,22 @@ export function addLineProgramImportErrors(preview: ReportImportPreview, program
     }))
   }
   const errors = preview.errors.map((error) => ({ ...error, fieldKeys: [...(error.fieldKeys ?? [])] }))
-  const invalid = new Set<string>()
-  const recordKey = (row: WeldInput) => row.id ? `id:${row.id}` : `${getLineProgramIdentityKey(row)}:${String(row.joint ?? '').trim().toLocaleLowerCase('ru')}`
+  const invalid = new Set<number>()
+  const errorsByRow = new Map(errors.map(error => [error.rowNumber, error]))
   preview.records.forEach((row, index) => {
     if (row.deleteRequested) return
     const key = getLineProgramIdentityKey(row)
     const program = byLine.get(key)
     const fields = program ? getLineProgramMetadataConflicts(row, program, previousById.get(Number(row.id))) : conflictsByNewLine.get(key) ?? []
     if (!fields.length) return
-    invalid.add(recordKey(row))
     const rowNumber = preview.recordRowNumbers?.[index] ?? index + 2
+    invalid.add(rowNumber)
     const message = `Программа линии «${row.line}»: ${fields.map((field) => labels[field]).join(', ')} — ${program ? 'значения не совпадают с программой' : 'противоречивые значения в импортируемых строках'}. Исправьте файл или программу линии.`
-    const existing = errors.find((error) => row.id ? error.id === row.id : error.rowNumber === rowNumber)
+    const existing = errorsByRow.get(rowNumber)
     if (existing) {
       existing.message += ` ${message}`
       existing.fieldKeys = [...new Set<WeldFieldKey>([...existing.fieldKeys, ...fields])]
     } else errors.push({ rowNumber, id: row.id, title: `Стык ${row.joint ?? row.id ?? 'без номера'}`, message, fieldKeys: fields })
   })
-  return { ...preview, errors, validRecords: preview.validRecords.filter((row) => !invalid.has(recordKey(row))) }
+  return invalid.size ? excludeImportPreviewRows(preview, errors, invalid) : preview
 }
