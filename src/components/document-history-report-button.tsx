@@ -1,5 +1,6 @@
 import { FileSpreadsheet } from 'lucide-react'
 import { useReportPreview } from '@/lib/use-report-preview'
+import { downloadReportExcelResponse } from '@/lib/download-printable-report'
 import type { DocumentHistoryReportRequest } from '@/lib/document-history-report'
 import type { PrintableReport } from '@/lib/printable-report'
 import { useAccess } from '@/lib/security-context'
@@ -22,11 +23,7 @@ export function DocumentHistoryReportButton({ context, disabled, request }: {
     }
     const report = await (await load('preview')).json() as PrintableReport
     return { report, onDownloadExcel: async (signal?: AbortSignal) => {
-      const response = await load('excel', signal), blob = await response.blob()
-      const url = URL.createObjectURL(blob), link = document.createElement('a')
-      link.href = url; link.download = response.headers.get('X-Report-Filename') || 'documents.xlsx'
-      document.body.appendChild(link)
-      try { link.click() } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000) }
+      await downloadReportExcelResponse(await load('excel', signal))
     } }
   })
   return <>

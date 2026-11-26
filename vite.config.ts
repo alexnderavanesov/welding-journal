@@ -2,6 +2,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
 import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vite'
+import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { devTransportCancellation } from './scripts/vite-dev-transport.ts'
 import { pdfAssets } from './scripts/vite-pdf-assets.ts'
@@ -31,6 +32,16 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    fs: {
+      // Setting deny replaces Vite's defaults. Keep its credential exclusions.
+      deny: [
+        '.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**',
+        '*.dump', '*.bak', 'db_dump*.sql', '**/src/data/seed-welds.json',
+        ...['backups', 'outputs', 'data', 'docs', 'test-results*', 'playwright-report', '.output'].map(
+          directory => resolve(import.meta.dirname, directory).replaceAll('\\', '/') + '/**',
+        ),
+      ],
+    },
     // Generated HTML reports must not reload the open application when tests,
     // builds or local file synchronization update their artifacts.
     watch: {

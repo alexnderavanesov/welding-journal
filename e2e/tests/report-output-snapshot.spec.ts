@@ -51,6 +51,42 @@ test('preview failure keeps output disabled and an explicit retry restores the c
   expect(requests).toBe(2)
 })
 
+test('closing a pending repair preview cancels its fetch and reopening starts a fresh request', async ({ page }) => {
+  await page.goto('/lnk')
+  const openPreview = async () => {
+    await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
+    await page.getByRole('button', { name: 'Ожидает ремонта', exact: true }).click()
+  }
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
+  const close = preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true })
+  const firstRequest = page.waitForRequest(request => rpcName(request.url()).startsWith('readReportOutputSnapshot'))
+  await openPreview()
+  const pathname = new URL((await firstRequest).url()).pathname
+  await expect(preview.locator('iframe')).toBeVisible()
+  await close.click()
+  await page.evaluate(path => {
+    const original = window.fetch
+    window.fetch = function(input, options) {
+      const url = input instanceof Request ? input.url : String(input)
+      if (new URL(url, location.href).pathname !== path) return original.call(window, input, options)
+      window.fetch = original
+      const signal = options?.signal ?? (input instanceof Request ? input.signal : null)
+      document.body.dataset.previewFetch = 'pending'
+      return new Promise<Response>((_, reject) => signal?.addEventListener('abort', () => {
+        document.body.dataset.previewFetch = 'aborted'
+        reject(signal.reason)
+      }, { once: true }))
+    }
+  }, pathname)
+  await openPreview()
+  await expect(page.locator('body')).toHaveAttribute('data-preview-fetch', 'pending')
+  await close.click()
+  await expect(page.locator('body')).toHaveAttribute('data-preview-fetch', 'aborted')
+  await openPreview()
+  await expect(preview.locator('iframe')).toBeVisible()
+  await expect(preview.getByRole('alert')).toHaveCount(0)
+})
+
 test('complete download keeps one database snapshot across batches and sees later changes on the next download', async () => {
   await withLineProgramFixture(async db => {
     await db.query(`insert into weld_joints(project_title,line,joint,isometry,connection_type,weld_date,officiality,revision_actuality,has_vik)

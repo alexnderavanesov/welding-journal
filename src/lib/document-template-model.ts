@@ -128,20 +128,39 @@ export type DocumentTemplateCellPart = {
   lineBreakAfter?: boolean
 }
 
-export type DocumentTemplateCellBinding = {
-  cell: string
-  mode: DocumentTemplateBindingMode
+export type DocumentTemplateCellContent = {
   field?: DocumentTemplateFieldKey
   parts?: DocumentTemplateCellPart[]
   uniqueParts?: boolean
   uniqueValues?: boolean
   separator?: 'comma' | 'newline' | 'custom'
   customSeparator?: string
-  scope?: DocumentTemplateBindingScope
   emptyMode?: DocumentTemplateEmptyMode
   emptyText?: string
   filledMode?: DocumentTemplateFilledMode
   filledText?: string
+}
+
+export type DocumentTemplateCellBinding = DocumentTemplateCellContent & {
+  cell: string
+  mode: DocumentTemplateBindingMode
+  scope?: DocumentTemplateBindingScope
+  supportContent?: DocumentTemplateCellContent
+}
+
+export function cellContent({ cell, mode, scope, supportContent, ...content }: DocumentTemplateCellBinding): DocumentTemplateCellContent {
+  return content
+}
+
+export function supportCellBinding({ cell, mode, scope, supportContent }: DocumentTemplateCellBinding): DocumentTemplateCellBinding {
+  return { ...supportContent, cell, mode, scope }
+}
+
+export function mapCellContents(binding: DocumentTemplateCellBinding, transform: (value: DocumentTemplateCellBinding) => DocumentTemplateCellBinding) {
+  const { supportContent, ...common } = binding
+  const base = transform(common)
+  if (!supportContent) return base
+  return { ...base, supportContent: cellContent(transform(supportCellBinding(binding))) }
 }
 
 export type DocumentTemplateConstructorConfig = {
@@ -234,7 +253,7 @@ export function normalizeDocumentTemplateConstructorConfig(
       const { sourceCell: _legacySourceCell, ...bindingWithoutSource } = legacyBinding
       if (legacyBinding.mode === 'count' || legacyBinding.mode === 'sum') return []
       if (legacyBinding.mode !== 'list' && legacyBinding.mode !== 'uniqueList') {
-        return [normalizeBindingForRepeatMode(bindingWithoutSource as DocumentTemplateCellBinding)]
+        return [mapCellContents(bindingWithoutSource as DocumentTemplateCellBinding, normalizeBindingForRepeatMode)]
       }
 
       const normalizedBinding: DocumentTemplateCellBinding = {

@@ -1,13 +1,13 @@
 import { setTimeout as pause } from 'node:timers/promises'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { observeMixedClient, sampleMixedResources } from '../mixed-resource-telemetry'
 import { auditSqlCount } from '../audit-sql'
-import { rpcName } from '../rpc'
+import { deserializeRpcPayload, rpcName } from '../rpc'
 import { getReportImportTemplateFields } from '../../src/lib/report-import-template'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
-import { confirmDocumentOperation, openDocumentOperation } from '../document-operation-ui'
+import { confirmDocumentOperation } from '../document-operation-ui'
 
 const project = 'E2E mixed resources 200k'
 const writerJoint = 'F001001'
@@ -131,16 +131,16 @@ async function openEditor(page: Page) {
   return editor
 }
 
-test('200k, five browser clients, mixed reads/writes/import/documents under explicit local resource limits', async ({ browser }, info) => {
+test('200k, five browser clients, mixed reads/writes/import/documents under explicit local resource limits', async ({ browser, baseURL }, info) => {
   test.skip(process.env.AUDIT_MIXED_LOAD !== '1', 'Separate opt-in, freshly built container and disposable database')
   const roles = ['reports', 'program-dispatcher', 'writer', 'import', 'documents-permits']
-  const contexts = await Promise.all(roles.map(() => browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
+  const contexts = await Promise.all(roles.map(() => browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL, viewport: { width: 1600, height: 1000 } })))
   for (const context of contexts) { context.setDefaultTimeout(45_000); context.setDefaultNavigationTimeout(90_000) }
   const telemetry = contexts.map((context, i) => observeMixedClient(context, roles[i]))
   const pages = await Promise.all(contexts.map(context => context.newPage()))
   let stopSampling: Awaited<ReturnType<typeof sampleMixedResources>> | undefined
   const timings: Array<{ role: string; round: number; milliseconds: number }> = []
-  let imports = 0, saves = 0, reportRetries = 0, failureInjected = false
+  let imports = 0, saves = 0, reportRetries = 0, registryRetries = 0, failureInjected = false
   let coldBaseline: Awaited<ReturnType<typeof coldFacts>> | undefined, steadyStarted = false
   let untouchedBaseline: Awaited<ReturnType<typeof preservedFacts>> | undefined
   const waitForDispatcher = async () => {
@@ -175,7 +175,7 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
     await expect(pages[2].getByRole('button', { name: writerJoint, exact: true })).toBeVisible()
     const sqlStart = await auditSqlCount(), start = performance.now(), duration = 180_000
     steadyStarted = true
-    let stopped = false
+    const operationErrors: unknown[] = []
     const run = async (role: number, action: (round: number) => Promise<void>) => {
       let round = 0
       do {
@@ -185,7 +185,7 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
         console.log(JSON.stringify({ phase: 'mixed operation', ...timings.at(-1) }))
         round++
         await pause(1500)
-      } while (!stopped && performance.now() - start < duration)
+      } while (!operationErrors.length && performance.now() - start < duration)
     }
     const tasks = [
       run(0, async round => {
@@ -290,11 +290,58 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
         const page = pages[4]
         if (round === 0) {
           const names = await withE2eDatabase(async db => (await db.query('select distinct vik_request as name from weld_joints where project_title=$1 and vik_request is not null order by name', [project])).rows.map(row => row.name as string))
-          const dialog = await openDocumentOperation(page, names, 'Заявка ЛНК')
+          await page.goto('/documents')
+          await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
+          const grid = page.locator('[data-document-history-grid]')
+          const openCurrentRequests = async () => {
+            const changed = page.getByRole('alert').filter({ hasText: 'Данные реестра изменились. Обновите таблицу и повторите действие.' })
+            for (let attempt = 0; ; attempt++) {
+              try {
+                await expect(grid.getByText(`Найдено: ${names.length}`, { exact: true })).toBeVisible()
+                const selectAll = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
+                const selected = grid.getByText(`Выбрано: ${names.length}`, { exact: true })
+                // Cancelling the preview retains this registry and its selection.
+                if (!await selected.isVisible()) await selectAll.click()
+                await expect(selected.or(changed)).toBeVisible()
+                if (await changed.isVisible()) throw new Error('Document selection expired')
+                await expect(selectAll).toBeChecked()
+                await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
+                const plans: Request[] = []
+                const observePlan = (req: Request) => {
+                  if (req.url().includes('/_serverFn/') && rpcName(req.url()).startsWith('planDocumentOperationBatches_')) plans.push(req)
+                }
+                const dialog = page.getByRole('dialog', { name: 'Изменить разделение', exact: true })
+                const summary = dialog.getByText(`Выбрано в пакете: ${names.length} → Получится: 400`, { exact: true })
+                page.on('request', observePlan)
+                try {
+                  await page.getByRole('button', { name: 'Изменить разделение', exact: true }).click()
+                  await expect(summary.or(changed)).toBeVisible()
+                  if (await changed.isVisible()) throw new Error('Document selection expired')
+                } finally { page.off('request', observePlan) }
+                expect(plans).toHaveLength(1)
+                const plan = deserializeRpcPayload(plans[0].postData()!) as { data: { documentIds: number[] } }
+                const expected = await withE2eDatabase(async db => (await db.query(
+                  "select id from generated_documents where type='system:lnkRequest' and title=any($1::text[]) order by id", [names],
+                )).rows.map(row => Number(row.id)))
+                expect(expected).toHaveLength(names.length)
+                expect([...plan.data.documentIds].sort((a, b) => a - b)).toEqual(expected)
+                return dialog
+              }
+              catch (error) {
+                if (attempt >= 3 || !await changed.isVisible()) throw error
+                // Other operators can advance the revision between pages.
+                // Refresh explicitly, then reselect all expected request names.
+                await changed.getByRole('button', { name: 'Повторить', exact: true }).click()
+                await expect(changed).toBeHidden()
+                registryRetries++
+              }
+            }
+          }
+          const dialog = await openCurrentRequests()
           await expect(dialog.getByRole('button', { name: 'Подтвердить и применить', exact: true })).toBeEnabled()
           await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
           expect(await withE2eDatabase(async db => (await db.query('select count(distinct vik_request)::int n from weld_joints where project_title=$1', [project])).rows[0].n)).toBe(200)
-          await openDocumentOperation(page, names, 'Заявка ЛНК')
+          await openCurrentRequests()
           await confirmDocumentOperation(dialog, 1, 90_000)
           await dialog.getByRole('button', { name: 'Остановиться / закрыть', exact: true }).click()
           expect(await withE2eDatabase(async db => (await db.query('select count(distinct vik_request)::int n from weld_joints where project_title=$1', [project])).rows[0].n)).toBe(400)
@@ -315,8 +362,8 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
       }),
     ].map((task, role) => task.catch(async error => {
       console.error(JSON.stringify({ phase: 'mixed operation failed', role: roles[role], error: String(error) }))
-      if (!stopped) {
-        stopped = true
+      operationErrors.push(error)
+      if (operationErrors.length === 1) {
         await Promise.all(pages.map(async (page, i) => {
           await info.attach(`mixed-failure-${roles[i]}`, { body: await page.locator('body').innerText({ timeout: 3000 }).catch(() => ''), contentType: 'text/plain' })
           await page.close()
@@ -324,9 +371,10 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
       }
       throw error
     }))
-    const results = await Promise.allSettled(tasks)
-    console.log(JSON.stringify({ phase: 'mixed steady', milliseconds: Math.round(performance.now() - start), sql: (await auditSqlCount())! - sqlStart!, saves, imports, reportRetries, failureInjected, operations: timings }))
-    for (const result of results) if (result.status === 'rejected') throw result.reason
+    await Promise.allSettled(tasks)
+    console.log(JSON.stringify({ phase: 'mixed steady', milliseconds: Math.round(performance.now() - start), sql: (await auditSqlCount())! - sqlStart!, saves, imports, reportRetries, registryRetries, failureInjected, operations: timings }))
+    // Closing peer clients can also reject their pending Playwright commands.
+    if (operationErrors.length) throw operationErrors[0]
     expect(saves).toBeGreaterThanOrEqual(2); expect(imports).toBeGreaterThanOrEqual(40)
     expect(timings.filter(value => value.role === roles[4]).length).toBeGreaterThanOrEqual(2)
     expect(await preservedFacts()).toEqual(before)

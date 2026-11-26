@@ -15,7 +15,7 @@ const snapshot = (rows: WeldInput[] = [], generatedAt = stamp, report: 'weldingJ
 
 function params(activeReport: ActiveReport = 'weldingJournal') {
   return { activeReport, activeTitle: 'Отчёт', reportExportFieldsRef: { current: () => VISIBLE_FIELDS }, loadLnkRows: vi.fn(async () => snapshot() as never),
-    loadPstoRows: vi.fn(async () => snapshot() as never), loadWeldingJournalRows: vi.fn<(kind: string, fields?: WeldField[]) => Promise<ReturnType<typeof snapshot>>>(async () => snapshot()),
+    loadPstoRows: vi.fn(async () => snapshot() as never), loadWeldingJournalRows: vi.fn<(kind: string, fields?: WeldField[], signal?: AbortSignal) => Promise<ReturnType<typeof snapshot>>>(async () => snapshot()),
     setIsLnkShowMenuOpen: vi.fn(), setIsPstoShowMenuOpen: vi.fn(), setIsWeldingJournalShowMenuOpen: vi.fn(), setMessage: vi.fn() }
 }
 afterEach(() => vi.restoreAllMocks())
@@ -126,6 +126,7 @@ it.each([null, () => null, () => []])('does not load a current journal report wi
 it.each([
   ['openLnkCurrentReport', 'loadLnkRows', 'current'],
   ['openLnkWaitingNkReport', 'loadLnkRows', 'waitingNk'],
+  ['openLnkWaitingRepairReport', 'loadLnkRows', 'waitingRepair'],
   ['openLnkToRequestReport', 'loadLnkRows', 'waitingRequest'],
   ['openLnkConclusionsReport', 'loadLnkRows', 'conclusions'],
   ['openPstoCurrentReport', 'loadPstoRows', 'current'],
@@ -143,7 +144,7 @@ it.each([
   expect(result.current.reportPreviewProps).toBeNull()
   expect(p[loader]).not.toHaveBeenCalled()
   await act(async () => { await result.current[action]() })
-  expect(p[loader]).toHaveBeenCalledExactlyOnceWith(...(kind === 'current' ? [kind, VISIBLE_FIELDS] : [kind]))
+  expect(p[loader]).toHaveBeenCalledExactlyOnceWith(kind, kind === 'current' ? VISIBLE_FIELDS : undefined, expect.any(AbortSignal))
   expect(result.current.reportPreviewProps?.report?.emptyMessage).toBeTruthy()
   expect(result.current.reportPreviewProps?.report?.generatedAt).toBe(result.current.reportPreviewProps?.generatedAt)
   expect(result.current.reportPreviewProps?.onDownloadExcel).toBeUndefined()
@@ -174,8 +175,12 @@ it('opens loading immediately, coalesces duplicate clicks and ignores closed res
   act(() => { void result.current.openWeldingJournalCurrentReport(); void result.current.openWeldingJournalCurrentReport() })
   expect(result.current.reportPreviewProps?.busy).toBe(true)
   expect(p.loadWeldingJournalRows).toHaveBeenCalledTimes(1)
+  const firstSignal = p.loadWeldingJournalRows.mock.calls[0][2]
+  expect(firstSignal?.aborted).toBe(false)
   act(() => result.current.reportPreviewProps?.onClose())
+  expect(firstSignal?.aborted).toBe(true)
   await act(async () => { await result.current.openWeldingJournalWaitingWeldReport() })
+  expect(p.loadWeldingJournalRows.mock.calls[1][2]?.aborted).toBe(false)
   const title = result.current.reportPreviewProps?.report?.title
   await act(async () => resolve(snapshot([{ joint: 'OLD' } as WeldInput])))
   expect(result.current.reportPreviewProps?.report?.title).toBe(title)
@@ -189,7 +194,7 @@ it('retries only explicitly, keeps the chosen slice and resets when leaving the 
   await act(async () => { await result.current.openWeldingJournalWaitingRepairReport() })
   expect(result.current.reportPreviewProps?.error).toBe('Нет соединения')
   await act(async () => result.current.reportPreviewProps?.onRetry())
-  expect(p.loadWeldingJournalRows).toHaveBeenNthCalledWith(2, 'waitingRepair')
+  expect(p.loadWeldingJournalRows).toHaveBeenNthCalledWith(2, 'waitingRepair', undefined, expect.any(AbortSignal))
   expect(result.current.reportPreviewProps?.error).toBe('')
   rerender({ context: 'lnk' })
   expect(result.current.reportPreviewProps).toBeNull()

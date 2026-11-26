@@ -137,8 +137,23 @@ test('statistics and import: large lists, preserved details and bounded renderin
     const emptyBook = XLSX.read(await readFile((await emptyFile.path())!), { type: 'buffer' })
     const emptyRows = emptyBook.SheetNames.flatMap(name => XLSX.utils.sheet_to_json<unknown[]>(emptyBook.Sheets[name], { header: 1 }))
     expect(emptyRows.filter(row => /^G\d{4}$/.test(String(row[0])))).toHaveLength(0)
+    // Reproduce a return to search immediately after closing, before the next
+    // paint. The preview's deferred return focus must not redirect Backspace.
+    await stampSearch.evaluate((field: HTMLInputElement) => {
+      const dialog = document.querySelector('[role="dialog"][aria-label="Предпросмотр отчёта"]')!
+      const closed = new MutationObserver(() => {
+        if (dialog.isConnected) return
+        closed.disconnect()
+        field.focus()
+        field.select()
+      })
+      closed.observe(document.body, { childList: true })
+    })
     await emptyPreview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
-    await stampSearch.fill('')
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(stampSearch).toBeFocused()
+    await page.keyboard.press('Backspace')
+    await expect(stampSearch).toHaveValue('')
     await expect(welders.getByText('Динамика по дням', { exact: true })).toBeVisible()
     await expect(page.getByText('Сварщиков в срезе', { exact: true }).locator('..')).toHaveText(/Сварщиков в срезе\s*1000/)
     expect(calls.filter(x => x.startsWith('getStatisticsServerResult_'))).toHaveLength(beforeScroll)

@@ -7,10 +7,18 @@ const prepared = new WeakSet<HTMLElement>()
 export function positionGridPopup({ ePopup }: PostProcessPopupParams) {
   if (!prepared.has(ePopup)) {
     prepared.add(ePopup)
-    // AG's resize div is not focusable. Keep focus in the filter so Escape
-    // and typing still work after dragging, including in nested program grids.
+    // A filter can finish opening before its search field receives focus.
+    // A resize is an interaction with this popup, so Escape belongs here.
     ePopup.addEventListener('mousedown', event => {
-      if (event.target instanceof Element && event.target.closest('.ag-resizer')) event.preventDefault()
+      if (!(event.target instanceof Element) || !event.target.closest('.ag-resizer')) return
+      event.preventDefault()
+      if (ePopup.contains(ePopup.ownerDocument.activeElement)) return
+      const search = ePopup.querySelector<HTMLElement>('input:is([type="text"], [type="search"]):not(:disabled), input:not([type]):not(:disabled)')
+      search?.focus({ preventScroll: true })
+      if (!ePopup.contains(ePopup.ownerDocument.activeElement)) {
+        if (!ePopup.hasAttribute('tabindex')) ePopup.tabIndex = -1
+        ePopup.focus({ preventScroll: true })
+      }
     }, true)
   }
   const rect = ePopup.getBoundingClientRect()

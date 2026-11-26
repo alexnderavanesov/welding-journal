@@ -8,7 +8,10 @@ import { Server } from 'node:http'
 import { Session } from 'node:inspector'
 
 export function installHeavyCalculationProbe(pg, countsFile) {
-  assert.equal(process.env.DATABASE_URL, 'postgresql://welding:welding@127.0.0.1:5432/welding_tracker_e2e')
+  const performanceProfile = process.env.E2E_DATABASE_PROFILE === 'precommit-performance'
+  const database = performanceProfile ? 'welding_tracker_precommit_perf_e2e' : 'welding_tracker_e2e'
+  assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@127.0.0.1:5432/${database}`)
+  assert.equal(process.env.PORT, performanceProfile ? '3177' : '3100')
   assert.equal(process.env.AUDIT_PRIORITY_SPEED, '1')
   assert.notEqual(process.env.AUDIT_CPU_PROFILE, '1')
   const scope = new AsyncLocalStorage(), originalQuery = pg.Client.prototype.query, originalEmit = Server.prototype.emit

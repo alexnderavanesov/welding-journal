@@ -29,7 +29,14 @@ test.afterAll(async () => withE2eDatabase(async db => {
   if (previousDataList) await db.query("update app_settings set value=$1,updated_at=$2 where key='data-list'", [previousDataList.value, previousDataList.updated_at])
   else await db.query("delete from app_settings where key='data-list'")
 }))
-test.afterEach(() => cleanupLineProgramProjects([project]))
+test.afterEach(async ({}, info) => {
+  await cleanupLineProgramProjects([project])
+  if (info.tags.includes('@large-membership-fixture')) {
+    // Removing 200000 memberships can leave the next registry query planned
+    // for the old table sizes until autovacuum runs on the disposable database.
+    await withE2eDatabase(db => db.query('vacuum (analyze) generated_document_weld_joints, weld_joints, generated_documents'))
+  }
+})
 
 async function seed() {
   const { ids, manualIds } = await withLineProgramFixture(async db => {
@@ -198,7 +205,7 @@ test('измененный ЖСР нельзя удалить устаревши
   expect(errors).toEqual([])
 })
 
-test('реквизиты документа на 200000 стыков возвращают одну сводку без выгрузки строк', async () => {
+test('реквизиты документа на 200000 стыков возвращают одну сводку без выгрузки строк', { tag: '@large-membership-fixture' }, async () => {
   test.setTimeout(120_000)
   const documentId = await withE2eDatabase(async db => {
     await test.step('seed 200000 weld rows', () => db.query(`insert into weld_joints (project_title,subtitle_code,line,joint,weld_date,wdi)

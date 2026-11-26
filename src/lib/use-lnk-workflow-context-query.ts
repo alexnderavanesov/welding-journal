@@ -1,3 +1,4 @@
+import { readWorkflowRowPage, useWorkflowCandidatePage } from '@/lib/workflow-candidate-page'
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useWorkflowQuerySelection } from '@/lib/use-workflow-query-selection'
@@ -67,7 +68,7 @@ export function useLnkWorkflowRowsQuery({
   const initialSelection = useWorkflowQuerySelection(isCandidateQuery ? queryIdentity : null, normalizedRequest?.includeRowIds)
   const query = useQuery({
     queryKey: [...LNK_WORKFLOW_ROWS_QUERY_KEY, isCandidateQuery ? { ...queryIdentity, initialSelection } : queryIdentity],
-    queryFn: () => listLnkWorkflowRows({ data: normalizedRequest! }),
+    queryFn: () => readWorkflowRowPage(normalizedRequest!, data => listLnkWorkflowRows({ data })),
     enabled: normalizedRequest !== null,
     // Every newly opened workflow reads current facts; focus does not replace a draft.
     staleTime: 0,
@@ -82,12 +83,13 @@ export function useLnkWorkflowRowsQuery({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
-  return {
-    ...query,
-    // Cached/placeholder rows can be displayed, but cannot prune a draft.
-    isContextReady: normalizedRequest !== null && query.isSuccess &&
-      !query.isPlaceholderData && !query.isFetching,
-  }
+  const page = useWorkflowCandidatePage(
+    query.data,
+    normalizedRequest?.includeRowIds,
+    normalizedRequest !== null && query.isSuccess && !query.isPlaceholderData && !query.isFetching,
+    query.refetch,
+  )
+  return { ...query, ...page }
 }
 
 export function getLnkWorkflowRowsQueryIdentity(

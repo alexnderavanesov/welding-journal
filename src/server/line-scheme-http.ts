@@ -1,3 +1,5 @@
+import { logTechnicalError, publicHttpError } from './error-diagnostics'
+import { PublicRequestError } from '@/lib/public-request-error'
 import { and, eq } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { lineSchemeFiles, lineSchemeRevisions } from '@/db/schema'
@@ -16,19 +18,21 @@ export async function handleSchemeFile(request: Request) {
     const store = await getSchemeFileStore()
     if (request.method === 'GET' || request.method === 'HEAD') {
       const id = schemeToken(new URL(request.url).searchParams.get('revision'))
-      const [revision] = await requireDb().select().from(lineSchemeRevisions).where(eq(lineSchemeRevisions.id, id))
+      const [revision] = await requireDb().select({ fileKey: lineSchemeRevisions.fileKey, fileName: lineSchemeRevisions.fileName,
+        size: lineSchemeRevisions.size }).from(lineSchemeRevisions).where(eq(lineSchemeRevisions.id, id))
       if (!revision) return new Response('Редакция удалена или не найдена.', { status: 404 })
       return await schemeFileResponse(request, revision, store)
     }
     if (request.method !== 'POST') return new Response(null, { status: 405 })
     await requirePermission('schemes.edit')
-    if (!request.body) throw new Error('Файл не передан.')
+    if (!request.body) throw new PublicRequestError('Файл не передан.')
     const header = request.headers.get('x-line-scheme-upload') ?? ''
-    if (!header || header.length > 8192) throw new Error('Некорректные параметры загрузки.')
-    const data = JSON.parse(decodeURIComponent(header)) as SchemeWriteRequest & { fileName: string; replace: 'archive' | 'delete'; changeNumber?: string | null }
-    if (!['archive', 'delete'].includes(data.replace) || typeof data.fileName !== 'string' || !data.fileName.trim() || data.fileName.length > 255 || /[\x00-\x1f]/.test(data.fileName)) throw new Error('Некорректное имя файла или вариант замены.')
+    if (!header || header.length > 8192) throw new PublicRequestError('Некорректные параметры загрузки.')
+    let data: SchemeWriteRequest & { fileName: string; replace: 'archive' | 'delete'; changeNumber?: string | null }
+    try { data = JSON.parse(decodeURIComponent(header)) } catch { throw new PublicRequestError('Некорректные параметры загрузки.') }
+    if (!data || !['archive', 'delete'].includes(data.replace) || typeof data.fileName !== 'string' || !data.fileName.trim() || data.fileName.length > 255 || /[\x00-\x1f]/.test(data.fileName)) throw new PublicRequestError('Некорректное имя файла или вариант замены.')
     data.changeNumber = schemeChangeNumber(data.changeNumber)
-    if (Number(request.headers.get('content-length')) > SCHEME_MAX_BYTES) throw new Error('Размер PDF превышает 100 МБ.')
+    if (Number(request.headers.get('content-length')) > SCHEME_MAX_BYTES) throw new PublicRequestError('Размер PDF превышает 100 МБ.')
     pendingKey = await prepareSchemeUpload(data)
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(120_000)])
     const { size, digest, pageCount } = await store.upload(pendingKey, request.body, signal)
@@ -37,14 +41,14 @@ export async function handleSchemeFile(request: Request) {
     const result = await publishSchemeFile({ ...data, fileKey: pendingKey, fileName: data.fileName.trim(), size, digest, pageCount })
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Не удалось обработать PDF.'
-    return Response.json({ error: message, retryable: publishing }, { status: message.startsWith('AUTH_REQUIRED') ? 401 : message.includes('Недостаточно прав') ? 403 : 400, headers: { 'Cache-Control': 'no-store' } })
+    const { message, status } = publicHttpError(error, 'schemeFile', 'Не удалось обработать PDF.')
+    return Response.json({ error: message, retryable: publishing }, { status, headers: { 'Cache-Control': 'no-store' } })
   } finally {
     if (pendingKey) {
       // On success only an unused retry file remains staging. On failure this
       // marks the incomplete upload; the previous active revision is untouched.
-      await requireDb().update(lineSchemeFiles).set({ state: 'deleting', expiresAt: null }).where(and(eq(lineSchemeFiles.key, pendingKey), eq(lineSchemeFiles.state, 'staging'))).catch(error => console.error('Scheme upload cleanup remains pending:', error))
-      await cleanupSchemeFiles().catch(error => console.error('Scheme file cleanup remains pending:', error))
+      await requireDb().update(lineSchemeFiles).set({ state: 'deleting', expiresAt: null }).where(and(eq(lineSchemeFiles.key, pendingKey), eq(lineSchemeFiles.state, 'staging'))).catch(error => logTechnicalError('schemeUploadCleanup', error))
+      await cleanupSchemeFiles().catch(error => logTechnicalError('schemeFileCleanup', error))
     }
   }
 }

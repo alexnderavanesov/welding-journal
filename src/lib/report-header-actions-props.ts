@@ -70,6 +70,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenLnkCurrentReport: () => void
   onOpenLnkToRequestReport: () => void
   onOpenLnkWaitingNkReport: () => void
+  onOpenLnkWaitingRepairReport: () => void
   onOpenLnkConclusionsReport: () => void
   onLnkWorkflowMenuOpenChange: (open: boolean) => void
 }
@@ -141,6 +142,7 @@ export function createReportHeaderActionsProps({
   onOpenLnkCurrentReport,
   onOpenLnkToRequestReport,
   onOpenLnkWaitingNkReport,
+  onOpenLnkWaitingRepairReport,
   onOpenLnkConclusionsReport,
   onLnkWorkflowMenuOpenChange,
 }: CreateReportHeaderActionsPropsOptions): ReportHeaderActionsProps {
@@ -211,6 +213,7 @@ export function createReportHeaderActionsProps({
     onOpenLnkCurrentReport,
     onOpenLnkToRequestReport,
     onOpenLnkWaitingNkReport,
+    onOpenLnkWaitingRepairReport,
     onOpenLnkConclusionsReport,
     onLnkWorkflowMenuOpenChange,
   }

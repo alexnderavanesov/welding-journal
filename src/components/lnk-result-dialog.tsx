@@ -395,7 +395,11 @@ export function LnkResultDialog({
         </div>
       )}
 
+      {systemDocumentCreationPlan?.familySummary && (
+        <p role="status" className="shrink-0 px-5 py-2 text-sm font-medium text-slate-800">{systemDocumentCreationPlan.familySummary}</p>
+      )}
       <ResultDialogFooter
+        submitLabel={systemDocumentCreationPlan?.batchSubmitLabel}
         saveBlockReason={saveBlockReason}
         blockReasonActions={rootCauseActions.map((action) => ({
           key: action.key,

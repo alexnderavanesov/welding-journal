@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Locator, type Page, type Response } from '@playwright/test'
 import { eq } from 'drizzle-orm'
 import pg from 'pg'
 import { requireDb } from '../../src/db'
@@ -10,8 +10,8 @@ import { loadIndexedSystemDocumentHistoryGrid, loadIndexedSystemDocumentHistoryF
 import { normalizeSystemDocumentHistoryGridRequest, normalizeSystemDocumentHistoryFilterOptionsRequest } from '../../src/server/system-documents'
 import { assertSafeE2eDatabaseUrl, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { deserializeRpcPayload, rpcName } from '../rpc'
-import { openDocumentGridColumnMenu, openDocumentGridFilter, revealDocumentColumn as revealGridColumn } from '../document-grid'
+import { deserializeRpcPayload, deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
+import { documentGridRow, openDocumentGridColumnMenu, openDocumentGridFilter, revealDocumentColumn as revealGridColumn } from '../document-grid'
 
 const project = 'E2E document grid blocks'
 const defaults: DocumentHistoryGridRequest = { startRow: 0, endRow: 100, rowGroupCols: [], groupKeys: [], sortModel: [] }
@@ -219,6 +219,134 @@ test.beforeEach(async () => {
   })
 })
 test.afterEach(async () => { await cleanupLineProgramProjects([project]) })
+
+test('a native header click keeps its visible intent while a restored document selection is being counted', async ({ page }) => {
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid="generated:weldingJournal"]')
+  await scopeFixture(grid, 'generated')
+  const expected = (await read('generated', { endRow: 300 })).rows.map(row => String(row.id)).sort()
+  expect(expected).toHaveLength(250)
+  const savedIds = () => page.evaluate(() => {
+    const key = Object.keys(sessionStorage).find(name => name.endsWith(':welding-journal:documents:session:v1:generated:weldingJournal'))
+    const saved = key ? JSON.parse(sessionStorage.getItem(key)!) as { selectedDocumentIds: Array<string | number> } : null
+    return (saved?.selectedDocumentIds ?? []).map(String).sort()
+  })
+  const header = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
+  await header.click()
+  await expect.poll(savedIds).toEqual(expected)
+  await expect(header).toBeChecked()
+  for (const count of [250, 249]) {
+    if (count === 249) {
+      await grid.locator('.ag-row[row-id] input[type="checkbox"]').first().uncheck()
+      await expect.poll(async () => (await savedIds()).length).toBe(249)
+    }
+    let release!: () => void, counting = false
+    const gate = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/_serverFn/**', async route => {
+      const req = route.request()
+      if (rpcName(req.url()).includes('DocumentHistoryGrid')) {
+        const { data } = deserializeRpcPayload(req.postData()!) as { data: DocumentHistoryGridRequest }
+        if (data.countRoutes?.length && data.selectedIds?.length === count) { counting = true; await gate }
+      }
+      await route.continue()
+    })
+    try {
+      await page.reload()
+      const search = grid.getByRole('textbox', { name: 'Поиск документов', exact: true })
+      if (await search.inputValue() !== 'GRID-DOC-') await scopeFixture(grid, 'generated')
+      await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+      await expect.poll(() => counting).toBe(true)
+      await expect(header).not.toBeChecked()
+      const membership = page.waitForResponse(response => {
+        const req = response.request()
+        return req.url().includes('/_serverFn/') && rpcName(req.url()).includes('DocumentHistoryGrid')
+          && Boolean((deserializeRpcPayload(req.postData()!) as { data: DocumentHistoryGridRequest }).data.idsOnly)
+      })
+      await Promise.all([membership, header.click()])
+      release()
+      await expect(header).toBeChecked()
+      await expect.poll(savedIds).toEqual(expected)
+    } finally {
+      release()
+      await page.unrouteAll({ behavior: 'wait' })
+    }
+  }
+  await header.click()
+  await expect(header).not.toBeChecked()
+  await expect.poll(savedIds).toEqual([])
+})
+
+test('a changed joint revision warns the document reader, then all 250 requests and their memberships can be read after retry', async ({ page, browser, baseURL }) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto('/documents')
+  await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
+  const grid = page.locator('[data-document-history-grid]')
+  await scopeFixture(grid, 'system')
+  const title = grid.locator('.ag-header-cell[col-id="title"]')
+  const firstRead = page.waitForResponse(response => {
+    const req = response.request()
+    if (!req.url().includes('/_serverFn/') || !rpcName(req.url()).startsWith('listSystemDocumentHistoryGrid_')) return false
+    const { data } = deserializeRpcPayload(req.postData()!) as { data: DocumentHistoryGridRequest }
+    return data.sortModel.some(item => item.colId === 'title' && item.sort === 'asc')
+  })
+  await title.locator('.ag-header-cell-label').click()
+  const first = await firstRead
+  await expect(grid.getByRole('button', { name: 'GRID-REQ-001', exact: true })).toBeVisible()
+
+  const joint = await withE2eDatabase(async db => (await db.query(
+    'select id, xmin::text as version from weld_joints where project_title=$1 and joint=$2', [project, 'F3-1'],
+  )).rows[0])
+  const writer = await browser.newContext({ baseURL, storageState: process.env.E2E_AUTH_STATE })
+  try {
+    const response = await writer.request.post(siblingRpcUrl(first.url(), 'updateWeldJoint_createServerFn_handler'), {
+      headers: { origin: baseURL!, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
+      data: await serializeRpcData({ id: joint.id, expectedVersion: joint.version, weldingJournalNote: 'Проверена запись журнала' }),
+    })
+    expect(response.ok()).toBe(true)
+    const saved = await deserializeRpcResponse(await response.text()) as { error?: Error }
+    expect(saved.error).toBeUndefined()
+  } finally { await writer.close() }
+
+  const viewport = await grid.locator('.ag-grid-viewport').boundingBox()
+  if (!viewport) throw new Error('Document viewport is missing')
+  await page.mouse.move(viewport.x + viewport.width / 2, Math.min(850, viewport.y + 180))
+  await page.mouse.wheel(0, 6000)
+  const changed = grid.getByRole('alert').filter({ hasText: 'Данные реестра изменились. Обновите таблицу и повторите действие.' })
+  await expect(changed).toBeVisible()
+
+  type Row = { title: string; jointComposition: string }
+  const blocks: Promise<{ start: number; rows: Row[] }>[] = []
+  const observe = (response: Response) => {
+    const req = response.request()
+    if (!req.url().includes('/_serverFn/') || !rpcName(req.url()).startsWith('listSystemDocumentHistoryGrid_')) return
+    const { data } = deserializeRpcPayload(req.postData()!) as { data: DocumentHistoryGridRequest }
+    if (data.search === 'GRID-REQ-' && !data.idsOnly && !data.selectionOnly && !data.cells) {
+      blocks.push(response.text().then(deserializeRpcResponse).then(value => ({
+        start: data.startRow, rows: (value as { result: { rows: Row[] } }).result.rows,
+      })))
+    }
+  }
+  page.on('response', observe)
+  try {
+    await changed.getByRole('button', { name: 'Повторить', exact: true }).click()
+    await expect(changed).toBeHidden()
+    for (const ordinal of [1, 200, 250]) {
+      const row = await documentGridRow(page, 'GRID-REQ-' + String(ordinal).padStart(3, '0'))
+      await expect(row.titleCell).toBeVisible()
+    }
+    const expected = Array.from({ length: 250 }, (_, index) => {
+      const n = index + 1, count = n === 1 ? 10 : n === 2 || n === 249 ? 2 : 1
+      return { title: 'GRID-REQ-' + String(n).padStart(3, '0'), jointComposition: Array.from({ length: count }, (_, i) => 'F' + n + '-' + (i + 1)).join(' ') }
+    })
+    const actual = new Map<number, Row>()
+    for (const block of await Promise.all(blocks)) for (const [offset, row] of block.rows.entries()) {
+      actual.set(block.start + offset, { title: row.title, jointComposition: row.jointComposition })
+    }
+    expect(Array.from({ length: 250 }, (_, index) => actual.get(index))).toEqual(expected)
+    await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  } finally { page.off('response', observe) }
+})
 
 async function read(kind: Kind, request: Partial<DocumentHistoryGridRequest> = {}) {
   return kind === 'generated'

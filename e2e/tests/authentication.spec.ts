@@ -1,18 +1,92 @@
 import { expect, test } from '@playwright/test'
 import { resetE2eAccountFixtureLimits, latestE2eToken } from '../authentication'
 import { withE2eDatabase } from '../database'
+import { guestRoutes } from '../guest-route-contract'
+import { builtServerFunctionNames, deserializeRpcResponse, serializeRpcData, siblingRpcUrl } from '../rpc'
+import { OPERATION_POLICIES } from '../../src/server/access-operation-policy'
 
 test.beforeEach(resetE2eAccountFixtureLimits)
 
+test('ordinary sign-in and journal opening on the local comparison fixture', async ({ browser, baseURL }) => {
+  test.skip(process.env.MEASURE_SECURITY_WORKFLOWS !== '1', 'Explicit before/after measurement')
+  const samples: { login: number; journal: number }[] = []
+  for (let round = 0; round < 6; round++) {
+    const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } })
+    try {
+      const start = performance.now()
+      const response = await context.request.post('/api/auth/sign-in/email', { headers: { origin: baseURL! },
+        data: { email: 'owner@e2e.test', password: process.env.E2E_AUTH_PASSWORD } })
+      expect(response.status()).toBe(200)
+      const login = Math.round(performance.now() - start)
+      const page = await context.newPage()
+      const open = performance.now()
+      await page.goto('/journal')
+      await expect(page.locator('[data-welding-journal-grid] .journal-loaded-count')).toHaveText(/Найдено: \d+/)
+      if (round) samples.push({ login, journal: Math.round(performance.now() - open) })
+    } finally { await context.close() }
+  }
+  console.log('SECURITY_WORKFLOW_MS', JSON.stringify(samples))
+})
+
+test('valid invitation completion on the local comparison fixture', async ({ page, browser, baseURL }) => {
+  test.skip(process.env.MEASURE_SECURITY_WORKFLOWS !== '1', 'Explicit before/after measurement')
+  const { asE2eOwner } = await import('../with-owner-access')
+  const { inviteAccount } = await import('../../src/server/account-management')
+  const { randomUUID } = await import('node:crypto')
+  let observed = ''
+  page.on('request', r => { if (r.url().includes('/_serverFn/')) observed = r.url() })
+  await page.goto('/account')
+  await expect(page.getByRole('heading', { name: 'Пользователи и права' })).toBeVisible()
+  const endpoint = siblingRpcUrl(observed, 'completeAccountLink_createServerFn_handler')
+  const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } })
+  const samples = []
+  try {
+    for (let round = 0; round < 6; round++) {
+      const email = `invite-${randomUUID()}@e2e.test`
+      await asE2eOwner(inviteAccount, 'welding.view')({ name: 'Тест времени входа', title: '', email, role: 'user', permissions: [] })
+      const payload = await serializeRpcData({ token: await latestE2eToken(), kind: 'invite', password: 'local-comparison' })
+      const started = performance.now()
+      const response = await context.request.post(endpoint, { data: payload, headers: { origin: baseURL!, 'x-tsr-serverFn': 'true', 'content-type': 'application/json' } })
+      const result = await deserializeRpcResponse(await response.text()) as { result?: { ok?: boolean } }
+      const elapsed = Math.round(performance.now() - started)
+      expect(result.result?.ok).toBe(true)
+      if (round) samples.push(elapsed)
+    }
+    console.log('SECURITY_INVITE_MS', JSON.stringify(samples))
+  } finally { await context.close() }
+})
+
 test('guest is closed; alternate account APIs and Excel do not bypass access', async ({ browser, baseURL }) => {
+  if (process.env.E2E_USE_PRODUCTION_BUILD === '1') {
+    const registered = Object.keys(OPERATION_POLICIES).map(key => key.split('#')[1] + '_createServerFn_handler')
+    const built = [...builtServerFunctionNames().values()]
+    expect(built.length).toBeGreaterThan(0)
+    expect(built.filter(name => !registered.includes(name))).toEqual([])
+  }
   const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } })
   try {
     const page = await context.newPage(); await page.goto('/journal')
     await expect(page.getByRole('heading', { name: 'Вход в систему' })).toBeVisible()
     await page.screenshot({ path: '/private/tmp/welding-auth-login.png', fullPage: true })
     await expect(page.getByText('E2E проект', { exact: true })).toHaveCount(0)
-    const response = await context.request.post('/api/report-excel', { data: { report: 'weldingJournal' } })
-    expect(response.ok()).toBe(false)
+    for (const [path, methods] of Object.entries(guestRoutes)) {
+      for (const [method, access] of Object.entries(methods)) {
+        if (access === 'authentication') continue
+        const response = await context.request.fetch(path, { method })
+        if (access === 'maintenance') {
+          expect(response.status()).toBe(process.env.MAINTENANCE_TOKEN?.trim() ? 401 : 503)
+          expect(await response.json()).toEqual({ error: process.env.MAINTENANCE_TOKEN?.trim() ? 'Unauthorized' : 'MAINTENANCE_TOKEN is not configured' })
+        } else {
+          expect(response.status(), method + ' ' + path).toBe(401)
+          if (method !== 'HEAD') expect(await response.text()).toContain('Войдите в систему')
+        }
+      }
+    }
+    if (process.env.E2E_USE_PRODUCTION_BUILD === '1') {
+      expect(await (await context.request.get('/health/live')).json()).toEqual({ alive: true })
+      expect(await (await context.request.get('/health/ready')).json()).toEqual({ ready: true })
+    }
+    expect(await (await context.request.get('/api/auth/get-session')).json()).toBeNull()
     for (const endpoint of ['sign-up/email', 'change-email', 'update-user', 'request-password-reset']) expect((await context.request.post(`/api/auth/${endpoint}`, { data: {} })).status()).toBe(404)
   } finally { await context.close() }
 })

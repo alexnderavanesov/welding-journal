@@ -564,8 +564,8 @@ function StatisticsReports({
                 event.currentTarget.focus({ preventScroll: true })
                 // Preview, print and Excel retain the same immutable snapshot,
                 // even if the underlying query refreshes while the modal is open.
-                const report = printableReport
-                void openPreview(async () => ({ report, onDownloadExcel: () => downloadPrintableReport(report) }))
+                const report = printableReport, generatedAt = new Date()
+                void openPreview(async () => ({ report, onDownloadExcel: () => downloadPrintableReport(report, generatedAt) }))
               }}
               title="Предпросмотр и печать отчёта"
             >

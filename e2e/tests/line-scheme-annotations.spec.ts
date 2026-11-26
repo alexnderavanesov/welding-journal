@@ -1,8 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Route } from '@playwright/test'
 import { PDFDocument } from 'pdf-lib'
 import { withE2eDatabase } from '../database'
 import { filterSchemeProject } from '../line-scheme-grid'
 import { schemeFixtureCleanup } from '../line-scheme-fixtures'
+import { rpcName } from '../rpc'
 
 const trackProject = schemeFixtureCleanup(test)
 
@@ -121,7 +122,20 @@ test('обозначения и размеры: оформление, ввод �
   await list.getByRole('button', { name: 'Обозначение Опора ОП-12', exact: true }).click({ modifiers: ['Meta'] })
   await list.getByRole('button', { name: 'Обозначение Граница участка', exact: true }).click({ modifiers: ['Meta'] })
   await expect(list.getByRole('button', { name: 'Обозначение Граница участка', exact: true })).toBeFocused()
-  await page.keyboard.press('Backspace'); await expect(dialog).toBeVisible(); await expect(annotations).toHaveCount(0); await expect(dimensions).toHaveCount(0); await undo()
+  await page.keyboard.press('Backspace'); await expect(dialog).toBeVisible(); await expect(annotations).toHaveCount(0); await expect(dimensions).toHaveCount(0)
+  // Hold the normal metadata read so the gap before the point refresh is observable.
+  const metadata = (url: URL) => url.pathname.includes('/_serverFn/') && rpcName(url.href) === 'openLineScheme_createServerFn_handler'
+  let hold!: (route: Route) => void
+  const pending = new Promise<Route>(resolve => { hold = resolve })
+  await page.route(metadata, hold, { times: 1 })
+  await dialog.getByRole('button', { name: 'Отменить изменения', exact: true }).click()
+  await page.getByRole('dialog', { name: /^Отменить изменения/ }).getByRole('button', { name: 'Отменить изменения', exact: true }).click()
+  const request = await pending
+  try {
+    await expect(dialog.getByRole('button', { name: 'Обновить состояния', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('status')).toContainText('Обновляем сохранённую разметку')
+  } finally { await request.continue() }
+  await expect(dialog.getByRole('button', { name: 'Обновить состояния', exact: true })).toBeEnabled()
   await support.click(); await page.keyboard.press('Delete'); await expect(annotations).toHaveCount(1); await expect(dimensions).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Отменить изменения', exact: true }).click(); await page.getByRole('dialog', { name: /^Отменить изменения/ }).getByRole('button', { name: 'Отменить изменения', exact: true }).click()
   await expect(annotations).toHaveCount(2); await expect(dimensions).toHaveCount(2)

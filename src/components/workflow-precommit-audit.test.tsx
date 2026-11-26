@@ -59,6 +59,7 @@ describe('precommit workflow interaction audit', () => {
         onOpenCurrentReport={vi.fn()}
         onOpenToRequestReport={vi.fn()}
         onOpenWaitingNkReport={vi.fn()}
+        onOpenWaitingRepairReport={vi.fn()}
         onOpenConclusionsReport={vi.fn()}
         availability={availability}
         onWorkflowMenuOpenChange={actions.onWorkflowMenuOpenChange}

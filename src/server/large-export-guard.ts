@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { sql } from 'drizzle-orm'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 
@@ -6,9 +7,9 @@ export const LARGE_EXPORT_CELLS = 1_000_000
 // Separate two-int advisory-lock namespace, shared by all Excel entry points.
 export const LARGE_EXPORT_LOCK = [84192721, 1] as const
 
-export class LargeExportBusyError extends Error {
+export class LargeExportBusyError extends PublicRequestError {
   constructor() {
-    super('Сейчас в системе формируется большая выгрузка. Повторите скачивание немного позже. Небольшие выгрузки доступны.')
+    super('Сейчас в системе формируется большая выгрузка. Повторите скачивание немного позже. Небольшие выгрузки доступны.', 429)
     this.name = 'LargeExportBusyError'
   }
 }

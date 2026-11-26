@@ -169,6 +169,18 @@ describe('weld query cache updates', () => {
     }))
   })
 
+  it('preserves candidate request coverage when a cached page is corrected or a joint is deleted', () => {
+    const queryClient = createQueryClient()
+    const key = [...LNK_WORKFLOW_ROWS_QUERY_KEY, { scope: 'requestCandidates' }]
+    queryClient.setQueryData(key, { scope: 'requestCandidates', includedRowIds: [1, 2], rows: [
+      { id: 1, joint: 'F1' }, { id: 2, joint: 'F2' },
+    ] })
+    scheduleWeldDataRefresh(queryClient, { upsertRows: [{ id: 1, joint: 'F3' }], deleteIds: [2] })
+    expect(queryClient.getQueryData(key)).toEqual({
+      scope: 'requestCandidates', includedRowIds: [1, 2], rows: [{ id: 1, joint: 'F3' }],
+    })
+  })
+
   it('patches only rows already loaded by scoped LNK workflows', () => {
     const queryClient = createQueryClient()
     const requestRegistryKey = [

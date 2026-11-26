@@ -55,6 +55,7 @@ export type PstoRequestDialogProps = {
   availableRowsCount: number
   selectedIds: ReadonlySet<number>
   areAllAvailableRowsSelected: boolean
+  isContextReady?: boolean
   isPending: boolean
   saveCheckSettings: SaveCheckSettings
   canCreateRequest: (row: WeldRow) => boolean
@@ -88,6 +89,7 @@ export function PstoRequestDialog({
   availableRowsCount,
   selectedIds,
   areAllAvailableRowsSelected,
+  isContextReady = true,
   isPending,
   saveCheckSettings,
   canCreateRequest,
@@ -167,7 +169,7 @@ export function PstoRequestDialog({
     }
     onRunRootCauseAction?.(action)
   }
-  const createDisabledReason = getPstoRequestCreateDisabledReason({
+  const createDisabledReason = !isContextReady ? 'Загрузка выбранных стыков…' : getPstoRequestCreateDisabledReason({
     selectedRowsCount: selectedRows.length,
     requestName: effectiveRequestName,
     requestDateReason,
@@ -347,6 +349,7 @@ export function PstoRequestDialog({
       )}
 
       <RequestDialogFooter
+        submitLabel={creationPlan.batchSubmitLabel}
         isPending={isPending}
         isCreateDisabled={Boolean(createDisabledReason)}
         disabledReason={feedbackMessage}

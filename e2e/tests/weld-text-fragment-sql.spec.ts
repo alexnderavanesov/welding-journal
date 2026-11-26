@@ -7,7 +7,7 @@ import { DEFAULT_OTHER_SETTINGS } from '../../src/lib/other-settings'
 import { buildReportQueryWhere } from '../../src/server/weld-read'
 import { buildColumnTextContainsWhere } from '../../src/server/weld-server-shared'
 import type { WeldReportKind } from '../../src/server/weld-contracts'
-import { withE2eDatabase } from '../database'
+import { E2E_DATABASE_NAME, withE2eDatabase } from '../database'
 
 const dialect = new PgDialect()
 const settings = { ...DEFAULT_OTHER_SETTINGS, wdiCalculationMode: 'manual' as const }
@@ -62,7 +62,7 @@ test('text fragments preserve SQL truth values, NOT and nullable AND/OR, includi
 
 test('real report builders preserve fragment IDs and counts, combinations and each report membership', async () => {
   await withE2eDatabase(async client => {
-    expect((await client.query('select current_database() as name')).rows[0].name).toBe('welding_tracker_e2e')
+    expect((await client.query('select current_database() as name')).rows[0].name).toBe(E2E_DATABASE_NAME)
     await client.query('begin')
     try {
       // Only this transaction sees these 17 rows. ROLLBACK removes all facts;

@@ -1,3 +1,4 @@
+import { logTechnicalError } from './error-diagnostics'
 import { eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -25,7 +26,9 @@ import { assertSecurityScope } from '@/server/security-functions'
 import { rebuildLayeredControlDocumentsInTransaction } from '@/server/layered-control-documents'
 import { lockControlProcessSettings } from '@/server/control-process-settings-lock'
 import { getNextTimestampVersion } from '@/server/timestamp-version'
-import { validateDocumentTemplateRecovery } from '@/lib/document-template-replacement'
+import { MAX_TEMPLATE_BYTES } from '@/lib/document-template-workbook'
+import { PublicRequestError } from '@/lib/public-request-error'
+import { runFileValidation } from './file-validation-process'
 
 const DOCUMENT_TEMPLATE_IDS = new Set<DocumentTemplateId>([
   ...GENERATED_DOCUMENT_TYPES,
@@ -130,26 +133,56 @@ export async function getRemoteDocumentTemplate({
   })
 }
 
+// Bound retained request bodies even if a publication is waiting for a database lock.
+const maxEncodedTemplateSize = Math.ceil(MAX_TEMPLATE_BYTES / 3) * 4
+let pendingUploads = 0
+let pendingUploadSize = 0
+let inspectionTail = Promise.resolve()
+
 export async function saveRemoteDocumentTemplate({
   data: input,
 }: {
   data: SaveDocumentTemplateInput
 }): Promise<RemoteDocumentTemplate> {
-  const data = normalizeSaveTemplateInput(input)
   await assertSecurityScope('settings')
+  const data = normalizeSaveTemplateInput(input)
+  const size = data.fileDataBase64.length
+  if (size > maxEncodedTemplateSize) throw new Error('Размер шаблона превышает 32 МБ.')
+  if (pendingUploads >= DOCUMENT_TEMPLATE_IDS.size + 1 || pendingUploadSize + size > 2 * maxEncodedTemplateSize) {
+    throw new Error('Другой шаблон проходит проверку. Повторите загрузку немного позже.')
+  }
+  pendingUploads++
+  pendingUploadSize += size
+  try { return await persistDocumentTemplate(data) }
+  finally {
+    pendingUploads--
+    pendingUploadSize -= size
+  }
+}
+
+async function persistDocumentTemplate(data: ReturnType<typeof normalizeSaveTemplateInput>): Promise<RemoteDocumentTemplate> {
   const db = requireDb()
   const fileKey = createDocumentTemplateFileKey(data.id, data.fileType)
   await assertPersistentDocumentTemplateStorage(resolveDocumentTemplateStorageDirectory())
-  const fileData = Buffer.from(data.fileDataBase64, 'base64')
-  if (fileData.byteLength === 0) throw new Error('Файл шаблона пуст.')
-
-  const metadata: DocumentTemplateMetadata = {
-    sheetNames: data.sheetNames,
-    fields: data.fields,
-    markerCount: data.markerCount,
-    locations: data.locations,
-    warnings: data.warnings,
-  }
+  // Inspect against the version the operator opened, outside the write transaction.
+  // The locked read below rechecks this version and all mutable file conditions.
+  const [initial] = await db.select({
+    updatedAt: documentTemplates.updatedAt,
+    constructorConfig: documentTemplates.constructorConfig,
+  }).from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
+  assertExpectedDocumentTemplateVersion(initial, data.expectedVersion)
+  const inheritConfig = data.recoverMissingFile || data.constructorConfig === undefined
+  const constructorConfig = inheritConfig
+    ? initial?.constructorConfig ?? null
+    : data.constructorConfig ? JSON.stringify(data.constructorConfig) : null
+  const bindingConfig = parseJson<DocumentTemplateConstructorConfig | undefined>(constructorConfig, undefined)
+  const inspection = inspectionTail.then(async () => {
+    const fileData = Buffer.from(data.fileDataBase64, 'base64')
+    if (!fileData.length || fileData.length > MAX_TEMPLATE_BYTES) throw new Error('Загрузите непустой шаблон размером до 32 МБ.')
+    return { fileData, metadata: await inspectTemplate(fileData, data.fileType, bindingConfig) }
+  })
+  inspectionTail = inspection.then(() => {}, () => {})
+  const { fileData, metadata } = await inspection
   let wroteFile = false
   const saved = await db.transaction(async (tx) => {
     const isLayeredTemplate = isLayeredControlDocumentType(data.id)
@@ -165,8 +198,9 @@ export async function saveRemoteDocumentTemplate({
     if (data.recoverMissingFile) {
       if (!existing) throw new Error('Запись шаблона больше не существует. Обновите страницу настроек.')
       if (await templateStore.get(existing.blobKey)) throw new Error('Файл шаблона уже доступен. Обновите страницу настроек; для замены используйте обычную загрузку.')
-      const issues = await validateDocumentTemplateRecovery(parseJson<DocumentTemplateConstructorConfig | undefined>(existing.constructorConfig, undefined), fileData)
-      if (issues.length) throw new Error(`Файл не подходит для сохранённых настроек конструктора. ${issues.join(' ')} Настройки не изменены; загрузите исходный файл с прежней структурой.`)
+    }
+    if (inheritConfig && (existing?.constructorConfig ?? null) !== constructorConfig) {
+      throw new Error('Настройки шаблона изменились во время проверки. Обновите страницу настроек и повторите загрузку.')
     }
     // Retry unfinished cleanup before accepting another upload, bounding garbage
     // even after crashes. Do not remove possible recovery copies of a missing file.
@@ -181,16 +215,10 @@ export async function saveRemoteDocumentTemplate({
       fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength),
     )
     const storedFile = await templateStore.get(fileKey)
-    if (!storedFile || storedFile.byteLength !== fileData.byteLength) {
+    if (!storedFile || !Buffer.from(storedFile).equals(fileData)) {
       await templateStore.delete(fileKey).catch(() => undefined)
       throw new Error('Не удалось проверить сохраненный файл шаблона в общем хранилище.')
     }
-    const constructorConfig =
-      data.recoverMissingFile || data.constructorConfig === undefined
-        ? existing?.constructorConfig ?? null
-        : data.constructorConfig === null
-          ? null
-          : JSON.stringify(data.constructorConfig)
     const [savedRecord] = await tx
       .insert(documentTemplates)
       .values({
@@ -238,7 +266,8 @@ export async function saveRemoteDocumentTemplate({
         })
         if (committed) return committed
       } catch {
-        throw new Error(`${error instanceof Error ? error.message : 'Не удалось сохранить шаблон.'} Не удалось проверить и очистить незавершённый файл; повторите очистку в настройках после восстановления хранилища.`)
+        const eventId = logTechnicalError('templateSaveRecovery', error)
+        throw new Error(`Не удалось проверить сохранение шаблона. После восстановления хранилища проверьте результат в настройках. Код события: ${eventId}.`)
       }
     }
     throw error
@@ -253,6 +282,20 @@ export async function saveRemoteDocumentTemplate({
     fileDataBase64: data.fileDataBase64,
     ...(storageWarning ? { storageWarning } : {}),
   }
+}
+
+async function inspectTemplate(bytes: Buffer, fileType: string, bindingConfig?: DocumentTemplateConstructorConfig) {
+  const { templateInspectionWorkerUrl } = await import('./document-template-inspection-worker.mjs')
+  const url = new URL(templateInspectionWorkerUrl)
+  // In the source checkout the shared workbook reader is TypeScript. Nitro ships compiled chunks.
+  const loader = url.pathname.endsWith('/src/server/document-template-inspection-worker.mjs') ? ['--import', 'tsx'] : []
+  const invalid = 'Не удалось прочитать шаблон Excel. Проверьте формат и содержимое файла.'
+  return await runFileValidation(url, 'DOCUMENT_TEMPLATE_WORKER', { bytes, fileType, bindingConfig }, invalid,
+    'Шаблон слишком сложный для безопасной проверки.', result => {
+      if (result.ok !== true || !result.metadata || !Array.isArray(result.issues)) throw new PublicRequestError(invalid)
+      if (result.issues.length) throw new PublicRequestError(`Файл не подходит для сохранённых настроек конструктора. ${result.issues.join(' ')} Настройки не изменены; загрузите исходный файл с прежней структурой.`)
+      return result.metadata as DocumentTemplateMetadata
+    }, undefined, loader)
 }
 
 export async function updateRemoteDocumentTemplate({
@@ -339,7 +382,7 @@ export async function cleanupRemoteDocumentTemplateFiles({ data }: { data: { id:
   return { deletedFileCount: deleted.length }
 }
 
-function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocumentTemplateInput {
+function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput) {
   const fileType = String(data?.fileType ?? '').trim().toLowerCase()
   if (fileType !== 'xlsx' && fileType !== 'xls') {
     throw new Error('Поддерживаются только шаблоны Excel в форматах .xlsx и .xls.')
@@ -348,13 +391,7 @@ function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocume
     id: requireTemplateId(data?.id),
     fileName: String(data?.fileName ?? '').trim(),
     fileType,
-    fileSize: Math.max(0, Math.floor(Number(data?.fileSize) || 0)),
     fileDataBase64: String(data?.fileDataBase64 ?? ''),
-    sheetNames: Array.isArray(data?.sheetNames) ? data.sheetNames.map(String) : [],
-    fields: Array.isArray(data?.fields) ? data.fields.map(String) : [],
-    markerCount: Math.max(0, Math.floor(Number(data?.markerCount) || 0)),
-    locations: Array.isArray(data?.locations) ? data.locations : [],
-    warnings: Array.isArray(data?.warnings) ? data.warnings.map(String) : [],
     constructorConfig:
       data?.constructorConfig === null
         ? null

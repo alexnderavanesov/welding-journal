@@ -125,9 +125,12 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
     const point = visiblePoints.find(point => focusPoint.physicalId ? point.physicalId === focusPoint.physicalId : point.joint.rootId === focusPoint.rootId)
     if (point) { selectedFocusSequence.current = focusPoint.sequence; setSelectedPoint(point) }
   }, [focusPoint, visiblePoints])
+  const refreshSavedStates = useCallback(() => Promise.all([
+    client.invalidateQueries({ queryKey: ['line-scheme-joints', token] }),
+    client.invalidateQueries({ queryKey: ['line-scheme-points', token] }),
+  ]), [client, token])
   const refreshStates = useCallback(() => {
-    void client.invalidateQueries({ queryKey: ['line-scheme-joints', token] })
-    void client.invalidateQueries({ queryKey: ['line-scheme-points', token] })
+    void refreshSavedStates()
     draftRefreshAbort.current?.abort()
     const roots = [...new Set([...draftRef.current.values()].filter(item => item.added).map(item => item.change.rootId!))]
     if (!roots.length || !bundleRef.current) { setUpdatingDraft(false); return }
@@ -152,7 +155,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
         setDraft(previous => new Map([...previous].map(([id, item]) => [id, item.added ? { ...item, point: { ...item.point, joint: { ...item.point.joint, color: 'error' as const, reason: 'Не удалось обновить состояние. Повторите получение состояний.' } } } : item])))
       } finally { if (!controller.signal.aborted && alive.current) setUpdatingDraft(false) }
     })()
-  }, [client, token])
+  }, [refreshSavedStates])
   // Local successful mutations refresh state; other users are read on explicit refresh.
   useEffect(() => client.getMutationCache().subscribe(event => {
     if (event.type === 'updated' && event.action.type === 'success') refreshStates()
@@ -168,6 +171,20 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
       setRevisionId(next.bundle?.activeRevisionId ?? next.bundle?.revisions.at(-1)?.id ?? null); setPage(1)
     }
     return next
+  }
+  async function discardAndReload() {
+    setDiscardPrompt(false)
+    draftRefreshAbort.current?.abort()
+    setUpdatingDraft(false)
+    discard()
+    setBusy('Обновляем сохранённую разметку…')
+    try {
+      if (await reopen(false, true)) await refreshSavedStates()
+    } catch (reason) {
+      if (alive.current) setError(errorMessage(reason))
+    } finally {
+      if (alive.current) setBusy('')
+    }
   }
   useEffect(() => {
     if (!bundle || revisionId) return
@@ -574,7 +591,7 @@ export function LineSchemeDialog({ line, session, initialRevisionId, onManageFil
             title: !current ? 'Архив доступен только для просмотра' : !editable ? 'Редактирование недоступно' : 'Удалить отметку с чертежа; стык останется в журнале', onSelect: () => removePoints(selectedPointIds.has(menuPoint.id) ? selectedPoints : [menuPoint]) },
         ],
       } : objectMenu && objectMenuItems.length ? { ...objectMenu, heading: menuAnnotation ? selectedCount > 1 ? `Выбрано объектов: ${selectedCount}` : menuAnnotation.label : 'Размер', items: objectMenuItems } : null} />
-      {discardPrompt && <ConfirmActionDialog title="Отменить изменения разметки?" description="Несохранённые изменения поворота листов, точек, обозначений и размеров будут отменены. Сохранённая разметка останется." confirmLabel="Отменить изменения" tone="warning" onClose={() => setDiscardPrompt(false)} onConfirm={() => { setDiscardPrompt(false); discard(); void reopen(false, true).then(refreshStates).catch(reason => setError(errorMessage(reason))) }} />}
+      {discardPrompt && <ConfirmActionDialog title="Отменить изменения разметки?" description="Несохранённые изменения поворота листов, точек, обозначений и размеров будут отменены. Сохранённая разметка останется." confirmLabel="Отменить изменения" tone="warning" onClose={() => setDiscardPrompt(false)} onConfirm={() => void discardAndReload()} />}
       {closePrompt && <SchemeClosePrompt dirty={dirty} uncertain={!!retry} canSave={editable && !retry && !inputDirty && !placingAnnotation} onSave={() => { setClosePrompt(false); void save(true) }} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
     </div>
   </LargeDialogShell>

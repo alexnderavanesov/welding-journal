@@ -16,6 +16,10 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const resourceContainer = process.env.AUDIT_RESOURCE_CONTAINER === '1'
+const performanceProfile = process.env.E2E_DATABASE_PROFILE === 'precommit-performance'
+const releaseAccessProfile = process.env.E2E_DATABASE_PROFILE === 'release-access'
+const workflowProfile = process.env.E2E_DATABASE_PROFILE === 'precommit-workflows'
+if (releaseAccessProfile || workflowProfile) assert.equal(resourceContainer, false)
 const s3Restore = process.env.E2E_DATABASE_PROFILE === 'line-scheme-s3-restore'
 const s3Integration = process.env.E2E_DATABASE_PROFILE === 'line-scheme-s3' || s3Restore
 if (s3Integration) {
@@ -24,8 +28,13 @@ if (s3Integration) {
   assert.equal(process.env.LINE_SCHEME_S3_BUCKET, 'welding-journal-schemes-test')
   assert.equal(process.env.LINE_SCHEME_S3_ENDPOINT, 'https://s3.ru-1.storage.selcloud.ru')
 }
-assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@${resourceContainer ? 'host.docker.internal' : '127.0.0.1'}:5432/${s3Restore ? 'welding_tracker_s3_restore_20261111' : s3Integration ? 'welding_tracker_s3_e2e_20261111' : 'welding_tracker_e2e'}`)
-assert.equal(process.env.PORT, resourceContainer ? '3000' : s3Restore ? '3109' : s3Integration ? '3107' : '3100')
+const databaseName = s3Restore ? 'welding_tracker_s3_restore_20261111' : s3Integration ? 'welding_tracker_s3_e2e_20261111'
+  : performanceProfile ? 'welding_tracker_precommit_perf_e2e'
+  : releaseAccessProfile ? 'welding_tracker_release_access_e2e'
+  : workflowProfile ? 'welding_tracker_precommit_workflows_e2e' : 'welding_tracker_e2e'
+if (performanceProfile || releaseAccessProfile || workflowProfile) assert.equal(process.env.LINE_SCHEME_STORAGE_DRIVER, 'local')
+assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@${resourceContainer ? 'host.docker.internal' : '127.0.0.1'}:5432/${databaseName}`)
+assert.equal(process.env.PORT, resourceContainer ? '3000' : s3Restore ? '3109' : s3Integration ? '3107' : performanceProfile ? '3177' : releaseAccessProfile ? '3175' : '3100')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
 // Saved comparison bundles live outside Vite's mutable .output directory.
 // This changes only the local audit runner and keeps the dev server usable.

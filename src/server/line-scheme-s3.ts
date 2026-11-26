@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
@@ -13,10 +14,10 @@ const operationSignal = (signal?: AbortSignal) => AbortSignal.any([...(signal ? 
 const validSize = (size: unknown): size is number => typeof size === 'number' && Number.isSafeInteger(size) && size > 0 && size <= SCHEME_MAX_BYTES
 
 function storageError(error: unknown, signal?: AbortSignal): Error {
-  if (signal?.aborted) return new Error('Операция с PDF отменена.')
-  if (status(error) === 404) return new Error('Файл PDF не найден в хранилище.')
-  if (status(error) === 409 || status(error) === 412) return new Error('Файл этой редакции уже существует. Повторите загрузку как новую редакцию.')
-  return new Error(STORAGE_ERROR)
+  if (signal?.aborted) return new PublicRequestError('Операция с PDF отменена.')
+  if (status(error) === 404) return new PublicRequestError('Файл PDF не найден в хранилище.')
+  if (status(error) === 409 || status(error) === 412) return new PublicRequestError('Файл этой редакции уже существует. Повторите загрузку как новую редакцию.')
+  return new PublicRequestError(STORAGE_ERROR)
 }
 
 /** Single PUT fits the agreed 100 MiB limit; no multipart permissions or orphaned parts. */
@@ -47,14 +48,14 @@ export function createS3SchemeFileStore(config: SchemeS3Config, client = new S3C
     async read(key, start, end, signal) {
       const target = input(key)
       if ((start === undefined) !== (end === undefined) || start !== undefined &&
-        (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end! < start)) throw new Error('Некорректный диапазон PDF.')
+        (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end! < start)) throw new PublicRequestError('Некорректный диапазон PDF.')
       signal?.throwIfAborted()
       let result
       try {
         result = await client.send(new GetObjectCommand({ ...target, ...(start !== undefined ? { Range: `bytes=${start}-${end}` } : {}) }), { abortSignal: signal })
       } catch (error) { throw storageError(error, signal) }
       const stream = result.Body
-      if (!(stream instanceof Readable)) throw new Error(STORAGE_ERROR)
+      if (!(stream instanceof Readable)) throw new PublicRequestError(STORAGE_ERROR)
       let size = result.ContentLength
       let valid = validSize(size)
       if (start !== undefined) {
@@ -63,19 +64,22 @@ export function createS3SchemeFileStore(config: SchemeS3Config, client = new S3C
         valid = !!match && validSize(size) && Number(match[1]) === start && Number(match[2]) === end &&
           end! < size && result.ContentLength === end! - start + 1 && result.$metadata.httpStatusCode === 206
       } else if (result.ContentRange || result.$metadata.httpStatusCode !== 200) valid = false
-      if (!valid) { stream.destroy(); throw new Error(SIZE_ERROR) }
-      const abort = () => stream.destroy(new Error('Чтение PDF отменено.'))
+      if (!valid) { stream.destroy(); throw new PublicRequestError(SIZE_ERROR) }
+      const abort = () => stream.destroy(new PublicRequestError('Чтение PDF отменено.'))
       signal?.addEventListener('abort', abort, { once: true })
       stream.once('close', () => signal?.removeEventListener('abort', abort))
-      if (signal?.aborted) { stream.destroy(); throw new Error('Чтение PDF отменено.') }
+      if (signal?.aborted) { stream.destroy(); throw new PublicRequestError('Чтение PDF отменено.') }
       return { stream, size: size! }
     },
     async size(key, signal) {
+      const target = input(key)
+      let size
       try {
-        const result = await client.send(new HeadObjectCommand(input(key)), { abortSignal: operationSignal(signal) })
-        if (!validSize(result.ContentLength)) throw new Error(SIZE_ERROR)
-        return result.ContentLength
+        const result = await client.send(new HeadObjectCommand(target), { abortSignal: operationSignal(signal) })
+        size = result.ContentLength
       } catch (error) { throw storageError(error, signal) }
+      if (!validSize(size)) throw new PublicRequestError(SIZE_ERROR)
+      return size
     },
     async remove(key, callerSignal) {
       const target = input(key), signal = operationSignal(callerSignal)

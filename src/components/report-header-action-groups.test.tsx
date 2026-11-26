@@ -32,6 +32,7 @@ function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
       onOpenCurrentReport={vi.fn()}
       onOpenToRequestReport={vi.fn()}
       onOpenWaitingNkReport={vi.fn()}
+      onOpenWaitingRepairReport={vi.fn()}
       onOpenConclusionsReport={vi.fn()}
       onWorkflowMenuOpenChange={onWorkflowMenuOpenChange}
     />,
@@ -119,6 +120,7 @@ describe('LnkHeaderActions', () => {
           onOpenCurrentReport={vi.fn()}
           onOpenToRequestReport={vi.fn()}
           onOpenWaitingNkReport={vi.fn()}
+          onOpenWaitingRepairReport={vi.fn()}
           onOpenConclusionsReport={vi.fn()}
         />
       )

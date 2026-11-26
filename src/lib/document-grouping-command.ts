@@ -21,10 +21,10 @@ export function getCreationGroupingCommand(groups: readonly SystemDocumentCreati
 }
 
 /** Validate the full server-side composition; the UI's grouping is not an authority. */
-export function assertCreationGrouping<Row extends SystemDocumentSplitRow>(groups: Array<{ rows: Row[]; name: string }>, mode: SystemDocumentSplitMode) {
+export function assertCreationGrouping<Row extends SystemDocumentSplitRow>(groups: Array<{ rows: Row[]; name: string }>, mode: SystemDocumentSplitMode, separateConclusionFamilies = false) {
   const allRows = groups.flatMap(group => group.rows)
   if (new Set(allRows.map(row => row.id)).size !== allRows.length) throw new Error('Стык включён в несколько создаваемых документов.')
-  const expected = buildSystemDocumentSplitGroups(allRows, mode)
+  const expected = buildSystemDocumentSplitGroups(allRows, mode, separateConclusionFamilies)
   if (expected.some(group => group.isMissingValueFallback)) throw new Error('Заполните поля, необходимые для выбранного разделения.')
   const membership = (ids: number[]) => [...ids].sort((a, b) => a - b).join(',')
   const actual = new Set(groups.map(group => membership(group.rows.map(row => row.id))))

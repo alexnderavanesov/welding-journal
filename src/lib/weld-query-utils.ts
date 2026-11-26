@@ -1,3 +1,4 @@
+import type { WorkflowRowPage } from '@/lib/workflow-candidate-page'
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { sortWeldSnapshotRows } from '@/lib/weld-snapshot'
@@ -140,12 +141,13 @@ function updateLoadedWeldRowLists(
       .map((row) => [Number(row.id), row]),
   )
 
-  queryClient.setQueriesData<WeldRow[]>(
+  queryClient.setQueriesData<WorkflowRowPage>(
     { queryKey },
     (current) => {
       if (!current) return current
       let changed = false
-      const rows = current.flatMap((row) => {
+      const currentRows = Array.isArray(current) ? current : current.rows
+      const rows = currentRows.flatMap((row) => {
         const id = Number(row.id)
         if (deleteIds.has(id)) {
           changed = true
@@ -156,7 +158,8 @@ function updateLoadedWeldRowLists(
         changed = true
         return [{ ...row, ...patch, id } as WeldRow]
       })
-      return changed ? rows : current
+      if (!changed) return current
+      return Array.isArray(current) ? rows : { ...current, rows }
     },
   )
 }

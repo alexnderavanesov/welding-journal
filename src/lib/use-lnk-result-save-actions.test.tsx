@@ -147,6 +147,17 @@ describe('useLnkResultSaveActions', () => {
     expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ layeredControlRowIds: [] }), expect.objectContaining({ onSettled: expect.any(Function) }))
   })
 
+  it('describes the four additional conclusion types per marked joint and counts only new assignments', async () => {
+    const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows))
+    act(() => result.current.setLnkResultLayeredControl(1, true))
+    act(() => result.current.setLnkResultLayeredControl(2, true))
+    await act(async () => result.current.handleAddLnkResult())
+    expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({
+      itemName: 'Новых назначений: 2',
+      description: expect.stringMatching(/Для каждого отмеченного У-стыка.*четыре отдельных заключения.*создаст недостающие/),
+    }))
+  })
+
   it('keeps choices on cancellation and sends no mutation', async () => {
     confirmAction.mockResolvedValue(false)
     const mutate = vi.fn<LnkResultMutate>()

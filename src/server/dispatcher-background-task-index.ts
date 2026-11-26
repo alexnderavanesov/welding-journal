@@ -1,3 +1,4 @@
+import { logTechnicalError } from './error-diagnostics'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
@@ -36,6 +37,12 @@ import {
 } from '@/server/dispatcher-task-index-staging'
 
 type DispatcherBackgroundExecutor = Pick<ReturnType<typeof requireDb>, 'insert' | 'delete'>
+
+const FILTERED_INDEX_FAILURE = 'Не удалось выполнить пересчёт. Код события: '
+function publicIndexFailure(message: string) {
+  const id = message.slice(FILTERED_INDEX_FAILURE.length)
+  return message.startsWith(FILTERED_INDEX_FAILURE) && /^[a-f0-9-]{36}$/.test(id) ? message : 'Не удалось выполнить пересчёт.'
+}
 
 export type DispatcherBackgroundTaskIndexStatus = {
   enabled: boolean
@@ -102,7 +109,7 @@ export async function getDispatcherBackgroundTaskIndexStatus(): Promise<Dispatch
     status: enabled ? normalizeStatus(state?.status) : 'disabled',
     computedAt: toIsoString(state?.computedAt),
     startedAt: toIsoString(state?.startedAt),
-    lastError: state?.lastError ?? null,
+    lastError: state?.lastError ? publicIndexFailure(state.lastError) : null,
     rowCount: Number(state?.rowCount) || 0,
   }
 }
@@ -237,7 +244,7 @@ export async function refreshDispatcherBackgroundTaskIndex(
     return { ...(await getDispatcherBackgroundTaskIndexStatus()), refreshed }
   } catch (error) {
     const failedAt = new Date()
-    const message = error instanceof Error ? error.message : String(error)
+    const message = FILTERED_INDEX_FAILURE + logTechnicalError('dispatcherBackgroundIndex', error)
     await db
       .insert(dispatcherBackgroundTaskIndexState)
       .values({

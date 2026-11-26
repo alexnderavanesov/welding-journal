@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { WELD_FIELDS, type WeldFieldKey } from '@/lib/weld-fields'
 import { hasPermission, type AccessIdentity } from '@/lib/access-permissions'
 import { canViewWeldField, RESTRICTED_WELD_FIELDS } from '@/lib/weld-field-access'
@@ -15,13 +16,13 @@ export function assertReadableQuery(identity: AccessIdentity, value: unknown, se
     for (const [key, item] of Object.entries(input)) {
       if (key === 'search' && typeof item === 'string' && item.trim() &&
         !(searchArea && hasPermission(identity, `${searchArea}.view`)) &&
-        !['welding.view', 'lnk.view', 'psto.view'].every(permission => hasPermission(identity, permission as any))) throw new Error('Общий поиск требует просмотра всех рабочих областей. Используйте фильтр доступного столбца.')
+        !['welding.view', 'lnk.view', 'psto.view'].every(permission => hasPermission(identity, permission as any))) throw new PublicRequestError('Общий поиск требует просмотра всех рабочих областей. Используйте фильтр доступного столбца.', 403)
       if (['columnFilters', 'filterModel', 'filters'].includes(key) && item && typeof item === 'object') {
-        for (const field of Object.keys(item)) if (RESTRICTED_WELD_FIELDS.has(field) && !canViewWeldField(identity, field)) throw new Error('Фильтр использует недоступное поле.')
+        for (const field of Object.keys(item)) if (RESTRICTED_WELD_FIELDS.has(field) && !canViewWeldField(identity, field)) throw new PublicRequestError('Фильтр использует недоступное поле.', 403)
       }
-      if ((['fieldKey', 'field', 'colId', 'columnKey', 'sortKey'].includes(key) || key === 'key' && parent === 'sort') && typeof item === 'string' && RESTRICTED_WELD_FIELDS.has(item) && !canViewWeldField(identity, item)) throw new Error('Запрос использует недоступное поле.')
+      if ((['fieldKey', 'field', 'colId', 'columnKey', 'sortKey'].includes(key) || key === 'key' && parent === 'sort') && typeof item === 'string' && RESTRICTED_WELD_FIELDS.has(item) && !canViewWeldField(identity, item)) throw new PublicRequestError('Запрос использует недоступное поле.', 403)
       if (['fieldKeys', 'columns', 'groupKeys', 'groupBy'].includes(key) && Array.isArray(item)) for (const field of item) {
-        if (typeof field === 'string' && RESTRICTED_WELD_FIELDS.has(field) && !canViewWeldField(identity, field)) throw new Error('Запрос использует недоступное поле.')
+        if (typeof field === 'string' && RESTRICTED_WELD_FIELDS.has(field) && !canViewWeldField(identity, field)) throw new PublicRequestError('Запрос использует недоступное поле.', 403)
       }
       visit(item, key)
     }

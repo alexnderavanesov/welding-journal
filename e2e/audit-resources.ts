@@ -9,8 +9,11 @@ const exec = promisify(execFile)
 /** Opt-in local audit telemetry only. RSS is sampled, not an exact OS peak. */
 export async function sampleLocalAuditResources(browser: Browser) {
   const port = Number(process.env.E2E_PORT || 3100)
-  if (port !== 3100) throw new Error('Resource audit expects the isolated E2E server on port 3100')
-  const { stdout } = await exec('lsof', ['-t', '-iTCP:3100', '-sTCP:LISTEN'])
+  const profilePorts: Record<string, number> = { 'precommit-performance': 3177, 'line-scheme-s3-manual': 3176 }
+  const expectedPort = profilePorts[process.env.E2E_DATABASE_PROFILE ?? ''] ?? 3100
+  const releaseAudit = process.env.E2E_DATABASE_PROFILE === 'release-access' && port === 3175
+  if (port !== expectedPort && !releaseAudit) throw new Error(`Resource audit refused port ${port} for this E2E database profile`)
+  const { stdout } = await exec('lsof', ['-t', `-iTCP:${port}`, '-sTCP:LISTEN'])
   const serverIds = new Set(stdout.trim().split(/\s+/).map(Number))
   if (!serverIds.size || [...serverIds].some(id => !Number.isSafeInteger(id) || id <= 0)) throw new Error('Cannot identify E2E server')
   const session = await browser.newBrowserCDPSession()

@@ -1,7 +1,9 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { afterEach, expect, it, vi } from 'vitest'
 import { inspect } from 'node:util'
+import { readFile } from 'node:fs/promises'
 import { DrizzleQueryError } from 'drizzle-orm'
-import { errorDiagnostics, logAuthEvent, safeServerError } from './error-diagnostics'
+import { errorDiagnostics, logAuthEvent, safeServerError, publicHttpError } from './error-diagnostics'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -49,4 +51,32 @@ it('leaves ordinary business rejections intact and does not add a log', () => {
     expect(safeServerError(error, 'save')).toBe(error)
   }
   expect(log).not.toHaveBeenCalled()
+})
+
+it('keeps a template filesystem path out of the RPC response and log', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  // The parent is this existing test file, so the operation deterministically fails with ENOTDIR.
+  const error = await readFile(new URL(`${import.meta.url}/private-template.xlsx`)).catch(error => error)
+  expect(error.code).toBe('ENOTDIR')
+  const response = safeServerError(error, 'getRemoteDocumentTemplate') as Error
+  expect(response.message).toContain('хранилищу файлов')
+  const eventId = response.message.match(/[a-f0-9-]{36}/)?.[0]
+  expect(eventId).toBeTruthy()
+  expect(log.mock.lastCall?.[0]).toContain(eventId)
+  expect(log.mock.lastCall?.[0]).toContain('ENOTDIR')
+  expect(JSON.stringify([response.message, log.mock.calls])).not.toContain('private-template.xlsx')
+})
+
+
+it('returns only intentional client messages and a correlatable safe ID for technical HTTP failures', () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  expect(publicHttpError(new PublicRequestError('Доступ закрыт.', 403), 'export', 'Ошибка.')).toEqual({ message: 'Доступ закрыт.', status: 403 })
+  for (const error of [new Error('private-marker'), new DrizzleQueryError('select private_table', ['private-marker'], new Error('private-marker'))]) {
+    const result = publicHttpError(error, 'export', 'Ошибка.')
+    expect(result.status).toBe(500)
+    const id = result.message.match(/[a-f0-9-]{36}/)?.[0]
+    expect(id).toBeTruthy()
+    expect(log.mock.lastCall?.[0]).toContain(id)
+    expect(JSON.stringify([result, log.mock.calls])).not.toMatch(/private-marker|private_table/)
+  }
 })

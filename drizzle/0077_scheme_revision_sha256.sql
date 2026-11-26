@@ -1,0 +1,2 @@
+ALTER TABLE "line_scheme_revisions" ADD COLUMN "sha256" text;--> statement-breakpoint
+ALTER TABLE "line_scheme_revisions" ADD CONSTRAINT "line_scheme_revisions_sha256_check" CHECK ("line_scheme_revisions"."sha256" ~ '^[0-9a-f]{64}$');

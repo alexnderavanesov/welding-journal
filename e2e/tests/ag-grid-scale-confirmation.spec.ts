@@ -92,13 +92,16 @@ test(lnkOnly ? 'reverse confirmation of 20 vertical LNK gestures on one frozen b
   expect(info.config.workers).toBe(1)
   const label = process.env.AG_GRID_SCALE_LABEL
   const allowedLabels = lnkOnly ? ['lnk-reverse-new', 'lnk-reverse-old'] : ['confirmation-before', 'confirmation-after']
+  const precommit = !lnkOnly && label === 'precommit-confirmation'
+    && ['precommit-performance', 'line-scheme-s3-manual'].includes(process.env.E2E_DATABASE_PROFILE ?? '')
+  if (precommit) allowedLabels.push('precommit-confirmation')
   if (!label || !allowedLabels.includes(label)) throw new Error(`Use one of: ${allowedLabels.join(', ')}`)
   if (!process.env.E2E_AUDIT_OUTPUT_DIR) throw new Error('Select the frozen baseline / candidate build explicitly')
   const build = resolve(process.env.E2E_AUDIT_OUTPUT_DIR)
   if (build === resolve('.output')) throw new Error('Use a frozen build, not mutable .output')
   if (lnkOnly) expect(build).toBe(resolve('outputs/ag-grid-scale-2026-11-07', label === 'lnk-reverse-new' ? 'candidate-build' : 'baseline-build'))
   await access(resolve(build, 'server/index.mjs'))
-  const destination = resolve('outputs/ag-grid-scale-2026-11-07', label)
+  const destination = precommit ? info.outputPath('confirmation') : resolve('outputs/ag-grid-scale-2026-11-07', label)
   // Refuse to replace earlier evidence or resume into an already warmed DB.
   await mkdir(destination)
   const options = { storageState: process.env.E2E_AUTH_STATE, baseURL: info.project.use.baseURL, viewport: { width: 1600, height: 1000 } }

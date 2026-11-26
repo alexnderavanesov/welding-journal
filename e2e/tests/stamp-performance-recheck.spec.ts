@@ -25,7 +25,8 @@ test('repeat performance outliers: guide readiness, document scrolling and welde
     const documents = page.locator('[data-document-history-grid]')
     for (const name of ['ЖСР', 'Заявка ЛНК']) {
       await page.getByRole('button', { name, exact: true }).click()
-      await expect(documents.locator('.ag-row').first()).toBeVisible()
+      const title = name === 'ЖСР' ? /^SM-DOC-weldingJournal-/ : /^SM-V-SM-/
+      await expect(documents.getByText(title).first()).toBeVisible()
       await page.waitForLoadState('networkidle')
       for (let round = 0; round < 5; round++) await probe.scroll(`recheck:documents:${name}:${round}`, documents)
     }

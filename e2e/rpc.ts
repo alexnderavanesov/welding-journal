@@ -27,14 +27,7 @@ export function deserializeRpcPayload(payload: string): unknown {
 
 let productionNames: Map<string, string> | undefined
 
-/** Count actual RPCs in both dev and production; production IDs are hashes, not JSON. */
-export function rpcName(url: string): string {
-  const id = new URL(url).pathname.split('/_serverFn/')[1]
-  if (!id) return ''
-  const decoded = decodeURIComponent(id)
-  if (!/^[a-f0-9]{64}$/.test(decoded)) {
-    return JSON.parse(Buffer.from(decoded, 'base64url').toString()).export as string
-  }
+export function builtServerFunctionNames(): ReadonlyMap<string, string> {
   if (!productionNames) {
     const directory = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'server')
     const resolvers = readdirSync(directory).filter(name => name.includes('tanstack-start-server-fn-resolver') && name.endsWith('.mjs'))
@@ -43,7 +36,18 @@ export function rpcName(url: string): string {
     productionNames = new Map([...source.matchAll(/"([a-f0-9]{64})":\s*\{\s*functionName:\s*"([^"\n]+)"/g)]
       .map(match => [match[1], match[2]]))
   }
-  const name = productionNames.get(decoded)
+  return productionNames
+}
+
+/** Count actual RPCs in both dev and production; production IDs are hashes, not JSON. */
+export function rpcName(url: string): string {
+  const id = new URL(url).pathname.split('/_serverFn/')[1]
+  if (!id) return ''
+  const decoded = decodeURIComponent(id)
+  if (!/^[a-f0-9]{64}$/.test(decoded)) {
+    return JSON.parse(Buffer.from(decoded, 'base64url').toString()).export as string
+  }
+  const name = builtServerFunctionNames().get(decoded)
   if (!name) throw new Error(`Unknown production RPC: ${decoded}`)
   return name
 }

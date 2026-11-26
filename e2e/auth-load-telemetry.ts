@@ -2,6 +2,10 @@ import { channel } from 'node:diagnostics_channel'
 import { get, type ClientRequest } from 'node:http'
 import type { Socket } from 'node:net'
 
+function expectedTestOrigin() {
+  return process.env.E2E_DATABASE_PROFILE === 'release-access' ? 'http://127.0.0.1:3115' : 'http://127.0.0.1:3100'
+}
+
 export function safeAuthLoadError(error: unknown) {
   const value = error as { name?: string; code?: string; message?: string }
   // Playwright's remaining lines contain request logs, including credentials.
@@ -15,7 +19,7 @@ export function safeAuthLoadError(error: unknown) {
  * Never inspect cookies, other headers, body, query string or actor identity. */
 export function observeAuthLoadTransport(origin: string) {
   const base = new URL(origin)
-  if (base.origin !== 'http://127.0.0.1:3100') throw new Error('Auth transport diagnostics require the isolated E2E server')
+  if (base.origin !== expectedTestOrigin()) throw new Error('Auth transport diagnostics require the isolated E2E server')
   const started = performance.now(), events: Record<string, unknown>[] = []
   let dropped = 0, nextSocket = 0
   const sockets = new WeakMap<Socket, { id: number; lastRequest?: string; lastResponseMs?: number }>()
@@ -76,7 +80,7 @@ export function observeAuthLoadTransport(origin: string) {
 /** Fresh unauthenticated sockets distinguish liveness/readiness from the failed
  * API connection. This is a diagnostic read, never a retry of an operation. */
 export async function probeAuthLoadServer(origin: string) {
-  if (new URL(origin).origin !== 'http://127.0.0.1:3100') throw new Error('Unexpected health probe target')
+  if (new URL(origin).origin !== expectedTestOrigin()) throw new Error('Unexpected health probe target')
   return Promise.all(['/health/live', '/health/ready'].map(path => new Promise<Record<string, unknown>>(resolve => {
     const started = performance.now()
     const request = get(new URL(path, origin), { agent: false, timeout: 5000 }, response => {

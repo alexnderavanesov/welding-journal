@@ -1,3 +1,4 @@
+import { getConclusionJointFamily } from './connection-type'
 import type { WeldRow } from './dispatcher-types'
 import { isControlEnabledValue } from './control-availability-values'
 import { getPreHeatTreatmentControl, isPreHeatTreatmentLnkAvailable, PRE_HEAT_TREATMENT_LNK_METHODS, type PreHeatTreatmentLnkMethodCode } from './lnk-control-stage'
@@ -86,7 +87,7 @@ export function groupPreHeatTreatmentFillItems(rows: readonly WeldRow[], items: 
       const message = `Стык ${item.joint}: заполните ${split.missingFields.join(', ')} для выбранного разделения.`
       errors.push(message); issues.push({ message, rowId: item.rowId, itemKey: item.key })
     }
-    const key = JSON.stringify([item.action, item.action === 'result' ? item.methods[0] : '', split.key, item.date, item.manualName ? item.name : null, item.specialists ?? null])
+    const key = JSON.stringify([item.action, item.action === 'result' ? item.methods[0] : '', split.key, item.action === 'result' ? getConclusionJointFamily(byId.get(item.rowId)?.connectionType) : '', item.date, item.manualName ? item.name : null, item.specialists ?? null])
     let group = groups.get(key)
     if (!group) {
       group = { key, action: item.action, date: item.date, name: item.name ?? '', useSystemName: !item.manualName,

@@ -282,20 +282,22 @@ try {
   await db.update(schema.authRateLimits).set({ lastRequest: Date.now() - 61000 }).where(eq(schema.authRateLimits.key, 'integration-concurrent'))
   await management.accountRateLimit('integration-concurrent', 10)
   assert.equal((await db.select().from(schema.authRateLimits).where(eq(schema.authRateLimits.key, 'integration-concurrent')))[0].count, 1)
-  // Exercise the public handler too: eight failed credentials, then a bounded
-  // rejection, including the response header. A full path bucket must reject
-  // before creating a bucket for another arbitrary email address.
+  // A single address keeps its own limit. An already busy shared office can
+  // still admit another employee through the bounded reserve.
   process.env.AUTH_TRUST_PROXY = 'false'
-  const failedLogin = (email: string) => handleAuthRequest(new Request('http://127.0.0.1:3000/api/auth/sign-in/email', { method: 'POST',
-    headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000' }, body: JSON.stringify({ email, password: 'incorrect' }) }))
-  for (let index = 0; index < 8; index++) assert.equal((await failedLogin('throttle@example.test')).status, 401)
-  const deniedLogin = await failedLogin('throttle@example.test')
+  const login = (email: string, password: string) => handleAuthRequest(new Request('http://127.0.0.1:3000/api/auth/sign-in/email', { method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000' }, body: JSON.stringify({ email, password }) }))
+  for (let index = 0; index < 8; index++) assert.equal((await login('throttle@example.test', 'incorrect')).status, 401)
+  const deniedLogin = await login('throttle@example.test', 'incorrect')
   assert.equal(deniedLogin.status, 429); assert.equal(deniedLogin.headers.get('retry-after'), '60')
   await db.update(schema.authRateLimits).set({ count: 60, lastRequest: Date.now() }).where(eq(schema.authRateLimits.key, 'signin-path:shared'))
-  const buckets = (await db.select().from(schema.authRateLimits)).length
-  assert.equal((await failedLogin('never-stored-throttle@example.test')).status, 429)
-  assert.equal((await db.select().from(schema.authRateLimits)).length, buckets)
-  console.log('PASS: atomic concurrent rate limiting, window expiry, HTTP credential throttling and bounded anonymous bucket creation.')
+  await db.insert(schema.authRateLimits).values(Array.from({ length: 32 }, (_, lane) => ({
+    id: 'fixture-unknown-reserve-' + lane, key: 'signin-reserve-unknown:' + lane, count: 2, lastRequest: Date.now(),
+  })))
+  assert.equal((await login('unused-reserve@example.test', 'incorrect')).status, 429)
+  assert.equal((await login('throttle@example.test', 'incorrect')).status, 429)
+  assert.equal((await login(ownerInput.email, 'secret')).status, 200)
+  console.log('PASS: atomic rate limits, expiry and independent sign-in at a busy shared address.')
   console.log('PASS: isolated migration, owner protection, single-use/raced/replaced/expired links, recovery, sliding cookies, immutable email, deleted/reinvited identity, mixed payload rejection, raw SQL audit, nested rollback, redacted history, revoked rights.')
   if (process.env.AUTH_SCALE === '1') await (await import('./authentication-load')).measureAuthenticationLoad(db, owner)
   if (process.env.AUTH_BULK_AUDIT === '1') await (await import('./authentication-bulk-audit-load')).measureBulkAuditLoad(db, owner)

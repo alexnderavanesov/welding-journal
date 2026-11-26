@@ -10,6 +10,9 @@ test('серверное хеширование и диагностика не �
     await page.goto(route)
     await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Не удалось открыть раздел', exact: true })).toBeHidden()
+    if (route === '/lnk') {
+      await expect(page.locator('[data-lnk-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+    }
     if (route === '/user-guide') {
       await expect(page.getByRole('textbox', { name: 'Поиск по руководству' })).toBeVisible()
       await page.getByRole('button', { name: 'Все правила', exact: true }).click()

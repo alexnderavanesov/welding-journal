@@ -72,11 +72,11 @@ export type DocumentsHistoryGridProps<T extends DocumentRow> = {
   highlightedDocumentId?: string | number | null
   highlightRow?: (document: T) => boolean
 }
-const SelectionHeaderContext = createContext({ checked: false, mixed: false, disabled: true, busy: false, toggle: () => undefined as void })
+const SelectionHeaderContext = createContext({ checked: false, mixed: false, disabled: true, busy: false, toggle: (_checked: boolean) => undefined as void })
 function SelectionHeader() {
   const state = useContext(SelectionHeaderContext)
   return <DocumentGridCheckbox aria-label="Выбрать все документы" title="Все документы по текущим условиям, включая незагруженные" checked={state.checked} disabled={state.disabled}
-    busy={state.busy} indeterminate={state.mixed} onChange={state.toggle} />
+    busy={state.busy} indeterminate={state.mixed} onChange={event => state.toggle(event.currentTarget.checked)} />
 }
 const GroupSelectionContext = createContext({ groups: new Map<string, DocumentGridGroupSelection>(), disabled: true, toggle: (_id: string) => undefined as void })
 function GroupLabel({ data, node }: { data?: DocumentRow | DocumentHistoryGroupRow; node: { id?: string; key: string | null } }) {
@@ -311,7 +311,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     if (!selectionSyncFrame.current) selectionSyncFrame.current = requestAnimationFrame(syncSelection)
   }, [syncSelection])
   useEffect(() => { syncSelection() }, [props.selectedDocuments, syncSelection])
-  const toggleAll = useCallback(() => { resetRowRange(); void fullQuery.toggle() }, [resetRowRange, fullQuery.toggle])
+  const toggleAll = useCallback((checked: boolean) => { resetRowRange(); void fullQuery.toggle(undefined, checked) }, [resetRowRange, fullQuery.toggle])
   const toggleGroup = useCallback((id: string) => {
     const node = apiRef.current?.getRowNode(id)
     if (node) { resetRowRange(); void fullQuery.toggle(node) }
@@ -431,6 +431,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     return { groups, disabled: selectionPending || fullQuery.selecting, toggle: toggleGroup }
   }, [loadedGroups, loadedRows, selectedSet, selectionPending, fullQuery.selecting, fullQuery.counts, toggleGroup])
   const selectedTotal = loadedRows.length === total ? selectedLoaded : fullQuery.counts['[]'] ?? 0
+  const allFilteredSelected = total > 0 && selectedTotal === total
   const groupings = settings.columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0))
   const changeAppearance = (appearance: DocumentGridAppearance) => saveSettings({ ...settingsRef.current, appearance })
   const changeColumnVisible = (key: DocumentGridColumnDefinition['key'], visible: boolean) => {
@@ -561,7 +562,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   }), [])
   const groupRenderer = useMemo(() => ({ suppressCount: false, innerRenderer: GroupLabel }), [])
   const rowClassRules = useMemo(() => ({ 'document-grid-highlight': (params: { data?: Row }) => Boolean(params.data && !isGroup(params.data) && (current.current.highlightRow?.(params.data) || String(params.data.id) === String(current.current.highlightedDocumentId))) }), [])
-  return <DocumentGridFilterContext.Provider value={filterContext}><GroupSelectionContext.Provider value={groupSelection}><SelectionHeaderContext.Provider value={{ checked: total > 0 && selectedTotal === total, mixed: selectedTotal > 0 && selectedTotal < total, disabled: !total, busy: selectionPending || fullQuery.selecting, toggle: toggleAll }}>
+  return <DocumentGridFilterContext.Provider value={filterContext}><GroupSelectionContext.Provider value={groupSelection}><SelectionHeaderContext.Provider value={{ checked: allFilteredSelected, mixed: selectedTotal > 0 && selectedTotal < total, disabled: !total, busy: selectionPending || fullQuery.selecting, toggle: toggleAll }}>
     <div data-document-history-grid={props.viewId} onContextMenuCapture={event => event.preventDefault()} className={`document-history-grid journal-server-section ${settings.appearance.wrapText ? 'document-grid-wrap' : ''} ${settings.appearance.stripes ? 'document-grid-stripes' : ''} ${settings.appearance.verticalLines ? 'document-grid-lines' : ''}`}>
       <DocumentsGridToolbar columns={viewColumns}
         filteredColumnKeys={new Set(Object.keys(props.columnFilters).filter(key => Boolean(props.columnFilters[key])))}
@@ -660,7 +661,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         if (!(event.target instanceof Element)) return
         if (event.key === 'Enter' && progressSort(event.target, event.shiftKey)) { event.preventDefault(); event.stopPropagation(); return }
         if (selectionPending && event.target.closest('.ag-row') && !['Escape', 'Tab'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); return }
-        if (api && gridHeaderKeyboard(event, api, { toggleSelection: toggleAll, openFilter: id => { popupColumn.current = id } })) return
+        if (api && gridHeaderKeyboard(event, api, { toggleSelection: () => toggleAll(!allFilteredSelected), openFilter: id => { popupColumn.current = id } })) return
         if (event.target.closest('.ag-menu, .ag-popup')) {
           if (event.key === 'Escape') {
             event.preventDefault(); event.stopPropagation(); api?.hideColumnFilter(); api?.hidePopupMenu()

@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { documentTemplates } from '@/db/schema'
 
@@ -6,10 +7,12 @@ const state = vi.hoisted(() => ({
   record: undefined as RecordType | undefined,
   files: new Map<string, ArrayBuffer>(),
   failDelete: false,
+  corruptWrite: false,
   loseCommitReply: false,
+  select: vi.fn(),
   transaction: vi.fn(),
 }))
-vi.mock('@/db', () => ({ requireDb: () => ({ transaction: state.transaction }) }))
+vi.mock('@/db', () => ({ requireDb: () => ({ select: state.select, transaction: state.transaction }) }))
 vi.mock('@/server/security-functions', () => ({ assertSecurityScope: vi.fn() }))
 vi.mock('@/server/layered-control-documents', () => ({ rebuildLayeredControlDocumentsInTransaction: vi.fn() }))
 vi.mock('@/server/document-template-files', async importOriginal => ({
@@ -17,7 +20,11 @@ vi.mock('@/server/document-template-files', async importOriginal => ({
   assertPersistentDocumentTemplateStorage: vi.fn(),
   createDocumentTemplateFileStore: () => ({
     get: async (key: string) => state.files.get(key) ?? null,
-    set: async (key: string, data: ArrayBuffer) => { state.files.set(key, data) },
+    set: async (key: string, data: ArrayBuffer) => {
+      const stored = new Uint8Array(data.slice(0))
+      if (state.corruptWrite) stored[0] = stored[0]! ^ 1
+      state.files.set(key, stored.buffer)
+    },
     list: async (prefix: string) => [...state.files.keys()].filter(key => key.startsWith(prefix)),
     delete: async (key: string) => {
       if (state.failDelete) throw new Error('synthetic disk error')
@@ -31,21 +38,25 @@ import { assertPersistentDocumentTemplateStorage } from '@/server/document-templ
 
 const oldKey = 'weldingJournal/old.xlsx'
 const oldDate = new Date('2026-10-13T08:00:00Z')
-const input = () => ({ id: 'weldingJournal' as const, expectedVersion: state.record!.updatedAt.toISOString(), fileName: 'replacement.xlsx', fileType: 'xlsx', fileSize: 3, fileDataBase64: Buffer.from([1, 2, 3]).toString('base64'), fields: [], markerCount: 0, locations: [], warnings: [] })
+const book = XLSX.utils.book_new()
+XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['template']]), 'Бланк')
+const workbookBytes: Buffer = XLSX.write(book, { bookType: 'xlsx', type: 'buffer' })
+const input = () => ({ id: 'weldingJournal' as const, expectedVersion: state.record!.updatedAt.toISOString(), fileName: 'replacement.xlsx', fileType: 'xlsx', fileSize: workbookBytes.length, fileDataBase64: workbookBytes.toString('base64'), fields: [], markerCount: 0, locations: [], warnings: [] })
 
 beforeEach(() => {
   state.files.clear()
   state.files.set(oldKey, new Uint8Array([4, 5, 6]).buffer)
   state.record = { id: 'weldingJournal', blobKey: oldKey, fileName: 'original.xlsx', fileType: 'xlsx', fileSize: 3, metadata: '{}', options: '{}', constructorConfig: null, uploadedAt: oldDate, updatedAt: oldDate }
+  state.corruptWrite = false
   state.failDelete = false
   state.loseCommitReply = false
+  state.select.mockImplementation(() => {
+    const query = { from: () => query, where: () => query, for: () => query, limit: async () => state.record ? [state.record] : [] }
+    return query
+  })
   state.transaction.mockImplementation(async action => {
     let pending: RecordType | undefined
-    const select = () => {
-      const query = { from: () => query, where: () => query, for: () => query, limit: async () => state.record ? [state.record] : [] }
-      return query
-    }
-    const tx = { execute: async () => ({}), select, insert: () => ({ values: (value: RecordType) => ({ onConflictDoUpdate: () => ({ returning: async () => { pending = { ...state.record, ...value }; return [pending] } }) }) }) }
+    const tx = { execute: async () => ({}), select: state.select, insert: () => ({ values: (value: RecordType) => ({ onConflictDoUpdate: () => ({ returning: async () => { pending = { ...state.record, ...value }; return [pending] } }) }) }) }
     const result = await action(tx)
     if (pending) {
       state.record = pending
@@ -56,10 +67,35 @@ beforeEach(() => {
 })
 
 describe('template save: file/database failure boundaries', () => {
+  it('keeps the previous working file when a replacement cannot be read as Excel', async () => {
+    const before = structuredClone(state.record)
+    await expect(saveRemoteDocumentTemplate({ data: { ...input(), fileDataBase64: Buffer.from('ordinary text').toString('base64') } })).rejects.toThrow('прочитать шаблон Excel')
+    expect(state.record).toEqual(before)
+    expect([...state.files.keys()]).toEqual([oldKey])
+  })
+
+  it('keeps the active file when the stored replacement differs by a byte at the same length', async () => {
+    const before = structuredClone(state.record)
+    state.corruptWrite = true
+    try {
+      await expect(saveRemoteDocumentTemplate({ data: input() })).rejects.toThrow('проверить сохраненный файл')
+      expect(state.record).toEqual(before)
+      expect([...state.files.keys()]).toEqual([oldKey])
+    } finally { state.corruptWrite = false }
+  })
+
+  it('checks the effective binding sheet on ordinary replacement before deleting the old version', async () => {
+    const before = structuredClone(state.record)
+    await expect(saveRemoteDocumentTemplate({ data: { ...input(), constructorConfig: { version: 1, sheetName: 'Отсутствует', bindings: [] } } })).rejects.toThrow('нет листа')
+    expect(state.record).toEqual(before)
+    expect([...state.files.keys()]).toEqual([oldKey])
+  })
+
   it('returns success after a lost COMMIT reply and never deletes the committed active file', async () => {
     state.loseCommitReply = true
     const result = await saveRemoteDocumentTemplate({ data: input() })
     expect(result.fileName).toBe('replacement.xlsx')
+    expect(result.sheetNames).toEqual(['Бланк'])
     expect(result.storageWarning).toBeUndefined()
     expect(state.record!.blobKey).not.toBe(oldKey)
     expect([...state.files.keys()]).toEqual([state.record!.blobKey])

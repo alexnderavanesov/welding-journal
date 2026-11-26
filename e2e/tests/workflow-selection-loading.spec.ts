@@ -44,7 +44,10 @@ for (const report of ['lnk', 'psto'] as const) for (const mode of ['request', 'r
     const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: mode === 'request' ? (report === 'lnk' ? 'Заявка ЛНК' : 'Заявка ПСТО') : (report === 'lnk' ? 'Внесение результатов ЛНК' : 'Внесение результатов ПСТО'), exact: true }) })
     for (const [iteration, prefix] of ['F88000', 'F88060', 'F88060'].entries()) {
       await search.fill(prefix)
-      await expect(page.getByText(`Найдено: ${prefix === 'F88000' ? 9 : 5}`, { exact: true })).toBeVisible()
+      const found = page.getByText(`Найдено: ${prefix === 'F88000' ? 9 : 5}`, { exact: true })
+      // The first visit also rebuilds the dispatcher after the raw bulk insert.
+      // Subsequent searches, clicks and dialog updates keep the normal UI deadline.
+      await expect(found).toBeVisible(iteration === 0 ? { timeout: 15_000 } : {})
       if (await selectAll.isChecked()) await selectAll.uncheck()
       await selectAll.check()
       const count = prefix === 'F88000' ? 9 : 5
@@ -73,12 +76,14 @@ for (const report of ['lnk', 'psto'] as const) for (const mode of ['request', 'r
       // background response held by this route handler. Wait for that response.
       await expect.poll(() => pending).toBe(0)
       if (iteration === 2 && mode === 'request') {
-        await dialog.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+        await dialog.getByRole('combobox', { name: 'Разделение документов', exact: true }).selectOption('joint')
+        await dialog.getByRole('button', { name: 'Создать 5 заявок', exact: true }).click()
         await expect(dialog).toBeHidden()
         const column = report === 'lnk' ? 'vik_request' : 'psto_request'
-        const saved = await withLineProgramFixture(db => db.query(`select joint from weld_joints
+        const saved = await withLineProgramFixture(db => db.query(`select joint, ${column} as request_name from weld_joints
           where project_title=$1 and ${column} is not null order by joint`, [project]))
         expect(saved.rows.map(row => row.joint)).toEqual(['F880600','F880601','F880602','F880603','F880604'])
+        expect(new Set(saved.rows.map(row => row.request_name)).size).toBe(5)
         break
       }
       await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()

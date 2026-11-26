@@ -37,7 +37,7 @@ export async function syncPreHeatTreatmentDocumentsInTransaction(
       })
     }
   }
-  await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
+  await upsertSourcedSystemDocumentsInTransaction({ tx, documents, lockedRows: rowsById })
 }
 
 /** One pass across positions, even when every weld has a separate document. */

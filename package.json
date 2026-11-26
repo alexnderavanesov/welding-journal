@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite dev --host 127.0.0.1 --port 3000",
     "dev:local": "vite dev --host 127.0.0.1 --port 3000",
-    "build": "vite build && node scripts/verify-server-function-manifest.mjs && node scripts/verify-client-runtime.mjs",
+    "build": "vite build && node scripts/verify-server-function-manifest.mjs && node scripts/verify-client-runtime.mjs && node scripts/verify-public-output.mjs",
     "start": "node .output/server/index.mjs",
     "maintenance:dispatcher": "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/maintenance/dispatcher-refresh',{method:'POST',headers:{authorization:'Bearer '+process.env.MAINTENANCE_TOKEN}}).then(async r=>{console.log(await r.text());if(!r.ok)process.exit(1)})\"",
     "maintenance:dispatcher-prewarm": "node scripts/prewarm-dispatcher.mjs",
@@ -34,7 +34,8 @@
     "typecheck": "tsc --noEmit",
     "audit:prod": "pnpm audit --prod",
     "audit:all": "pnpm audit",
-    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm audit:prod && pnpm audit:all",
+    "test:release-access": "E2E_DATABASE_PROFILE=release-access E2E_PORT=${E2E_PORT:-3115} E2E_USE_PRODUCTION_BUILD=1 tsx e2e/run.ts e2e/tests/authentication.spec.ts e2e/tests/authentication-boundaries.spec.ts --grep 'guest is closed|revoked field and edit rights'",
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm test:release-access && pnpm audit:prod && pnpm audit:all",
     "checks:install": "node scripts/install-verification-hooks.mjs"
   },
   "dependencies": {

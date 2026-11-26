@@ -1,3 +1,5 @@
+import { logTechnicalError } from './error-diagnostics'
+import { PublicRequestError } from '@/lib/public-request-error'
 import { createHash, randomUUID } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -29,11 +31,11 @@ async function actorForWrite(tx: Tx, actor: AccessIdentity, permissions: Permiss
 }
 async function lockedBundle(tx: Tx, id: number) {
   const [bundle] = await tx.select().from(lineSchemeBundles).where(eq(lineSchemeBundles.id, id)).for('update')
-  if (!bundle) throw new Error('Схема больше не существует.')
+  if (!bundle) throw new PublicRequestError('Схема больше не существует.')
   return bundle
 }
 function requireLease(bundle: Bundle, actor: AccessIdentity, token: string) {
-  if (!lease(bundle, actor, token).owned) throw new Error('Право редактирования схемы потеряно. Изменения не сохранены. Обновите доступ к редактированию.')
+  if (!lease(bundle, actor, token).owned) throw new PublicRequestError('Право редактирования схемы потеряно. Изменения не сохранены. Обновите доступ к редактированию.')
 }
 
 export async function openScheme(data: { lineId: number; token: string; acquire?: boolean }) {
@@ -50,7 +52,7 @@ export async function openScheme(data: { lineId: number; token: string; acquire?
     if (!bundle) {
       if (!editable || !hasPermission(current, 'schemes.edit')) return { bundle: null, lease: { owned: false, name: null, expiresAt: null } as SchemeLease }
       const [line] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.lineId)).for('key share')
-      if (!line) throw new Error('Линия удалена. Обновите список.')
+      if (!line) throw new PublicRequestError('Линия удалена. Обновите список.')
       await tx.insert(lineSchemeBundles).values({ lineProgramId: line.id, projectTitle: line.projectTitle, subtitleCode: line.subtitleCode, line: line.line }).onConflictDoNothing()
       ;[bundle] = await findBundle()
     }
@@ -96,17 +98,17 @@ export async function schemeMutation<T extends Record<string, unknown>>(data: Sc
       if (snapshot) {
         await lockWeldLineMemberships(tx, [snapshot.line])
         const [latest] = await tx.select().from(linePrograms).where(eq(linePrograms.id, snapshot.line.id))
-        if (!latest || latest.projectTitle !== snapshot.line.projectTitle || latest.subtitleCode !== snapshot.line.subtitleCode || latest.line !== snapshot.line.line) throw new Error('Линия изменилась во время сохранения. Повторите операцию.')
+        if (!latest || latest.projectTitle !== snapshot.line.projectTitle || latest.subtitleCode !== snapshot.line.subtitleCode || latest.line !== snapshot.line.line) throw new PublicRequestError('Линия изменилась во время сохранения. Повторите операцию.')
       }
     }
     const bundle = await lockedBundle(tx, data.bundleId)
     const [receipt] = await tx.select().from(lineSchemeReceipts).where(eq(lineSchemeReceipts.id, data.operationId))
     if (receipt) {
-      if (receipt.bundleId !== bundle.id || receipt.userId !== actor.id || receipt.payloadHash !== hash) throw new Error('Идентификатор операции уже использован для других изменений.')
+      if (receipt.bundleId !== bundle.id || receipt.userId !== actor.id || receipt.payloadHash !== hash) throw new PublicRequestError('Идентификатор операции уже использован для других изменений.')
       return receipt.result as T
     }
     requireLease(bundle, current, data.token)
-    if (bundle.version !== data.version) throw new Error('Состав редакций изменился. Обновите схему перед сохранением; несохранённые точки остаются в этом окне.')
+    if (bundle.version !== data.version) throw new PublicRequestError('Состав редакций изменился. Обновите схему перед сохранением; несохранённые точки остаются в этом окне.')
     const result = await run(tx, bundle, current)
     await tx.insert(lineSchemeReceipts).values({ id: data.operationId, bundleId: bundle.id, userId: actor.id, payloadHash: hash, result })
     return result
@@ -198,7 +200,7 @@ export async function changeSchemeRevision(data: SchemeWriteRequest & { revision
     await tx.update(lineSchemeBundles).set({ version: bundle.version + 1, activeRevisionId: data.action === 'activate' ? revision.id : bundle.activeRevisionId === revision.id ? null : bundle.activeRevisionId }).where(eq(lineSchemeBundles.id, bundle.id))
     return { version: bundle.version + 1 }
   })
-  await cleanupSchemeFiles().catch(error => console.error('Scheme file cleanup remains pending:', error))
+  await cleanupSchemeFiles().catch(error => logTechnicalError('schemeFileCleanup', error))
   return result
 }
 
@@ -217,7 +219,7 @@ export async function prepareSchemeUpload(data: SchemeWriteRequest & { replace: 
     const current = await actorForWrite(tx, actor, permissions), bundle = await lockedBundle(tx, data.bundleId)
     requireLease(bundle, current, data.token)
     const [receipt] = await tx.select().from(lineSchemeReceipts).where(eq(lineSchemeReceipts.id, data.operationId))
-    if (!receipt && bundle.version !== data.version) throw new Error('Состав редакций изменился. Обновите схему перед загрузкой.')
+    if (!receipt && bundle.version !== data.version) throw new PublicRequestError('Состав редакций изменился. Обновите схему перед загрузкой.')
     const key = `${randomUUID()}.pdf`
     await tx.insert(lineSchemeFiles).values({ key, state: 'staging', expiresAt: new Date(Date.now() + 15 * 60_000) })
     return key
@@ -229,11 +231,11 @@ export async function publishSchemeFile(data: SchemeWriteRequest & { fileKey: st
   return schemeMutation(data, 'schemes.edit', 'upload', { fileName: data.fileName, size: data.size, digest: data.digest, replace: data.replace, ...(changeNumber ? { changeNumber } : {}) }, async (tx, bundle, actor) => {
     if (data.replace === 'delete') assertPermission(actor, 'schemes.delete')
     const [line] = await tx.select({ id: linePrograms.id }).from(linePrograms).where(eq(linePrograms.id, bundle.lineProgramId))
-    if (!line) throw new Error('Линия удалена. Загрузка нового чертежа недоступна.')
+    if (!line) throw new PublicRequestError('Линия удалена. Загрузка нового чертежа недоступна.')
     const [file] = await tx.select().from(lineSchemeFiles).where(eq(lineSchemeFiles.key, data.fileKey)).for('update')
-    if (!file || file.state !== 'staging' || !file.expiresAt || file.expiresAt.getTime() <= Date.now()) throw new Error('Временная загрузка истекла. Загрузите файл заново.')
+    if (!file || file.state !== 'staging' || !file.expiresAt || file.expiresAt.getTime() <= Date.now()) throw new PublicRequestError('Временная загрузка истекла. Загрузите файл заново.')
     const id = randomUUID()
-    await tx.insert(lineSchemeRevisions).values({ id, bundleId: bundle.id, fileKey: data.fileKey, fileName: data.fileName, changeNumber, size: data.size, pageCount: data.pageCount, authorId: actor.id, authorName: actor.name })
+    await tx.insert(lineSchemeRevisions).values({ id, bundleId: bundle.id, fileKey: data.fileKey, fileName: data.fileName, changeNumber, size: data.size, sha256: data.digest, pageCount: data.pageCount, authorId: actor.id, authorName: actor.name })
     await tx.update(lineSchemeFiles).set({ state: 'ready', expiresAt: null }).where(eq(lineSchemeFiles.key, data.fileKey))
     if (data.replace === 'delete' && bundle.activeRevisionId) {
       const [old] = await tx.select().from(lineSchemeRevisions).where(eq(lineSchemeRevisions.id, bundle.activeRevisionId))

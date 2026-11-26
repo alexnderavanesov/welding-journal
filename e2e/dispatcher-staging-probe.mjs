@@ -5,8 +5,10 @@ import { setTimeout } from 'node:timers/promises'
 
 export function installDispatcherStagingProbe(pg, countsFile) {
   assert.equal(process.env.DISPATCHER_LARGE_LINE_PROBE, '1')
-  assert.equal(process.env.DATABASE_URL, 'postgresql://welding:welding@127.0.0.1:5432/welding_tracker_e2e')
-  assert.equal(process.env.PORT, '3100')
+  const performanceProfile = process.env.E2E_DATABASE_PROFILE === 'precommit-performance'
+  const database = performanceProfile ? 'welding_tracker_precommit_perf_e2e' : 'welding_tracker_e2e'
+  assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@127.0.0.1:5432/${database}`)
+  assert.equal(process.env.PORT, performanceProfile ? '3177' : '3100')
   const file = countsFile.replace(/counts\.json$/, 'dispatcher-staging.json')
   const control = countsFile.replace(/counts\.json$/, 'dispatcher-staging-control.json')
   const attempts = [], active = new Map(), original = pg.Client.prototype.query

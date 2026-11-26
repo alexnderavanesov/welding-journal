@@ -149,6 +149,19 @@ it('copies bounded batches and never publishes a partial result when a later bat
   expect(write).not.toHaveBeenCalled()
   expect(error).toHaveBeenCalledWith('Registry changed')
 })
+it.each([
+  { restored: [1, 2, 3], checked: true, expected: [1, 2, 3] },
+  { restored: [2], checked: true, expected: [1, 2, 3] },
+  { restored: [1, 2, 3], checked: false, expected: [] },
+  { restored: [2], checked: false, expected: [] },
+])('applies the header checkbox value $checked to restored IDs $restored', async ({ restored, checked, expected }) => {
+  const load = vi.fn().mockResolvedValue({ rows: [], ids: [1, 2, 3], total: 3, rowCount: 3, revision })
+  const { result, rerender, select } = setup(load, 3)
+  rerender({ scope: 'first', selected: [900, ...restored].map(id => ({ id })) })
+  await act(async () => result.current.toggle(undefined, checked))
+  expect(load).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ idsOnly: true, revision }))
+  expect(select.mock.calls[0][0].map(({ id }: { id: number }) => id).sort((a: number, b: number) => a - b)).toEqual([...expected, 900])
+})
 it('selects full IDs without requesting cards and preserves choices outside the filter', async () => {
   const load = vi.fn().mockResolvedValue({ rows: [], ids: [1, 2, 3], total: 3, rowCount: 3, revision })
   const { result, rerender, select } = setup(load, 3)

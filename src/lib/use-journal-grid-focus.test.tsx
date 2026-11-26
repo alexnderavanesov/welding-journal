@@ -15,6 +15,7 @@ function setup() {
   const api = { getFocusedCell: () => ({ rowIndex: 0, column }),
     getDisplayedRowAtIndex: () => ({ id: 'original' }),
     getRowNode: () => ({ rowIndex: 4 }), getColumn: () => column,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(),
     isDestroyed: () => false, setFocusedCell } as unknown as GridApi<WeldRow>
   const hook = renderHook(() => useJournalGridFocus(api, { current: element }))
   act(() => hook.result.current.remember())
@@ -48,4 +49,26 @@ it('does not steal focus from another control or an open dialog', () => {
   document.body.append(modal)
   act(() => hook.result.current.restore())
   expect(setFocusedCell).not.toHaveBeenCalled()
+})
+
+it.each(['wheel', 'pointerdown', 'keydown'])('respects a newer %s action while earlier group rows are loading', event => {
+  const grid = document.createElement('div')
+  grid.innerHTML = '<div class="ag-row" row-index="1"><div class="ag-cell" col-id="select"><label class="journal-server-checkbox"><input type="checkbox"></label></div></div>'
+  document.body.append(grid)
+  const node = { rowIndex: 1 }
+  const setFocusedCell = vi.fn(), clearFocusedCell = vi.fn()
+  const addEventListener = vi.fn<(name: string, callback: () => void) => void>()
+  const api = { addEventListener, removeEventListener: vi.fn(), isDestroyed: () => false,
+    getDisplayedRowAtIndex: () => node, getFocusedCell: () => ({ rowIndex: 1, column: { getColId: () => 'select' } }),
+    setFocusedCell, clearFocusedCell } as unknown as GridApi<WeldRow>
+  renderHook(() => useJournalGridFocus(api, { current: grid }))
+  const onModelUpdated = addEventListener.mock.calls.find(([name]) => name === 'modelUpdated')![1]
+  act(() => {
+    grid.querySelector('input')!.click()
+    window.dispatchEvent(new Event(event))
+    node.rowIndex = 7
+    onModelUpdated()
+  })
+  expect(setFocusedCell).not.toHaveBeenCalled()
+  expect(clearFocusedCell).not.toHaveBeenCalled()
 })

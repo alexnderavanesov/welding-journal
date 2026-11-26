@@ -64,13 +64,20 @@ export async function applyPstoAssignmentRows(
   for (const row of nextRows) if (toPre.has(row.id)) row.preHeatTreatmentControls = savedByRow.get(row.id) ?? []
   const primarySpecialists = await captureTransferredSpecialists(tx, [...toPrimary], 'primary', decisions.find(d => toPrimary.has(d.rowId))?.specialistTransferConfirmation)
   const preSpecialists = await captureTransferredSpecialists(tx, [...toPre], 'beforeHeatTreatment', decisions.find(d => toPre.has(d.rowId))?.specialistTransferConfirmation)
-  const removesRequests = nextRows.some(row => getClearedControlAssignments(row, previousRows.get(row.id)!).length > 0)
-  for (const row of nextRows) clearRequestsForRemovedControlAssignments(row, previousRows.get(row.id)!)
+  const transferredIds = new Set([...toPre, ...toPrimary])
+  const documentRowIds = new Set(transferredIds)
+  for (const row of nextRows) {
+    const previous = previousRows.get(row.id)!
+    if (getClearedControlAssignments(row, previous).length) documentRowIds.add(row.id)
+    clearRequestsForRemovedControlAssignments(row, previous)
+  }
   await persistRemovedControlAssignmentRequests(tx, nextRows, previousRows)
-  const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, new Date(), new Set([...toPre, ...toPrimary]))
-  if (toPre.size || toPrimary.size || removesRequests) {
+  const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, new Date(), transferredIds)
+  if (documentRowIds.size) {
     await removeTransferredPreControlsInTransaction(tx, rows.filter(row => toPrimary.has(row.id)).flatMap(row => (row.preHeatTreatmentControls ?? []).map(c => c.id)))
-    await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
+    const documentRows = updatedRows.filter(row => documentRowIds.has(row.id))
+    const previousDocumentRows = new Map(documentRows.map(row => [row.id, previousRows.get(row.id)!]))
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, documentRows, previousDocumentRows, { controlAssignmentsOnly: true })
     if (toPre.size) await syncPreHeatTreatmentDocumentsInTransaction(tx, updatedRows, savedControls)
     await restoreTransferredSpecialists(tx, primarySpecialists)
     await restoreTransferredSpecialists(tx, preSpecialists)

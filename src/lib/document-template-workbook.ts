@@ -1,3 +1,6 @@
+import { assertSameConclusionJointFamily, getConclusionJointFamily } from './connection-type'
+import { supportCellBinding } from './document-template-model'
+import { isLnkConclusionTemplateId } from './system-document-template-types'
 import { getParticipantTemplateIssues, getParticipantValue, isParticipantField, normalizeParticipantKinds, type TemplateParticipant } from './document-template-participants'
 import type * as XLSXTypes from 'xlsx'
 import { formatBusinessDateTime } from '@/lib/business-date'
@@ -103,16 +106,39 @@ TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName('Статус'), 'official
 
 TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName('status'), 'officiality')
 
+export const MAX_TEMPLATE_BYTES = 32 * 1024 * 1024
+
 export async function parseDocumentTemplateFile(file: File): Promise<TemplateUploadInfo & { fileData: ArrayBuffer }> {
   const extension = getFileExtension(file.name)
   if (!['xlsx', 'xls'].includes(extension)) {
     throw new Error('Поддерживаются только шаблоны Excel в форматах .xlsx и .xls.')
   }
 
+  if (file.size > MAX_TEMPLATE_BYTES) throw new Error('Размер шаблона превышает 32 МБ.')
   const fileData = await file.arrayBuffer()
+  const { metadata } = await readDocumentTemplateWorkbook(fileData, extension)
+  return {
+    ...metadata,
+    fileName: file.name,
+    fileType: extension,
+    fileSize: file.size,
+    uploadedAt: formatBusinessDateTime(new Date()),
+    fileData,
+  }
+}
 
+export async function readDocumentTemplateWorkbook(fileData: ArrayBuffer | Uint8Array, extension: string, cellStyles = false) {
   const XLSX = await loadXlsx()
-  const workbook = XLSX.read(fileData, { type: 'array' })
+  const workbook = XLSX.read(fileData, { type: 'array', cellStyles })
+  // SheetJS also opens plain text as a one-sheet workbook. Accept actual Excel formats only.
+  const bytes = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData)
+  const type = (workbook as XLSXTypes.WorkBook & { bookType?: string }).bookType
+  const compound = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1].every((value, i) => bytes[i] === value)
+  const biff = bytes[0] === 9 && [0, 2, 4, 8].includes(bytes[1]!)
+  if (!workbook.SheetNames.length || workbook.SheetNames.some(name => !workbook.Sheets[name]) ||
+      (extension === 'xlsx' ? type !== 'xlsx' : !(compound || biff || type === 'xlml'))) {
+    throw new Error('Файл не является читаемой книгой Excel указанного формата.')
+  }
   const fieldSet = new Set<string>()
   const locations: TemplateMarkerLocation[] = []
 
@@ -130,18 +156,14 @@ export async function parseDocumentTemplateFile(file: File): Promise<TemplateUpl
   })
 
   const fields = Array.from(fieldSet).sort((left, right) => left.localeCompare(right, 'ru'))
-  return {
-    fileName: file.name,
-    fileType: extension,
-    fileSize: file.size,
-    uploadedAt: formatBusinessDateTime(new Date()),
+  const metadata = {
     sheetNames: [...workbook.SheetNames],
     fields,
     markerCount: locations.reduce((count, location) => count + location.fields.length, 0),
     locations,
     warnings: [],
-    fileData,
   }
+  return { workbook, metadata }
 }
 
 export async function downloadWeldingJournalFromTemplate(
@@ -181,7 +203,15 @@ export async function createWeldingJournalBlobFromTemplate(
   }
   const XLSX = await loadXlsx()
   const workbook = XLSX.read(template.fileData, { type: 'array', cellStyles: true })
-  const constructorConfig = template.constructorConfig
+  let constructorConfig = template.constructorConfig
+  if (isLnkConclusionTemplateId(template.id) || template.id === 'tvmtConclusion') {
+    const families = new Set(records.map(row => getConclusionJointFamily(row.connectionType)))
+    assertSameConclusionJointFamily(families)
+    if (families.has('Т') && constructorConfig) {
+      constructorConfig = { ...constructorConfig, bindings: constructorConfig.bindings.map(binding =>
+        binding.supportContent ? supportCellBinding(binding) : binding) }
+    }
+  }
   const sheetName =
     constructorConfig?.sheetName && workbook.SheetNames.includes(constructorConfig.sheetName)
       ? constructorConfig.sheetName
@@ -800,27 +830,17 @@ function collectTemplateMarkerCells(worksheet: XLSXTypes.WorkSheet) {
 
   const range = XLSX.utils.decode_range(worksheet['!ref'])
   const markerCells: TemplateMarkerCell[] = []
-  for (let row = range.s.r; row <= range.e.r; row += 1) {
-    for (let column = range.s.c; column <= range.e.c; column += 1) {
-      const address = XLSX.utils.encode_cell({ r: row, c: column })
-      const cell = worksheet[address]
-      const rawValue = getTemplateCellText(cell)
-      if (rawValue === undefined || rawValue === null) continue
-
-      const source = String(rawValue)
-      const fields = extractTemplateFields(source)
-      if (!fields.length) continue
-
-      markerCells.push({
-        address,
-        row,
-        column,
-        source,
-        fields,
-      })
-    }
+  // A sparse sheet can span the entire Excel grid with only two stored cells.
+  for (const [address, cell] of Object.entries(worksheet)) {
+    if (address.startsWith('!')) continue
+    const { r: row, c: column } = XLSX.utils.decode_cell(address)
+    if (row < range.s.r || row > range.e.r || column < range.s.c || column > range.e.c) continue
+    const value = getTemplateCellText(cell)
+    if (typeof value !== 'string' || !value.includes('{{')) continue
+    const fields = extractTemplateFields(value)
+    if (fields.length) markerCells.push({ address, row, column, source: value, fields })
   }
-  return markerCells
+  return markerCells.sort((a, b) => a.row - b.row || a.column - b.column)
 }
 
 export function getTemplateCellText(cell: XLSXTypes.CellObject | undefined) {

@@ -31,6 +31,7 @@ export function cloneDocumentTemplateCellBinding(
   return {
     ...binding,
     parts: binding.parts?.map(cloneCellPart),
+    ...(binding.supportContent ? { supportContent: structuredClone(binding.supportContent) } : {}),
   }
 }
 
@@ -97,6 +98,7 @@ export function parseDocumentTemplateCellClipboardPayload(
   value: unknown,
 ): DocumentTemplateCellClipboardPayload | null {
   if (!isRecord(value) || value.version !== 1 || !isCellBinding(value.binding)) return null
+  if (value.binding.supportContent !== undefined && (!isRecord(value.binding.supportContent) || !isCellBinding({ ...value.binding.supportContent, cell: value.binding.cell, mode: value.binding.mode }))) return null
   if (!isRecord(value.source)) return null
   if (
     typeof value.source.templateId !== 'string'

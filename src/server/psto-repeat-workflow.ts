@@ -156,7 +156,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
         tx,
       )
       const rowsById = new Map(rows.map((row) => [row.id, row]))
-      if (documentGrouping) assertCreationGrouping(data.groups.map(group => ({ name: group.name, rows: group.rowIds.map(id => rowsById.get(id)!) })), documentGrouping.mode)
+      if (documentGrouping) assertCreationGrouping(data.groups.map(group => ({ name: group.name, rows: group.rowIds.map(id => rowsById.get(id)!) })), documentGrouping.mode, data.action === 'tvmtResult')
       const resultByRowId = new Map(data.results.map((entry) => [entry.rowId, entry.result]))
       const systemNameGroups = data.groups.flatMap((group, index) => {
         const request = sequenceRequests[index]
@@ -721,7 +721,7 @@ async function syncPstoCycleDocuments(
       sourcePositions,
     })
   }
-  await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
+  await upsertSourcedSystemDocumentsInTransaction({ tx, documents, lockedRows: rowsById })
 }
 
 function getRepeatCycleRecord(row: WeldRow, cycleId: number | undefined) {

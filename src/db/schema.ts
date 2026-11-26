@@ -428,10 +428,12 @@ export const lineSchemeRevisions = pgTable('line_scheme_revisions', {
   changeNumber: text('change_number'),
   fileKey: text('file_key').notNull().unique().references(() => lineSchemeFiles.key, { onDelete: 'restrict' }),
   fileName: text('file_name').notNull(), size: integer('size').notNull(), pageCount: integer('page_count').notNull(),
+  sha256: text('sha256'),
   pageRotations: jsonb('page_rotations').$type<Record<string, number>>().default({}).notNull(),
   version: integer('version').default(1).notNull(), authorId: text('author_id').notNull(), authorName: text('author_name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, table => [index('line_scheme_revisions_bundle_idx').on(table.bundleId, table.createdAt),
+  check('line_scheme_revisions_sha256_check', sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
   check('line_scheme_revisions_size_check', sql`${table.size} > 0 and ${table.size} <= 104857600`),
   check('line_scheme_revisions_pages_check', sql`${table.pageCount} between 1 and 100`)])
 

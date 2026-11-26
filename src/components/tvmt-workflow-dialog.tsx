@@ -616,6 +616,9 @@ export function TvmtWorkflowDialog({
         </div>
       )}
 
+      {creationPlan.familySummary && (
+        <p role="status" className="shrink-0 px-5 py-2 text-sm font-medium text-slate-800">{creationPlan.familySummary}</p>
+      )}
       <RequestDialogFooter
         isPending={mutation.isPending}
         isCreateDisabled={Boolean(effectiveSaveBlockReason)}
@@ -630,7 +633,7 @@ export function TvmtWorkflowDialog({
         disabledReasonActionLabel={creationPlan.error && workspaceTab !== 'documents'
           ? `Открыть ${mode === 'request' ? 'заявки' : 'заключения'} и имена`
           : undefined}
-        submitLabel={mode === 'request' ? 'Создать заявку' : 'Сохранить результат'}
+        submitLabel={creationPlan.batchSubmitLabel ?? (mode === 'request' ? 'Создать заявку' : 'Сохранить результат')}
         onDisabledReasonAction={creationPlan.error && workspaceTab !== 'documents'
           ? () => setWorkspaceTab('documents')
           : undefined}

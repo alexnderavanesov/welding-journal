@@ -2,6 +2,7 @@ import { closureFieldKeys } from '@/lib/work-closure-columns'
 import { projectClosureRow, selectClosurePositions } from './work-closure-query'
 import { createHash } from 'node:crypto'
 import { getPreHeatTreatmentFilterLabel } from '@/lib/pre-heat-treatment-column'
+import { loadPendingRepairNames, projectWaitingRepairRows } from './lnk-waiting-repair-report'
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
 import { REPORT_PREVIEW_ROW_LIMIT } from '@/lib/report-preview-limit'
 import type { TabularReportData } from '@/lib/tabular-report'
@@ -135,6 +136,7 @@ readDispatcherTaskIndexState,
 } from '@/server/dispatcher-task-index'
 import {
 applyGeneratedDocumentFields,
+attachSystemDocumentIds,
 attachGeneratedDocumentFields,
 loadGeneratedDocumentAssignments,
 } from '@/server/generated-document-row-fields'
@@ -743,7 +745,7 @@ export async function getWeldReportSummary({ data: input }: { data: WeldReportSu
 
 /** Preview and download each own a coherent transaction. The preview keeps a
  * bounded prefix; downloading starts a new snapshot and visits every batch. */
-export async function readReportOutputSnapshot(input: ReportOutputRequest): Promise<ReportOutputSnapshot> {
+export async function readReportOutputSnapshot(input: ReportOutputRequest, signal?: AbortSignal): Promise<ReportOutputSnapshot> {
   input = (await import('./access-payload')).accessibleReportInput(input)
   const build = getReportOutputBuilder(input)
   const report: PrintableReport = build([]).report
@@ -762,7 +764,7 @@ export async function readReportOutputSnapshot(input: ReportOutputRequest): Prom
       if (table.rows.length > remaining) truncated = true
     }
     return !truncated
-  })
+  }, signal)
   // Current/system reports have exactly one row per source joint. Other modes
   // may expand one joint into several methods; never present source count as file rows.
   const direct = !input.kind || input.kind === 'current' || input.kind === 'system'
@@ -789,12 +791,17 @@ export async function visitReportOutput(
     page: 1, pageSize: WELD_PAGE_ALL_SIZE, includeTotals: false })
   signal?.throwIfAborted()
   assertCurrentDispatcherStatuses(await ensureDispatcherTaskIndexFresh())
+  signal?.throwIfAborted()
   return requireDb().transaction(async db => {
     const [state] = await db.select({ dispatcher: dispatcherTaskIndexState, generatedAt: sql<string>`transaction_timestamp()::text` })
       .from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, 1))
     assertCurrentDispatcherStatuses(state?.dispatcher)
     const settings = await loadServerOtherSettings(db)
-    const where = buildReportQueryWhere(report, data, settings)
+    const repairNames = report === 'lnk' && kind === 'waitingRepair'
+      ? await loadPendingRepairNames(db, state.dispatcher) : null
+    signal?.throwIfAborted()
+    const where = repairNames ? buildNumberArrayMatch(weldJoints.id, [...repairNames.keys()])
+      : buildReportQueryWhere(report, data, settings)
     const [countRow] = await db.select({ total: count() }).from(weldJoints).where(where)
     await lifecycle?.start(db, Number(countRow.total))
     // A transaction-local cursor preserves order and snapshot across batches,
@@ -812,6 +819,14 @@ export async function visitReportOutput(
         }).from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
         const byId = new Map(facts.map(row => [row.id, projectClosureRow(row)]))
         const rows = ids.map(id => byId.get(id)!)
+        if (repairNames) {
+          const controls = await attachPreHeatTreatmentControlRelations(await attachDuplicateControlsToPage(rows, db), db)
+          const sources = await attachSystemDocumentIds(controls, db)
+          const reportRows = await projectWaitingRepairRows(db, sources, repairNames)
+          signal?.throwIfAborted()
+          if (await consume(build(reportRows)) === false) break
+          continue
+        }
         const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, settings), { dispatcherState: state.dispatcher, db })
         const prepared = prepareJournalPageRows(buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)
         const content = build(compactWeldRowsForTransport(await attachJournalGroupContext(prepared, settings, db)))

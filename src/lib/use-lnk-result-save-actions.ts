@@ -154,7 +154,12 @@ export function useLnkResultSaveActions({
             buildLayeredControlAssignment({ ...row, pvkResult: resultById[row.id] }, true)
           }
         } catch (error) { setMessage((error as Error).message); return }
-        if (!await confirmAction({ title: 'Назначить послойный контроль?', itemName: `Новых назначений: ${layeredRows.length}`, description: 'Только для отмеченных У-стыков вместе с ПВК стыка назначаются послойные ВИК и ПВК и создаются четыре заключения. ПВК переводится в «да», в том числе из «отменен» или «дополнительный». Остальные стыки и ранее назначенный послойный контроль не изменяются.', confirmLabel: 'Назначить и сохранить' })) return
+        if (!await confirmAction({
+          title: 'Назначить послойный контроль?',
+          itemName: `Новых назначений: ${layeredRows.length}`,
+          description: 'Для каждого отмеченного У-стыка предусмотрены четыре отдельных заключения: ВИК и ПВК кромок и слоёв. При наличии даты сварки и результата ПВК система создаст недостающие заключения. ПВК отмеченных стыков будет переведён в «да», в том числе из «отменен» или «дополнительный».',
+          confirmLabel: 'Назначить и сохранить',
+        })) return
       }
       const conclusionRows = selectedRows.filter((row) => resultById[row.id] !== LNK_EMPTY_RESULT_VALUE)
       const creationPlan = buildSystemDocumentCreationPlan({

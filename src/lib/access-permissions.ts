@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 /** Shared vocabulary only. The server is the authority for every operation. */
 export const ACCESS_AREAS = {
   welding: 'Сварочный журнал', lnk: 'ЛНК', psto: 'ПСТО и ТВМТ',
@@ -44,7 +45,7 @@ export function hasPermission(identity: Pick<AccessIdentity, 'role' | 'permissio
   return !!identity && (identity.role === 'owner' || identity.role === 'admin' || (identity.permissions.includes(permission) && (permission.startsWith('history.') || permission.endsWith('.view') || identity.permissions.includes(`${permission.split('.')[0]}.view` as Permission))))
 }
 export function assertPermission(identity: AccessIdentity, permission: Permission) {
-  if (!hasPermission(identity, permission)) throw new Error('Недостаточно прав для этого действия.')
+  if (!hasPermission(identity, permission)) throw new PublicRequestError('Недостаточно прав для этого действия.', 403)
 }
 export function canManageAccount(actor: AccessIdentity, target: { id: string; role: AccountRole }) {
   if (target.role === 'owner' || actor.id === target.id) return false

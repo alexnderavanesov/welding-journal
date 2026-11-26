@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <title>Обновляем сварочный журнал</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0;
+      padding: 24px 16px;
+      display: grid;
+      place-items: center;
+      background: #f5f7fa;
+      color: #172338;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(100%, 520px);
+      padding: clamp(24px, 5vw, 40px);
+      background: #fff;
+      border: 1px solid #dce3eb;
+      border-radius: 14px;
+      box-shadow: 0 6px 24px rgb(30 50 75 / 5%);
+    }
+    .journal-icon {
+      display: block;
+      width: 44px;
+      height: 44px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #eaf4fc;
+      color: #16658f;
+    }
+    h1 {
+      margin: 20px 0 10px;
+      font-size: clamp(1.375rem, 4vw, 1.75rem);
+      line-height: 1.22;
+      letter-spacing: -0.025em;
+      text-wrap: balance;
+    }
+    p {
+      margin: 0 0 26px;
+      color: #4b5c70;
+      font-size: 1rem;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      background: #086696;
+      color: #fff;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    a:hover { background: #07547b; }
+    a:focus-visible { outline: 3px solid #07547b; outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main>
+    <svg class="journal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="2"/>
+      <path d="M8 3v18m3-12h6m-6 4h4"/>
+    </svg>
+    <h1>Обновляем сварочный журнал</h1>
+    <p>Журнал временно недоступен.<br>Попробуйте открыть его чуть позже.</p>
+    <a href="">Обновить страницу</a>
+  </main>
+</body>
+</html>

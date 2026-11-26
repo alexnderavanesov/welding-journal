@@ -1,9 +1,33 @@
-import { expect, test, type Request } from '@playwright/test'
+import { expect, test, type Page, type Request } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
 import { isAccountRefreshRpc, rpcName } from '../rpc'
 import { captureFullReportPrint } from '../report-print-capture'
 import { captureReportExcel } from '../report-excel-capture'
+
+function trackReportRequests(page: Page) {
+  const pending = new Set<Request>()
+  const calls: string[] = []
+  let lastChange = 0
+  page.on('request', request => {
+    if (!request.url().includes('/_serverFn/')) return
+    calls.push(rpcName(request.url()))
+    pending.add(request)
+    lastChange = Date.now()
+  })
+  const finished = (request: Request) => {
+    if (pending.delete(request)) lastChange = Date.now()
+  }
+  page.on('requestfinished', finished)
+  page.on('requestfailed', finished)
+  // Print frames and file downloads have their own lifecycle in Chrome.
+  // The assertion measures application RPCs, including delayed focus probes.
+  const settle = () => {
+    const started = Date.now()
+    return expect.poll(() => !pending.size && Date.now() - Math.max(started, lastChange) >= 500, { timeout: 30_000 }).toBe(true)
+  }
+  return { calls, settle }
+}
 
 function expectOnlyFocusProbes(calls: string[], returns: number) {
   expect(calls.every(name => (name.startsWith('getDispatcherTaskVersion_') || isAccountRefreshRpc(name)))).toBe(true)
@@ -24,13 +48,7 @@ test.afterEach(async () => {
 
 test('special LNK output previews in a modal and contains rows beyond the candidate limit', async ({ page }) => {
   test.setTimeout(120_000)
-  const calls: string[] = []
-  const pending = new Set<Request>()
-  page.on('request', request => {
-    if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) }
-  })
-  page.on('requestfinished', request => pending.delete(request))
-  page.on('requestfailed', request => pending.delete(request))
+  const { calls, settle } = trackReportRequests(page)
   await withE2eDatabase(async (client) => {
     await client.query(`
       insert into weld_joints (
@@ -53,7 +71,7 @@ test('special LNK output previews in a modal and contains rows beyond the candid
   // The fixture invalidates the dispatcher; its one initial refresh can also
   // refresh the report. Settle that load before measuring preview-only traffic.
   await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
-  await expect.poll(() => pending.size).toBe(0)
+  await settle()
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
 
   await page.getByRole('button', { name: 'Ожидание заявки', exact: true }).click()
@@ -79,10 +97,10 @@ test('special LNK output previews in a modal and contains rows beyond the candid
   const downloadPromise = page.waitForEvent('download')
   await preview.getByRole('button', { name: 'Скачать Excel' }).click()
   const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe('lnk-waiting-request.xlsx')
+  expect(download.suggestedFilename()).toMatch(/^Ожидание заявки \d{2}\.\d{2}\.\d{4} \d{2}꞉\d{2}\.xlsx$/)
   expect(await download.failure()).toBeNull()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  await page.waitForLoadState('networkidle')
+  await settle()
   // Printing returns focus to the app. Session and compact dispatcher-version
   // probes are allowed; unchanged data must not reload reports or recalculate.
   const printCalls = calls.slice(loadedCalls)
@@ -161,18 +179,13 @@ async function invalidateDerivedIndexes(client: Parameters<Parameters<typeof wit
 
 for (const [path, options] of [
   ['/journal', ['Текущая версия', 'Системная версия', 'Ожидает сварку', 'Ожидает заявки', 'Ожидает контроль', 'Ожидает ремонт']],
-  ['/lnk', ['Текущая версия', 'Ожидание заявки', 'Ожидание НК', 'Показать заключения']],
+  ['/lnk', ['Текущая версия', 'Ожидание заявки', 'Ожидание НК', 'Ожидает ремонта', 'Показать заключения']],
   ['/psto', ['Текущая версия', 'Ожидает заявку ПСТО', 'Результаты ПСТО']],
 ] as const) {
   test(`all Show options preview and print in the app: ${path}`, async ({ page }) => {
-    const errors: string[] = [], calls: string[] = []
-    const pending = new Set<Request>()
+    const errors: string[] = []
+    const { calls, settle } = trackReportRequests(page)
     page.on('pageerror', error => errors.push(error.message))
-    page.on('request', request => {
-      if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) }
-    })
-    page.on('requestfinished', request => pending.delete(request))
-    page.on('requestfailed', request => pending.delete(request))
     // Exercise full printing even when this file runs without earlier suites'
     // records. Other output modes also cover short and empty reports.
     await withE2eDatabase(async client => {
@@ -189,7 +202,7 @@ for (const [path, options] of [
     // Trace showed that final report request occurring before the focus event,
     // inside the print-only measurement. Wait for initial data, not a fixed delay.
     await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
-    await expect.poll(() => pending.size).toBe(0)
+    await settle()
     await captureFullReportPrint(page)
     const show = page.locator('header').getByRole('button', { name: 'Показать', exact: true })
     for (const option of options) {
@@ -203,6 +216,19 @@ for (const [path, options] of [
       const modal = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
       const frame = modal.frameLocator('iframe')
       await expect(frame.getByRole('heading', { level: 1 })).toBeVisible()
+      const [download, response] = await Promise.all([
+        page.waitForEvent('download'),
+        page.waitForResponse(response => new URL(response.url()).pathname === '/api/report-excel'),
+        modal.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+      ])
+      const generatedAt = new Date((await response.headerValue('x-report-generated-at'))!)
+      const date = generatedAt.toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })
+      const time = generatedAt.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }).replace(':', '꞉')
+      const title = option === 'Текущая версия'
+        ? (await frame.getByRole('heading', { level: 1 }).innerText()).replace(': ', ' — ')
+        : option === 'Показать заключения' ? 'Заключения ЛНК' : option
+      // WebKit on macOS decomposes letters such as й in downloaded names.
+      expect(download.suggestedFilename().normalize('NFC')).toBe(`${title} ${date} ${time}.xlsx`.normalize('NFC'))
       await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeEnabled()
       // Parent-owned wheel handlers need this flag in WebKit; document scripts
       // remain forbidden by CSP (execution/network are tested in preview-layout).
@@ -226,7 +252,7 @@ for (const [path, options] of [
       await frame.locator('body').press('Escape')
       await expect(modal).toHaveCount(0)
       await expect(show).toBeFocused()
-      await page.waitForLoadState('networkidle')
+      await settle()
       const printCalls = calls.slice(before)
       expectOnlyFocusProbes(printCalls, 2) // print and explicit return
     }
@@ -285,17 +311,13 @@ for (const path of ['/journal', '/lnk', '/psto']) {
           'актуальная','С17','да','да',now(),now() from generate_series(1,1001) n`)
       await invalidateDerivedIndexes(db)
     })
-    const calls: string[] = []
-    const pendingRequests = new Set<Request>()
-    let lastRpc = 0
-    page.on('request', request => { if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pendingRequests.add(request); lastRpc = Date.now() } })
-    const finished = (request: Request) => { if (pendingRequests.delete(request)) lastRpc = Date.now() }
-    page.on('requestfinished', finished)
-    page.on('requestfailed', finished)
-    const settle = () => expect.poll(() => pendingRequests.size === 0 && Date.now() - lastRpc >= 500).toBe(true)
+    const { calls, settle } = trackReportRequests(page)
     await page.goto(path)
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('PRINT-LIMIT-')
-    await expect(page.getByText('PRINT-LIMIT-0001', { exact: true })).toBeVisible()
+    // Raw fixtures invalidate derived report data. Wait for the initial rebuild
+    // before testing the 1001-row output, just as for the larger report fixture.
+    await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.', { timeout: 30_000 })
+    await expect(page.getByText('PRINT-LIMIT-0001', { exact: true })).toBeVisible({ timeout: 30_000 })
     await settle()
     await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
     await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()

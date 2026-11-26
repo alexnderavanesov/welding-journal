@@ -1,3 +1,4 @@
+import { assertSameConclusionJointFamily, getConclusionJointFamily } from '@/lib/connection-type'
 import { auditSql, auditInsertedSql } from './audit-functions'
 import { and, asc, eq, getTableColumns, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { DOCUMENT_VERSION_SELECT, touchEditableDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
@@ -91,6 +92,7 @@ const LNK_REQUEST_HISTORY_SELECT = {
 }
 
 const LNK_CONCLUSION_HISTORY_SELECT = {
+  connectionType: weldJoints.connectionType,
   ...BASE_HISTORY_SELECT,
   ...Object.fromEntries(
     LNK_METHODS.flatMap((method) => [
@@ -569,8 +571,10 @@ type SourcedSystemDocumentUpsertPlan = SourcedSystemDocumentUpsertGroup & {
 export async function upsertSourcedSystemDocumentsInTransaction({
   tx,
   documents,
+  lockedRows,
 }: {
   tx: SystemDocumentSequenceTransaction
+  lockedRows?: ReadonlyMap<number, WeldRow>
   documents: readonly SourcedSystemDocumentUpsertInput[]
 }) {
   if (documents.length === 0) return []
@@ -673,6 +677,25 @@ export async function upsertSourcedSystemDocumentsInTransaction({
       sourceMetadata: serializeSystemDocumentSummary(mergedSummary, mergedSourcePositions),
     }
   })
+
+  const conclusions = plans.filter(plan => plan.summary.type === 'lnkConclusion' && plan.rowIds.length > 1)
+  if (conclusions.length) {
+    const ids = [...new Set(conclusions.flatMap(plan => plan.rowIds))]
+    const families = new Map<number, string>()
+    const missing: number[] = []
+    for (const id of ids) {
+      const row = lockedRows?.get(id)
+      if (row && 'connectionType' in row) families.set(id, getConclusionJointFamily(row.connectionType))
+      else missing.push(id)
+    }
+    if (missing.length) {
+      const rows = await tx.select({ id: weldJoints.id, connectionType: weldJoints.connectionType })
+        .from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, missing))
+      for (const row of rows) families.set(row.id, getConclusionJointFamily(row.connectionType))
+      if (families.size !== ids.length) throw new Error('Состав заключения изменился. Обновите список стыков.')
+    }
+    for (const plan of conclusions) assertSameConclusionJointFamily(plan.rowIds.map(id => families.get(id)!))
+  }
 
   const documentIdsByScope = await persistSourcedSystemDocumentUpsertPlans(tx, plans)
   const result = Array<number>(documents.length)
@@ -1117,7 +1140,7 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   tx: SystemDocumentSequenceTransaction,
   currentRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   previousRows: ReadonlyMap<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>,
-  options: { documentNamesOnly?: boolean; journalFieldsOnly?: boolean } = {},
+  options: { documentNamesOnly?: boolean; journalFieldsOnly?: boolean; controlAssignmentsOnly?: boolean } = {},
 ) {
   const rowIds = new Set<number>([
     ...currentRows.map((row) => Number(row.id)),
@@ -1156,6 +1179,10 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
       rows as unknown as Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
       type,
     ).filter((summary) => affectedKeys.has(getLogicalReferenceKey(summary)))
+    if (type === 'lnkConclusion') {
+      const families = new Map(rows.map(row => [row.id, getConclusionJointFamily('connectionType' in row ? row.connectionType : undefined)]))
+      for (const summary of summaries) assertSameConclusionJointFamily(summary.rowIds.map(id => families.get(id)!))
+    }
     await syncAffectedSystemDocumentSummaries({
       tx,
       type,
@@ -1166,12 +1193,21 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   }
   // A names-only rebuild recreates its exact sourced documents separately.
   // It changes no line/project/weld date used by other source metadata.
-  if (!options.documentNamesOnly) await refreshSourcedSystemDocumentMetadataInTransaction(tx, [...rowIds])
+  // Assignment changes keep location and weld date. Their dedicated transfer
+  // and removal paths maintain the affected source positions in this transaction.
+  if (!options.documentNamesOnly && !options.controlAssignmentsOnly) {
+    const changedFamilyIds = new Set(currentRows.filter(row => {
+      const previous = previousRows.get(row.id)
+      return previous && getConclusionJointFamily(previous.connectionType) !== getConclusionJointFamily(row.connectionType)
+    }).map(row => row.id))
+    await refreshSourcedSystemDocumentMetadataInTransaction(tx, [...rowIds], changedFamilyIds)
+  }
 }
 
 async function refreshSourcedSystemDocumentMetadataInTransaction(
   tx: SystemDocumentSequenceTransaction,
   changedRowIds: number[],
+  changedFamilyIds: ReadonlySet<number>,
 ) {
   if (changedRowIds.length === 0) return
   const documentIds = new Set<number>()
@@ -1199,6 +1235,7 @@ async function refreshSourcedSystemDocumentMetadataInTransaction(
     ? await tx
       .select({
         id: weldJoints.id,
+        connectionType: weldJoints.connectionType,
         projectTitle: weldJoints.projectTitle,
         subtitleCode: weldJoints.subtitleCode,
         line: weldJoints.line,
@@ -1210,6 +1247,9 @@ async function refreshSourcedSystemDocumentMetadataInTransaction(
 
   const rowsById = new Map(rows.map(row => [row.id, row]))
   const changes = sourcedDocuments.map(({ document, metadata }) => {
+    if (changedFamilyIds.size && systemDocumentTypeByStorageType.get(document.type) === 'lnkConclusion' && metadata.sourcePositions.some(position => changedFamilyIds.has(position.weldJointId))) {
+      assertSameConclusionJointFamily(metadata.sourcePositions.map(position => getConclusionJointFamily(rowsById.get(position.weldJointId)?.connectionType)))
+    }
     const summary = buildSourcedSystemDocumentMetadataSummary({
       sourcePositions: metadata.sourcePositions,
       rowsById,
@@ -1453,9 +1493,9 @@ export function collectSystemDocumentChangeReferences(
   currentRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   previousRows: ReadonlyMap<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   type: SystemDocumentType,
-  options: { documentNamesOnly?: boolean } = {},
+  options: { documentNamesOnly?: boolean; controlAssignmentsOnly?: boolean } = {},
 ) {
-  if (options.documentNamesOnly) {
+  if (options.documentNamesOnly || options.controlAssignmentsOnly) {
     // Renaming a repeat cycle also touches its parent weld's service timestamp.
     // An unchanged primary document on that weld may contain the entire
     // journal. Do not reread it just because another row's primary name changed.
@@ -1465,8 +1505,8 @@ export function collectSystemDocumentChangeReferences(
     const changedPrevious = new Map<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>()
     currentRows = currentRows.filter(row => {
       const previous = previousRows.get(row.id)
-      const before = getSystemDocumentImpactSignatures(previous ? [previous] : [], type)
-      const after = getSystemDocumentImpactSignatures([row], type)
+      const before = getSystemDocumentImpactSignatures(previous ? [previous] : [], type, options.controlAssignmentsOnly)
+      const after = getSystemDocumentImpactSignatures([row], type, options.controlAssignmentsOnly)
       if (before.length === after.length && before.every((value, index) => value === after[index])) return false
       if (previous) changedPrevious.set(row.id, previous)
       return true
@@ -1491,6 +1531,10 @@ function hasSystemDocumentImpact({
   previousRows: ReadonlyMap<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>
   type: SystemDocumentType
 }) {
+  if (type === 'lnkConclusion' && currentRows.some(row => {
+    const previous = previousRows.get(row.id)
+    return previous && getConclusionJointFamily(previous.connectionType) !== getConclusionJointFamily(row.connectionType)
+  })) return true
   const currentSignatures = getSystemDocumentImpactSignatures(currentRows, type)
   const previousSignatures = getSystemDocumentImpactSignatures([...previousRows.values()], type)
   if (currentSignatures.length !== previousSignatures.length) return true
@@ -1500,6 +1544,7 @@ function hasSystemDocumentImpact({
 function getSystemDocumentImpactSignatures(
   rows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   type: SystemDocumentType,
+  ignoreWeldTimestamp = false,
 ) {
   return rows
     .flatMap((row) =>
@@ -1510,7 +1555,7 @@ function getSystemDocumentImpactSignatures(
         String(row.subtitleCode ?? '').trim(),
         String(row.line ?? '').trim(),
         String(row.weldDate ?? '').trim(),
-        String((row as Record<string, unknown>).updatedAt ?? '').trim(),
+        ignoreWeldTimestamp ? '' : String((row as Record<string, unknown>).updatedAt ?? '').trim(),
       ])),
     )
     .sort()

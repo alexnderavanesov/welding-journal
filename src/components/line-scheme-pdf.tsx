@@ -46,6 +46,15 @@ export const LineSchemePdf = memo(function LineSchemePdf(props: Props) {
   }
   useEffect(() => {
     let disposed = false, task: PDFDocumentLoadingTask | undefined
+    const dispose = () => {
+      if (disposed) return
+      disposed = true
+      void task?.destroy().catch(() => {})
+    }
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) dispose()
+    }
+    window.addEventListener('pagehide', onPageHide)
     profileSchemePdf('open')
     setLoaded(null); setError(false); setCamera(null); view.current = null
     void loadSchemePdfEngine().then(async engine => {
@@ -56,7 +65,10 @@ export const LineSchemePdf = memo(function LineSchemePdf(props: Props) {
       profileSchemePdf('document-ready')
       if (!disposed) setLoaded({ id: props.revision.id, document })
     }).catch(() => { if (!disposed) setError(true) })
-    return () => { disposed = true; void task?.destroy().catch(() => {}) }
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      dispose()
+    }
   }, [props.revision.id, attempt])
   const document = loaded?.id === props.revision.id ? loaded.document : null
   const retry = () => setAttempt(value => value + 1)

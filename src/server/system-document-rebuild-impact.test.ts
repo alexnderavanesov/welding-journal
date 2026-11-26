@@ -67,3 +67,27 @@ it('does not synchronize an unchanged type or an empty source; ordinary mutation
     new Map([[1, row], [2, unchanged]]), 'pstoRequest')
   expect(ordinary.affectedReferences.map(item => item.title).sort()).toEqual(['ПСТО', 'Не менялась', 'Новая'].sort())
 })
+
+it('keeps the version of an unrelated document on the same joint when control assignments change', () => {
+  const previous = {
+    id: 1, updatedAt: '2026-10-01T10:00:00Z',
+    pstoRequest: 'ПСТО 1', pstoRequestDate: '2026-10-01',
+    vikRequest: 'ВИК 2', vikRequestDate: '2026-10-01',
+  }
+  const current = { ...previous, updatedAt: '2026-10-01T12:00:00Z', vikRequest: null, vikRequestDate: null }
+  const before = new Map([[previous.id, previous]])
+  const options = { controlAssignmentsOnly: true }
+  expect(collectSystemDocumentChangeReferences([current], before, 'pstoRequest', options).affectedReferences).toEqual([])
+  expect(collectSystemDocumentChangeReferences([current], before, 'lnkRequest', options).affectedReferences.map(ref => ref.title)).toEqual(['ВИК 2'])
+  expect(collectSystemDocumentChangeReferences([current], before, 'pstoRequest').affectedReferences.map(ref => ref.title)).toEqual(['ПСТО 1'])
+})
+
+it('rechecks an issued conclusion when an unknown legacy type becomes T at the same version time', () => {
+  const row: WeldRow & { updatedAt: string } = { id: 1, connectionType: null, updatedAt: '2026-11-26T12:00:00Z',
+    vikConclusion: 'ВИК-1', vikConclusionDate: '2026-11-26', vikRequest: 'Заявка', vikRequestDate: '2026-11-25' }
+  const before = new Map([[row.id, row]])
+  const support = { ...row, connectionType: 'Т1', joint: 'ОП1' }
+  expect(collectSystemDocumentChangeReferences([support], before, 'lnkConclusion').affectedReferences.map(ref => ref.title)).toEqual(['ВИК-1'])
+  expect(collectSystemDocumentChangeReferences([support], before, 'lnkRequest').affectedReferences).toEqual([])
+  expect(collectSystemDocumentChangeReferences([{ ...row, connectionType: 'У19' }], before, 'lnkConclusion').affectedReferences).toEqual([])
+})

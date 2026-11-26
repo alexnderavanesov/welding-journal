@@ -144,6 +144,8 @@ test('создает комплект только по явному назна�
   })).toBeVisible()
 
   await page.reload()
+  await page.getByRole('button', { name: 'Послойный ПВК', exact: true }).click()
+  await expect(page.getByRole('button', { name: `ПВК - слои - ${JOINT} - 15.08.2026`, exact: true })).toBeVisible()
   await expect.poll(() => loadLayeredDocumentIdentities()).toEqual(originalDocumentIdentities)
   await expect.poll(() => loadNextNumbers()).toEqual({
     layeredPvkEdges: 2,

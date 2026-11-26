@@ -10,7 +10,7 @@ test('prewarm operator command requires its token and preserves a fresh publicat
   expect((await request.post(path)).status()).toBe(401)
   expect((await request.post(path, { headers: { authorization: 'Bearer incorrect-local-token' } })).status()).toBe(401)
   const run = () => promisify(execFile)(process.execPath, ['scripts/prewarm-dispatcher.mjs'], {
-    env: { ...process.env, FORCE_COLOR: undefined, PORT: '3100' }, timeout: 60000,
+    env: { ...process.env, FORCE_COLOR: undefined, PORT: process.env.E2E_PORT || '3100' }, timeout: 60000,
   })
   const first = await run()
   expect(first.stderr).toBe('')

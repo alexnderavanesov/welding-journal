@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createReportExcelResponse } from '@/server/report-excel-file'
-import { LargeExportBusyError } from '@/server/large-export-guard'
+import { publicHttpError, readRequestJson } from '@/server/error-diagnostics'
 
 export const Route = createFileRoute('/api/report-excel')({ server: { handlers: {
   POST: async ({ request }) => {
@@ -10,10 +10,13 @@ export const Route = createFileRoute('/api/report-excel')({ server: { handlers: 
       const { requireIdentity, runWithAccess } = await import('@/server/access-context')
       const { getOperationPermissions } = await import('@/server/access-operation-policy')
       const { assertReadableQuery } = await import('@/server/access-payload')
-      const identity = await requireIdentity(), data = await request.json()
+      const identity = await requireIdentity(), data = await readRequestJson(request)
       assertReadableQuery(identity, data)
       return await runWithAccess(identity, 'downloadReportExcel', getOperationPermissions('@reportExport', data), () => createReportExcelResponse(data, request.signal))
     }
-    catch (error) { return new Response(error instanceof Error ? error.message : 'Не удалось подготовить Excel.', { status: error instanceof LargeExportBusyError ? 429 : 400, headers: { 'Cache-Control': 'no-store' } }) }
+    catch (error) {
+      const failure = publicHttpError(error, 'downloadReportExcel', 'Не удалось подготовить Excel.')
+      return new Response(failure.message, { status: failure.status, headers: { 'Cache-Control': 'no-store' } })
+    }
   },
 } } })

@@ -8,7 +8,7 @@ const project = 'E2E line search 200k'
 const clock = () => performance.now()
 const elapsed = (start: number) => Math.round(clock() - start)
 
-test('200k: first complete lines and independent search before the full summary finishes', async ({ browser }, info) => {
+test('200k: first complete lines and independent search before the full summary finishes', async ({ browser, baseURL }, info) => {
   test.skip(process.env.AUDIT_LINE_SEARCH_LOAD !== '1', 'Opt-in fresh isolated database and explicitly resource-limited server')
   test.setTimeout(900_000)
   const totalLines = await withE2eDatabase(async db => {
@@ -25,7 +25,7 @@ test('200k: first complete lines and independent search before the full summary 
     return (await db.query('select count(*)::int n from line_programs')).rows[0].n as number
   })
   const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext({ storageState: process.env.E2E_AUTH_STATE,
-    baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 },
+    baseURL, viewport: { width: 1600, height: 1000 },
   })))
   const clients = contexts.map((context, i) => observeMixedClient(context, `line-search-${i}`))
   const pages = await Promise.all(contexts.map(context => context.newPage()))

@@ -6,13 +6,17 @@ import { mkdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 assert(process.env.E2E_AUTH_STATE && (process.env.BETTER_AUTH_SECRET?.length ?? 0) >= 32, 'Prepare isolated E2E authentication first')
-assert.equal(process.env.BETTER_AUTH_URL, 'http://127.0.0.1:3100')
+const performanceProfile = process.env.E2E_DATABASE_PROFILE === 'precommit-performance'
+const hostPort = performanceProfile ? 3177 : 3100
+const databaseName = performanceProfile ? 'welding_tracker_precommit_perf_e2e' : 'welding_tracker_e2e'
+assert.equal(process.env.BETTER_AUTH_URL, `http://127.0.0.1:${hostPort}`)
+assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@127.0.0.1:5432/${databaseName}`)
 assert.equal(process.env.AUDIT_MIXED_LOAD, '1')
 assert.equal(process.env.AUDIT_SQL_COUNTS, '1')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
 const name = 'welding-mixed-resource-20261009'
 const image = process.env.AUDIT_CONTAINER_IMAGE || 'welding-journal:mixed-audit-20261009'
-assert(['welding-journal:mixed-audit-20261009', 'welding-journal:systemic-baseline-20261027'].includes(image),
+assert(['welding-journal:mixed-audit-20261009', 'welding-journal:systemic-baseline-20261027', 'welding-journal:precommit-performance'].includes(image),
   'Only explicitly built local audit images are allowed')
 const memoryMiB = Number(process.env.AUDIT_CONTAINER_MEMORY_MIB || 2048)
 const cpus = Number(process.env.AUDIT_CONTAINER_CPUS || 2)
@@ -52,10 +56,11 @@ process.once('SIGTERM', stop)
 // No repository, .env, production credentials, or working database mounted.
 id = docker(['create', '--pull=never', '--name', name, '--label', 'welding.local-audit=mixed-20261009',
   '--memory', `${memoryMiB}m`, '--memory-swap', `${memoryMiB}m`, '--cpus', String(cpus), '--pids-limit', '128', '--read-only',
-  '--tmpfs', '/tmp:rw,size=64m', '-p', '127.0.0.1:3100:3000', '-w', '/app',
+  '--tmpfs', '/tmp:rw,size=64m', '-p', `127.0.0.1:${hostPort}:3000`, '-w', '/app',
   '--mount', `type=bind,source=${resolve('e2e/audit-server.mjs')},target=/app/audit-server.mjs,readonly`,
   '--mount', `type=bind,source=${directory},target=/audit-counts`,
-  '-e', 'DATABASE_URL=postgresql://welding:welding@host.docker.internal:5432/welding_tracker_e2e',
+  '-e', `DATABASE_URL=postgresql://welding:welding@host.docker.internal:5432/${databaseName}`,
+  ...(performanceProfile ? ['-e', 'E2E_DATABASE_PROFILE=precommit-performance', '-e', 'LINE_SCHEME_STORAGE_DRIVER=local'] : []),
   '-e', 'WELDING_ENV_LOADED=1', '-e', 'NODE_ENV=production', '-e', 'HOST=0.0.0.0', '-e', 'PORT=3000',
   '-e', 'DATABASE_POOL_MAX=5', '-e', 'DOCUMENT_TEMPLATE_STORAGE_PATH=/tmp/templates',
   '-e', 'BETTER_AUTH_SECRET', '-e', 'BETTER_AUTH_URL', '-e', 'AUTH_MAIL_MODE=local',

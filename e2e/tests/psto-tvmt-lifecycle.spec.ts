@@ -548,7 +548,7 @@ test('позднее назначение ПСТО сохраняет факти
 
   // Completed primary controls keep the agreed permissive warning. Backfill
   // previous stages through the SP-06 repair actions, without repeating them.
-  async function completeHistoricalStage(label: string) {
+  async function completeHistoricalStage(label: string, expectedStage: string) {
     await page.getByLabel('Диспетчер задач', { exact: true }).getByRole('button', { name: 'Открыть диспетчер', exact: true }).click()
     const workspace = page.getByRole('dialog', { name: 'Диспетчер задач', exact: true })
     const search = workspace.getByRole('textbox', { name: 'Поиск задач диспетчера' })
@@ -556,34 +556,36 @@ test('позднее назначение ПСТО сохраняет факти
     await search.press('Enter')
     const task = workspace.locator('[data-dispatcher-workspace-task-row]').filter({ hasText: 'СП-06' })
     await expect(task).toHaveCount(1)
+    // Request and result share the same button label while the drawer refreshes.
+    await expect(task).toContainText(`не подтверждено завершение предыдущих этапов: ${expectedStage}.`)
     await task.getByRole('button', { name: label, exact: true }).click()
   }
 
-  await completeHistoricalStage('Создать заявку НК до ТО')
+  await completeHistoricalStage('Создать заявку НК до ТО', 'заявка ВИК до ТО, ожидает заявку ПСТО')
   await expect(page).toHaveURL(/\/lnk$/)
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-01')
   await page.getByRole('button', { name: 'Создать заявку до ТО' }).click()
 
-  await completeHistoricalStage('Внести результат НК до ТО')
+  await completeHistoricalStage('Внести результат НК до ТО', 'результат ВИК до ТО, ожидает заявку ПСТО')
   await fillDate(page, 'Дата контроля', '2026-08-01')
   await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
 
-  await completeHistoricalStage('Открыть ПСТО')
+  await completeHistoricalStage('Открыть ПСТО', 'ожидает заявку ПСТО')
   await expect(page).toHaveURL(/\/psto$/)
   await fillDate(page, 'Дата заявки', '2026-08-01')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
 
-  await completeHistoricalStage('Открыть ПСТО')
+  await completeHistoricalStage('Открыть ПСТО', 'ожидает ПСТО')
   await fillDate(page, 'Дата ПСТО', '2026-08-02')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
 
-  await completeHistoricalStage('Открыть ТВМТ')
+  await completeHistoricalStage('Открыть ТВМТ', 'ожидает заявку ТВМТ')
   await fillDate(page, 'Дата заявки', '2026-08-02')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
 
-  await completeHistoricalStage('Открыть ТВМТ')
+  await completeHistoricalStage('Открыть ТВМТ', 'ожидает ТВМТ')
   await fillDate(page, 'Дата ТВМТ', '2026-08-02')
   await chooseOptionByLabel(page, 'Результат для выбранных', 'годен')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()

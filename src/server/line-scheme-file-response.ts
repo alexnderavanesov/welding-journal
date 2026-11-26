@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { Readable } from 'node:stream'
 import { parseSchemeRange, type SchemeFileStore } from './line-scheme-files'
 
@@ -9,7 +10,7 @@ export async function schemeFileResponse(request: Request, revision: FileRevisio
   const size = revision.size, etag = `"${revision.fileKey}"`
   const headers = new Headers({ 'Content-Type': 'application/pdf', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-cache', ETag: etag,
     'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `inline; filename="drawing.pdf"; filename*=UTF-8''${encodeURIComponent(revision.fileName).replace(/'/g, '%27')}` })
-  const assertSize = (actual: number) => { if (actual !== size) throw new Error('Размер PDF в хранилище не соответствует редакции.') }
+  const assertSize = (actual: number) => { if (actual !== size) throw new PublicRequestError('Размер PDF в хранилище не соответствует редакции.') }
   if (request.headers.get('if-none-match') === etag && !request.headers.has('range')) {
     assertSize(await store.size(revision.fileKey, request.signal))
     return new Response(null, { status: 304, headers })

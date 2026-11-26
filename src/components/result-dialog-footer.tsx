@@ -9,6 +9,7 @@ export type ResultDialogFooterProps = {
   saveBlockReason: string | null
   isSaveDisabled: boolean
   isSaving?: boolean
+  submitLabel?: string
   saveError?: string | null
   saveBlockReasonVariant?: 'plain' | 'danger'
   blockReasonActionLabel?: string
@@ -22,6 +23,7 @@ export function ResultDialogFooter({
   saveBlockReason,
   isSaveDisabled,
   isSaving = false,
+  submitLabel = 'Сохранить результат',
   saveError,
   saveBlockReasonVariant = 'plain',
   blockReasonActionLabel,
@@ -79,7 +81,7 @@ export function ResultDialogFooter({
               }
             >
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-              {isSaving ? 'Сохраняем…' : 'Сохранить результат'}
+              {isSaving ? 'Сохраняем…' : submitLabel}
             </Button>
           </span>
         </div>

@@ -3,10 +3,13 @@ import { expect, test } from '@playwright/test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
+import * as XLSX from 'xlsx'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { downloadPreviewExcel } from '../document-sheet'
-import { DOCUMENT_TEMPLATE_TYPES, type StoredDocumentTemplate } from '../../src/lib/document-template-model'
+import { DOCUMENT_TEMPLATE_TYPES, getConstructorBindingParts, type StoredDocumentTemplate } from '../../src/lib/document-template-model'
+import { isManualGeneratedDocumentType } from '../../src/lib/generated-document-types'
+import { isCustomDocumentType } from '../../src/lib/custom-document-types'
 import { requireDb } from '../../src/db'
 import { weldJoints } from '../../src/db/schema'
 import { loadSystemDocumentSummaries, syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
@@ -59,12 +62,19 @@ test('local production-template copy: constructor bindings and filled Excel', as
     // Inspect the filled local copies, including JPEG (checklist), BMP (ZNI)
     // and PNG (PSTO). No production page, record or service is accessed.
     const layouts = []
+    const sampleJoint = 'F910724'
     for (const template of inventory.templates) {
       const bytes = Buffer.from(template.fileDataBase64, 'base64')
       const blob = await createWeldingJournalBlobFromTemplate({ ...template, fileData: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer }, [
-        { projectTitle: 'Проект проверки', subtitleCode: '330-ТКМ5', line: 'LINE-1', joint: 'F001', d1: '159', t1: '10', d2: '159', t2: '10', weldingMethod: 'РАД', weldDate: '2026-10-01', vikResult: 'годен', vikConclusion: 'E2E-PREVIEW-REAL-VIK', vikConclusionDate: '2026-10-03' },
+        { projectTitle: 'Проект проверки', subtitleCode: '330-ТКМ5', line: 'LINE-1', joint: sampleJoint, d1: '159', t1: '10', d2: '159', t2: '10', weldingMethod: 'РАД', weldDate: '2026-10-01', vikResult: 'годен', vikConclusion: 'E2E-PREVIEW-REAL-VIK', vikConclusionDate: '2026-10-03' },
       ])
-      const workbook = await readHistoryDocumentWorkbook(await blob.arrayBuffer())
+      const filledBytes = await blob.arrayBuffer()
+      const config = template.constructorConfig!
+      const jointBinding = config.bindings.find(binding => binding.filledMode !== 'custom' && getConstructorBindingParts(binding).some(part => part.field === 'joint'))
+      expect(jointBinding, template.id).toBeDefined()
+      const filledSheet = XLSX.read(filledBytes, { type: 'array' }).Sheets[config.sheetName]
+      expect(String(filledSheet?.[jointBinding!.cell]?.v ?? ''), `${template.id} · ${jointBinding!.cell}`).toContain(sampleJoint)
+      const workbook = await readHistoryDocumentWorkbook(filledBytes)
       await page.setContent(`<iframe sandbox="${PREVIEW_FRAME_SANDBOX}" style="width:100%;height:950px;border:0"></iframe>`)
       await page.locator('iframe').evaluate((el, html) => { (el as HTMLIFrameElement).srcdoc = html }, buildPreviewFrameHtml(workbook.page(0, 0, 0, template.id)))
       const frame = page.frameLocator('iframe')
@@ -92,6 +102,8 @@ test('local production-template copy: constructor bindings and filled Excel', as
     await page.goto('/settings')
     for (const t of inventory.templates) {
       const profile = DOCUMENT_TEMPLATE_TYPES.find(profile => profile.id === t.id)!
+      const group = isCustomDocumentType(t.id) ? 'Пользовательские' : isManualGeneratedDocumentType(t.id) ? 'Общие' : 'Системные'
+      await page.getByRole('tablist', { name: 'Группы шаблонов документов' }).getByRole('tab', { name: group, exact: true }).click()
       const category = t.id.startsWith('lnkConclusion') ? 'Заключения ЛНК' : t.id.startsWith('layered') ? 'Послойный НК' : profile.label
       await page.getByRole('button', { name: new RegExp(`^${category} `) }).click()
       if (category === 'Заключения ЛНК' || category === 'Послойный НК') await page.getByRole('tab', { name: profile.label.replace(/^Заключение /, ''), exact: true }).click()

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { createHash } from 'node:crypto'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { writeFile, rm } from 'node:fs/promises'
 import { withE2eDatabase } from '../database'
@@ -91,11 +92,14 @@ test('PDF near byte/page limits: partial reads, cold/warm opens, zoom, batch sav
   await expect.poll(() => page.workers().length).toBe(0)
   const revisionId = await withE2eDatabase(async db => {
     const revision = (await db.query('select active_revision_id from line_scheme_bundles where line_program_id=$1', [lineId])).rows[0].active_revision_id
+    const stored = (await db.query('select sha256 from line_scheme_revisions where id=$1', [revision])).rows[0]
+    if (stored.sha256 !== null || !process.env.E2E_BASELINE_SCHEMA_TIME) expect(stored.sha256).toBe(createHash('sha256').update(buffer).digest('hex'))
     await db.query('insert into line_scheme_physicals(seed_node_id,last_label,last_line_program_id) select id,joint,$1 from weld_joints where line_program_id=$1', [lineId])
     await db.query('insert into line_scheme_members(weld_joint_id,physical_id) select seed_node_id,id from line_scheme_physicals where last_line_program_id=$1', [lineId])
+    // Keep L1–L25 on the first row independently of physical identity allocation.
     await db.query(`insert into line_scheme_points(id,revision_id,physical_id,page,x,y)
       select md5($1||id::text)::uuid::text,$1,id,case when rn<500 then 1 else 100 end,((rn%25)+0.5)/25.0,(((rn%500)/25)+0.5)/20.0
-      from (select id,(row_number() over(order by id)-1)::integer rn from line_scheme_physicals where last_line_program_id=$2) points`, [revision, lineId])
+      from (select id,(row_number() over(order by substring(last_label from 2)::integer)-1)::integer rn from line_scheme_physicals where last_line_program_id=$2) points`, [revision, lineId])
     return revision
   })
   const cdp = await page.context().newCDPSession(page)

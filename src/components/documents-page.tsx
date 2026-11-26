@@ -1794,6 +1794,7 @@ function SystemDocumentsPanel({
 
     {actionError || selectionError ? <DocumentHistoryError message={actionError || selectionError!} onRetry={() => { setActionError(null); refresh() }} /> : null}
     <DocumentsHistoryGrid viewId={historyStorageKey} columns={columns} initialVisibleColumnKeys={initialVisibleColumnKeys}
+      reportTitle={`Список документов: ${documentLabel}`}
       reportSource={{ kind: 'system', type: documentType, columnFilters: effectiveColumnFilters, ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}) }}
       renderCell={renderCell} renderActions={renderActions} getCellValue={getCellValue} loadRows={loadRows}
       sourceRevision={`${sourceRevision}:${JSON.stringify(effectiveColumnFilters)}:${navigationTarget?.documentId ?? ''}`}

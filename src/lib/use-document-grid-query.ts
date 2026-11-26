@@ -127,7 +127,7 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     }, 80)
   })
   useEffect(countSelection, [options.selected, options.ready, countSelection])
-  const toggle = useStableEventCallback(async (node?: IRowNode<T | DocumentHistoryGroupRow>) => {
+  const toggle = useStableEventCallback(async (node?: IRowNode<T | DocumentHistoryGroupRow>, requestedChecked?: boolean) => {
     const { ready, api, load } = current.current
     if (!ready || !api || api.isDestroyed() || selectionBusy.current === generation.current || !revision.current) return
     const route = node ? routeOf(node) : [], key = journalRouteKey(route), active = generation.current, choice = selectionVersion.current
@@ -152,7 +152,9 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     membership.current.set(key, ids)
     // Keep one full membership and bounded smaller groups, not copies of the entire registry at every level.
     while (membership.current.size > 16) membership.current.delete(membership.current.keys().next().value!)
-    const selected = new Set(current.current.selected.map(row => row.id)), remove = ids.length > 0 && ids.every(id => selected.has(id))
+    const selected = new Set(current.current.selected.map(row => row.id))
+    // A restored selection can reach this list before its count is painted in the header.
+    const remove = requestedChecked === undefined ? ids.length > 0 && ids.every(id => selected.has(id)) : !requestedChecked
     const delta = (remove ? 0 : ids.length) - ids.reduce<number>((count, id) => count + Number(selected.has(id)), 0)
     for (const id of ids) if (remove) selected.delete(id); else selected.add(id)
     const affected = new Map<string, { route: string[]; size: number }>([['[]', { route: [], size: current.current.total }]])

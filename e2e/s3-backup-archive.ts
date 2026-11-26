@@ -30,7 +30,7 @@ async function checksum(path: string) {
   return { size, sha256: digest.digest('hex') }
 }
 export async function referencedFiles(db: pg.Client) {
-  return (await db.query<Omit<Entry, 'sha256'>>(`select r.file_key as key,r.size,r.page_count as "pageCount",
+  return (await db.query<Omit<Entry, 'sha256'> & { dbDigest: string | null }>(`select to_jsonb(r)->>'sha256' as "dbDigest",r.file_key as key,r.size,r.page_count as "pageCount",
     r.id as "revisionId",r.bundle_id as "bundleId",(b.active_revision_id=r.id) as active
     from line_scheme_revisions r join line_scheme_bundles b on b.id=r.bundle_id order by r.file_key`)).rows
 }
@@ -65,7 +65,7 @@ export async function captureBackup(db: pg.Client, store: SchemeFileStore, direc
       fsyncSync(fd)
     } finally { closeSync(fd) }
     const objects: Entry[] = []
-    for (const entry of entries) {
+    for (const { dbDigest, ...entry } of entries) {
       assert.match(entry.key, /^[a-f0-9-]{36}\.pdf$/)
       const expectedDigest = await remoteDigest(entry.key)
       const source = await store.read(entry.key)
@@ -77,6 +77,7 @@ export async function captureBackup(db: pg.Client, store: SchemeFileStore, direc
       } }), createWriteStream(path, { flags: 'wx', mode: 0o600 }))
       const sha256 = digest.digest('hex')
       assert.equal(size, entry.size); assert.equal(sha256, expectedDigest, 'S3 bytes differ from upload checksum')
+      if (dbDigest !== null) assert.equal(sha256, dbDigest, 'PDF bytes differ from the database revision checksum')
       const file = await open(path, 'r+'); try { await file.sync() } finally { await file.close() }
       objects.push({ ...entry, sha256 })
     }
@@ -107,7 +108,11 @@ export async function validateBackup(directory: string): Promise<BackupManifest>
 
 export async function assertInventory(db: pg.Client, manifest: BackupManifest) {
   assert.equal((await db.query('select current_database() as name')).rows[0].name, targetName)
-  assert.deepEqual(await referencedFiles(db), manifest.objects.map(({ sha256, ...entry }) => entry), 'Backup inventory must cover every restored revision, including archives')
+  const rows = await referencedFiles(db)
+  assert.deepEqual(rows.map(({ dbDigest, ...entry }) => entry), manifest.objects.map(({ sha256, ...entry }) => entry), 'Backup inventory must cover every restored revision, including archives')
+  for (const [index, row] of rows.entries()) {
+    if (row.dbDigest !== null) assert.equal(manifest.objects[index]!.sha256, row.dbDigest, 'Backup PDF differs from the database revision checksum')
+  }
 }
 
 export async function restoreFiles(db: pg.Client, store: SchemeFileStore, directory: string, stopAfter?: number) {

@@ -1,3 +1,5 @@
+import { getConclusionJointFamily } from './connection-type'
+
 export const SYSTEM_DOCUMENT_SPLIT_SETTING_IDS = [
   'lnkRequest',
   'lnkConclusionVik',
@@ -35,6 +37,7 @@ export type SystemDocumentSplitRow = {
   projectTitle?: unknown
   subtitleCode?: unknown
   line?: unknown
+  connectionType?: unknown
   joint?: unknown
 }
 
@@ -60,7 +63,7 @@ export const SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS: Array<{
   {
     id: 'none',
     label: 'Без разделения',
-    description: 'Все выбранные позиции попадут в один документ.',
+    description: 'Совместимые позиции попадут в один документ. Для заключений С/У и Т оформляются отдельно.',
   },
   {
     id: 'project',
@@ -132,8 +135,30 @@ export function getSystemDocumentSplitModeLabel(mode: SystemDocumentSplitMode) {
 export function buildSystemDocumentSplitGroups<Row extends SystemDocumentSplitRow>(
   rows: readonly Row[],
   mode: SystemDocumentSplitMode,
+  separateConclusionFamilies = false,
 ): SystemDocumentSplitGroup<Row>[] {
   if (rows.length === 0) return []
+  if (separateConclusionFamilies && rows.length > 1) {
+    const firstFamily = getConclusionJointFamily(rows[0].connectionType)
+    const otherStart = rows.findIndex(row => getConclusionJointFamily(row.connectionType) !== firstFamily)
+    if (otherStart !== -1) {
+      const first = rows.slice(0, otherStart)
+      const other: Row[] = []
+      for (let index = otherStart; index < rows.length; index++) {
+        const row = rows[index]
+        if (getConclusionJointFamily(row.connectionType) === firstFamily) first.push(row)
+        else other.push(row)
+      }
+      return [first, other].flatMap(members => {
+        const family = getConclusionJointFamily(members[0].connectionType)
+        return buildSystemDocumentSplitGroups(members, mode).map(group => ({
+          ...group,
+          key: JSON.stringify([family, group.key]),
+          label: mode === 'none' ? family : `${family} · ${group.label}`,
+        }))
+      })
+    }
+  }
   if (mode === 'none') {
     return [{
       key: 'none',

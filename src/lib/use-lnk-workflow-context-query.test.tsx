@@ -151,6 +151,7 @@ describe('LNK workflow query load policy', () => {
   })
 
   it('keeps checkbox changes local and sends selected rows with the next server search', async () => {
+    serverMocks.listLnkWorkflowRows.mockResolvedValue([{ id: 7 }, { id: 9 }])
     const queryClient = createQueryClient()
     const { rerender } = renderHook(
       ({ request }: { request: LnkWorkflowRowsRequest }) =>

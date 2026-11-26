@@ -39,7 +39,8 @@ export function buildLineProgramReport(lines: ProgramReportLine[], mode: 'lines'
       .map(({ line, overview, stamp }) => [...identity(line), stamp ? [stamp.stamp, stamp.welderName].filter(Boolean).join(' · ') : 'Нет расчётных клейм', stamp?.count ?? '—', quota(stamp?.common ?? null), quota(stamp?.pvk ?? null),
         stamp ? stamp.common.missing + stamp.pvk.missing : '—', stamp ? stamp.common.excess + stamp.common.duplicateAssignments + stamp.pvk.excess + stamp.pvk.duplicateAssignments : '—', stamp?.reducible ?? '—',
         note(overview, line.configurationIssue ?? (stamp?.fullControlRequired ? '100% по браку' : !support && line.weldControlPercent === 100 ? 'Разбивка 100%-ной линии — справочно' : ''))])
-  return { title: selectedStamp ? `Программа линий — клеймо ${selectedStamp.stamp}` : mode === 'lines' ? 'Программа линий — сводка по линиям' : 'Программа линий — сводка по клеймам',
+  return { generatedAt: new Date().toISOString(),
+    title: selectedStamp ? `Программа линий — клеймо ${selectedStamp.stamp}` : mode === 'lines' ? 'Программа линий — сводка по линиям' : 'Программа линий — сводка по клеймам',
     subtitle: support ? 'Физические опоры учитываются без повторения ремонтов. Назначение или собственный факт по цепочке дают один зачёт по каждому методу. УЗК и ПВК рассчитываются независимо по официальным клеймам.' : '«Стыков» — физические соединения, без R/W и заменённых исходных соединений. Зачтено / нужно — покрытие нормы назначениями, не количество годных заключений. Недостижимая расчётная норма не показана как долг.',
     meta: [{ label: 'Отбор', value: context }, { label: 'Область', value: selectedStamp ? `Клеймо ${selectedStamp.stamp} · линия ${lines[0].line.line}; только сохранённые данные` : 'Все страницы выбранного списка; только сохранённые данные' }],
     metrics: [{ label: 'Линий', value: String(lines.length) }, { label: 'Физических стыков', value: String(physical), detail: 'Без повторов по клеймам' },

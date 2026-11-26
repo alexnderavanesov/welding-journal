@@ -9,6 +9,7 @@ import { Input } from './ui/input'
 import { Select } from './ui/select'
 import { SpecialistSelect, useSpecialistOptions } from './specialist-select'
 import { getSpecialistDocumentProfile, type SpecialistSelection } from '@/lib/document-specialists'
+import { formatDocumentCount } from '@/lib/document-count-label'
 import { PRE_HEAT_TREATMENT_LNK_METHODS } from '@/lib/lnk-control-stage'
 import type { PreHeatTreatmentFillOptions } from '@/lib/pre-heat-treatment-fill'
 import { SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS, getSystemDocumentSplitSettingId, type SystemDocumentSplitMode } from '@/lib/system-document-splitting'
@@ -38,6 +39,9 @@ export function PreHeatTreatmentFillDialog({ rowIds, chainRootId, markRowIds, on
   if (preview.data) lastPreview.current = { scope, data: preview.data }
   const data = preview.data ?? (lastPreview.current?.scope === scope ? lastPreview.current.data : undefined)
   const updating = options !== debounced || preview.isFetching || preview.isPlaceholderData
+  const fillLabel = data && !updating && !preview.error && data.groups.length > 1
+    ? `Заполнить недостающее как «Годен» · ${formatDocumentCount(data.groups.length, 'document')}`
+    : 'Заполнить недостающее как «Годен»'
   const fields = useRef(new Map<string, HTMLInputElement>())
   const pendingFocus = useRef<string | null>(null)
   const focusIssue = (issue: PreHeatTreatmentFillIssue) => {
@@ -117,7 +121,7 @@ export function PreHeatTreatmentFillDialog({ rowIds, chainRootId, markRowIds, on
     </fieldset>
     <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-4">
       <p className="text-xs text-slate-500">{onConfirm ? 'Документы создадутся только после сохранения карточки.' : 'Весь показанный состав сохраняется одной операцией.'}</p>
-      <div className="flex gap-2"><Button type="button" variant="outline" disabled={save.isPending} onClick={onClose}>Отмена</Button><Button type="button" disabled={!data || Boolean(preview.error) || updating || Boolean(data.errors.length) || !data.groups.length || save.isPending} onClick={confirm}>{save.isPending ? 'Сохраняем…' : 'Заполнить недостающее как «Годен»'}</Button></div>
+      <div className="flex gap-2"><Button type="button" variant="outline" disabled={save.isPending} onClick={onClose}>Отмена</Button><Button type="button" disabled={!data || Boolean(preview.error) || updating || Boolean(data.errors.length) || !data.groups.length || save.isPending} onClick={confirm}>{save.isPending ? 'Сохраняем…' : fillLabel}</Button></div>
     </div>
   </LargeDialogShell>
 }

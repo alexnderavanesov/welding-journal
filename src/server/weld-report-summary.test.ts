@@ -155,6 +155,19 @@ describe('independent report rows and summaries', () => {
     expect(mocks.read).not.toHaveBeenCalled()
   })
 
+  it('does not start a report transaction when its reader disconnects during a shared dispatcher refresh', async () => {
+    const reader = new AbortController()
+    const consume = vi.fn()
+    mocks.fresh.mockImplementationOnce(async () => {
+      reader.abort()
+      return { repeatedTasks: '{}' }
+    })
+    await expect(visitReportOutput({ report: 'lnk', kind: 'waitingRepair' }, consume, reader.signal))
+      .rejects.toMatchObject({ name: 'AbortError' })
+    expect(mocks.query).not.toHaveBeenCalled()
+    expect(consume).not.toHaveBeenCalled()
+  })
+
   it('rejects unauthorized preview and full-file reads before reading data or producing rows', async () => {
     mocks.security.mockRejectedValue(new Error('Нет доступа'))
     const consume = vi.fn()

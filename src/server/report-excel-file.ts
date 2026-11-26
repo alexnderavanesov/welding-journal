@@ -1,3 +1,5 @@
+import { logTechnicalError } from './error-diagnostics'
+import { PublicRequestError } from '@/lib/public-request-error'
 import { mkdtemp, open, rm } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,6 +11,7 @@ import { formatReportFieldValue, normalizeSheetName } from '@/lib/weld-export-ut
 import { buildContentTypesXml, buildRootRelsXml, buildWorkbookXml, buildWorkbookRelsXml, buildXlsxStylesXml,
   buildWorksheetHeader, buildWorksheetRow, WORKSHEET_END, EXCEL_SHEET_DATA_ROWS } from '@/lib/weld-export-xlsx-xml'
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
+import { reportExcelFilename } from '@/lib/report-filename'
 import type { ReportOutputRequest } from './weld-contracts'
 import { visitReportOutput } from './weld-read'
 import { createLargeExportGuard, type ReportOutputLifecycle } from './large-export-guard'
@@ -18,7 +21,7 @@ import { createLargeExportGuard, type ReportOutputLifecycle } from './large-expo
 export async function createReportExcelResponse(input: ReportOutputRequest, signal: AbortSignal) {
   input = (await import('./access-payload')).accessibleReportInput(input)
   const definition = getReportOutputBuilder(input)([]).exportData!
-  return createTabularExcelResponse({ sheetName: definition.sheetName, filename: definition.filename,
+  return createTabularExcelResponse({ sheetName: definition.sheetName, downloadTitle: definition.downloadTitle,
     columns: definition.fields.length,
     header: buildWorksheetHeader(definition.fields) + buildWorksheetRow(definition.fields.map(field => field.label), definition.fields, 0),
     row: (values, index) => buildWorksheetRow(values, definition.fields, index),
@@ -28,7 +31,7 @@ export async function createReportExcelResponse(input: ReportOutputRequest, sign
 
 /** Shared bounded XLSX delivery for joint reports and document registries. */
 export async function createTabularExcelResponse<T>(definition: {
-  sheetName: string; filename: string; columns: number; header: string; row: (values: T[], index: number) => string
+  sheetName: string; downloadTitle: string; columns: number; header: string; row: (values: T[], index: number) => string
 }, visit: (consume: (rows: T[][]) => Promise<void>, lifecycle: ReportOutputLifecycle) => Promise<{ generatedAt: string }>, signal: AbortSignal) {
   signal.throwIfAborted()
   const directory = await mkdtemp(join(tmpdir(), 'welding-report-'))
@@ -88,18 +91,20 @@ export async function createTabularExcelResponse<T>(definition: {
     })
     if (!complete) throw new Error('Excel source did not finish its transaction')
     signal.throwIfAborted()
+    const filename = reportExcelFilename(definition.downloadTitle, snapshot.generatedAt)
+    const encodedName = encodeURIComponent(filename).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
     const { size } = await file.stat()
     await file.close()
     const stream = createReadStream(path)
     const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
     const abort = () => stream.destroy(new Error('Скачивание отменено'))
     signal.addEventListener('abort', abort, { once: true })
-    stream.once('close', () => { signal.removeEventListener('abort', abort); void cleanup().catch(error => console.error('Report file cleanup failed', error)) })
+    stream.once('close', () => { signal.removeEventListener('abort', abort); void cleanup().catch(error => logTechnicalError('reportFileCleanup', error)) })
     if (signal.aborted) abort()
     return new Response(body, { headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${definition.filename}"`,
-      'Content-Length': String(size), 'Cache-Control': 'no-store', 'X-Report-Filename': definition.filename,
+      'Content-Disposition': `attachment; filename="report.xlsx"; filename*=UTF-8''${encodedName}`,
+      'Content-Length': String(size), 'Cache-Control': 'no-store',
       'X-Report-Generated-At': snapshot.generatedAt,
     } })
   } catch (error) {
@@ -116,7 +121,7 @@ export class ReportZipWriter {
     deflater: ReturnType<typeof createDeflateRaw>; pumping: Promise<void>; failure?: unknown }
   constructor(private readonly sink: (bytes: Uint8Array) => Promise<void>) {}
   private async emit(bytes: Uint8Array) {
-    if (this.offset + bytes.length > 0xffffffff) throw new Error('Размер Excel превышает возможности формата ZIP. Разделите выгрузку фильтрами.')
+    if (this.offset + bytes.length > 0xffffffff) throw new PublicRequestError('Размер Excel превышает возможности формата ZIP. Разделите выгрузку фильтрами.')
     await this.sink(bytes); this.offset += bytes.length
   }
   async start(path: string) {
@@ -137,7 +142,7 @@ export class ReportZipWriter {
     if (entry.failure) throw entry.failure
     const bytes = Buffer.from(text)
     entry.raw += bytes.length
-    if (entry.raw > 0xffffffff) throw new Error('Лист Excel слишком велик. Разделите выгрузку фильтрами.')
+    if (entry.raw > 0xffffffff) throw new PublicRequestError('Лист Excel слишком велик. Разделите выгрузку фильтрами.')
     entry.crc = crc32(bytes, entry.crc)
     if (!entry.deflater.write(bytes)) await once(entry.deflater, 'drain')
     if (entry.failure) throw entry.failure

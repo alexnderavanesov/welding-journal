@@ -68,11 +68,11 @@ async function seed(page: Page) {
   })
 }
 
-test('200k search: first rows, totals, save and dispatcher readiness are measured independently', async ({ browser }, info) => {
+test('200k search: first rows, totals, save and dispatcher readiness are measured independently', async ({ browser, baseURL }, info) => {
   test.skip(process.env.AUDIT_SEARCH_LOAD !== '1', 'Opt-in fresh isolated database and resource-limited server')
   test.setTimeout(900_000)
   const contexts = await Promise.all(Array.from({ length: 5 }, () => browser.newContext({ storageState: process.env.E2E_AUTH_STATE,
-    baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 },
+    baseURL, viewport: { width: 1600, height: 1000 },
   })))
   const clients = contexts.map((context, i) => observeMixedClient(context, `search-${i}`))
   const pages = await Promise.all(contexts.map(context => context.newPage()))

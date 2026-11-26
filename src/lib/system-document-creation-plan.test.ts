@@ -2,12 +2,33 @@ import { describe, expect, it } from 'vitest'
 
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan, systemNamePreviewSignature } from '@/lib/system-document-creation-plan'
+import { getSystemDocumentSplitSettingId } from '@/lib/system-document-splitting'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 const rows = [
   { id: 1, projectTitle: 'Проект', subtitleCode: '01', line: 'L-1', joint: '1' },
   { id: 2, projectTitle: 'Проект', subtitleCode: '01', line: 'L-1', joint: '2' },
 ] as WeldRow[]
+
+it.each([
+  ['lnkRequest', 2, 'Создать 2 заявки'],
+  ['pstoRequest', 21, 'Создать 21 заявку'],
+  ['lnkConclusion', 4, 'Создать 4 заключения'],
+  ['lnkConclusion', 12, 'Создать 12 заключений'],
+  ['pstoConclusion', 5, 'Создать 5 диаграмм'],
+] as const)('labels %s by the number of groups for %i C/U joints', (type, count, expected) => {
+  const joints = Array.from({ length: count }, (_, i) => ({
+    ...rows[0], id: i + 1, joint: String(i + 1), connectionType: i % 2 ? 'У19' : 'С17',
+  }))
+  const setting = getSystemDocumentSplitSettingId({ type, methodCode: 'ВИК' })
+  const plan = (mode: 'line' | 'joint', selected = joints) => buildSystemDocumentCreationPlan({
+    type, methodCode: 'ВИК', rows: selected, date: '2026-11-26', settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+    naming: { mode: 'system', customName: '', splitModes: { [setting]: mode } },
+  })
+  expect(plan('joint').batchSubmitLabel).toBe(expected)
+  expect(plan('line').batchSubmitLabel).toBeUndefined()
+  expect(plan('joint', []).batchSubmitLabel).toBeUndefined()
+})
 
 it('rejects a missing manual name beyond the first 50 displayed groups', () => {
   const many = Array.from({ length: 101 }, (_, index) => ({ ...rows[0], id: index + 1, joint: String(index + 1) }))
@@ -248,4 +269,24 @@ describe('system document creation plan', () => {
       'Заявка-24.08.2026-021',
     ])
   })
+})
+
+it('separates T from C/U conclusions even without optional splitting and permits independent names', () => {
+  const mixed = ['С17', 'Т1', 'У19'].map((connectionType, index) => ({ ...rows[0], id: index + 1, connectionType }))
+  const base = { type: 'lnkConclusion' as const, methodCode: 'ВИК', date: '2026-09-01', rows: mixed,
+    nextNumber: 101, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, naming: { mode: 'system' as const, customName: '' } }
+  const plan = buildSystemDocumentCreationPlan(base)
+  expect(plan.groups.map(group => [group.label, group.rowIds, group.name])).toEqual([
+    ['С/У', [1, 3], 'ЗНК-ВИК-01.09.2026-101'], ['Т', [2], 'ЗНК-ВИК-01.09.2026-102'],
+  ])
+  expect(plan.familySummary).toBe('ВИК С/У — 2 стыка · ВИК Т — 1 стык')
+  expect(plan.batchSubmitLabel).toBe('Создать 2 заключения')
+  const [first, second] = plan.groups
+  const naming = { ...base.naming, groupModes: { [first.key]: 'custom' as const }, customGroupNames: { [first.key]: 'Сварка-01' } }
+  const hybrid = buildSystemDocumentCreationPlan({ ...base, naming })
+  expect(hybrid.groups.map(group => group.name)).toEqual(['Сварка-01', 'ЗНК-ВИК-01.09.2026-101'])
+  expect(buildSystemDocumentCreationPlan({ ...base, naming: { ...naming, mode: 'custom', customGroupNames: {
+    [first.key]: 'Номер-7', [second.key]: 'номер-7',
+  } } }).error).toContain('должны различаться')
+  expect(buildSystemDocumentCreationPlan({ ...base, type: 'lnkRequest' }).groups).toHaveLength(1)
 })

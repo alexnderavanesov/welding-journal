@@ -13,8 +13,16 @@ it.each([
   // Only this disposable harness receives signals, never the test runner.
   const directory = await mkdtemp(join(tmpdir(), 'scheme-worker-shutdown-'))
   const started = join(directory, 'started'), handled = join(directory, 'handled')
-  const source = await readFile(new URL('./line-scheme-pdf-validation.ts', import.meta.url), 'utf8')
-  await writeFile(join(directory, 'controller.mjs'), ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
+  for (const [sourcePath, target] of [
+    ['./line-scheme-pdf-validation.ts', 'controller.mjs'],
+    ['./file-validation-process.ts', 'file-validation-process.mjs'],
+    ['../lib/public-request-error.ts', 'public-request-error.mjs'],
+  ] as const) {
+    const source = (await readFile(new URL(sourcePath, import.meta.url), 'utf8'))
+      .replaceAll('@/lib/public-request-error', './public-request-error.mjs')
+      .replaceAll("'./file-validation-process'", "'./file-validation-process.mjs'")
+    await writeFile(join(directory, target), ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
+  }
   await writeFile(join(directory, 'line-scheme-pdf-worker.mjs'), `import { writeFileSync } from 'node:fs';
     import { fileURLToPath } from 'node:url';
     export const pdfValidationWorkerUrl = import.meta.url;
@@ -32,7 +40,7 @@ it.each([
     // Isolate shutdown behaviour from macOS sandbox ps permissions.
     const exec = cp.execFile;
     cp.execFile = (file,args,options,callback) => file === '/bin/ps'
-      ? queueMicrotask(()=>callback(null,'65536')) : exec(file,args,options,callback);
+      ? queueMicrotask(()=>callback(null,'65536 S')) : exec(file,args,options,callback);
     syncBuiltinESMExports();
     const { validateSchemePdf } = await import('./controller.mjs');
     const [mode, signal, marker, handled] = process.argv.slice(2);

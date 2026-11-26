@@ -1,19 +1,33 @@
 import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { expect, test, type Page, type Request } from '@playwright/test'
+import { drizzle } from 'drizzle-orm/node-postgres'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { markDispatcherTaskIndexDirty } from '../../src/server/dispatcher-task-index-dirty'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 import { confirmLnkResultChanges, lnkResultConfirmation } from '../lnk-result-confirmation'
 
 const project = 'E2E unofficial result guard', joint = 'F731', lineName = 'UNOFFICIAL-GUARD'
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
-async function seed() {
-  return withE2eDatabase(async db => {
+async function seed(stage?: 'primary' | 'beforeHeatTreatment') {
+  return withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ($1,'U',$2,'II','A',10,0) returning id`, [project, lineName])
     const { rows: [row] } = await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,officiality,revision_actuality,weld_date,connection_type,material_group,welding_method,d1,d2,t1,t2,wdi,stamp_1_k,has_vik,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,has_uzk,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status)
       values ($1,$2,'U',$3,$4,'неофициальный','актуальная','2026-09-01','С17','M01','РД',108,108,4,4,0.42,'A','да','годен','UG-VIK','2026-09-01','UG-VIK-C','2026-09-02','да','ремонт','UG-UZK','2026-09-02','UG-UZK-C','2026-09-03','не годен') returning id`, [line.id, project, lineName, joint])
-    return row.id as number
+    const id = row.id as number
+    if (stage === 'beforeHeatTreatment') {
+      await db.query(`update weld_joints set vik_result=null,vik_request=null,vik_request_date=null,vik_conclusion=null,vik_conclusion_date=null,
+        uzk_result=null,uzk_request=null,uzk_request_date=null,uzk_conclusion=null,uzk_conclusion_date=null,psto_required='да',pre_heat_treatment_required=true where id=$1`, [id])
+      await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
+        values ($1,'ВИК','UG-PRE-VIK','2026-09-01','ожидает НК',null,null),
+          ($1,'УЗК','UG-PRE-UZK','2026-09-02','ремонт','UG-PRE-UZK-C','2026-09-03')`, [id])
+    } else if (stage === 'primary') {
+      await db.query("update weld_joints set vik_result='ожидает НК',vik_conclusion=null,vik_conclusion_date=null where id=$1", [id])
+    }
+    // Raw fixture writes must publish a new revision, as an application save does.
+    await markDispatcherTaskIndexDirty(drizzle(db), { scopes: [{ projectTitle: project, subtitleCode: 'U', line: lineName }] })
+    return id
   })
 }
 
@@ -35,20 +49,10 @@ async function openManager(page: Page) {
 }
 
 for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИК годен при сохранённом ремонте УЗК: ${beforeHeatTreatment ? 'до ТО' : 'основной этап'}`, async ({ page }) => {
-  const id = await seed(), errors: string[] = [], writes: Request[] = []
+  const id = await seed(beforeHeatTreatment ? 'beforeHeatTreatment' : 'primary'), errors: string[] = [], writes: Request[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/') && /^(updateWeldJoints_|savePreHeatTreatment)/.test(rpcName(request.url()))) writes.push(request) })
-  await withE2eDatabase(async db => {
-    if (beforeHeatTreatment) {
-      await db.query(`update weld_joints set vik_result=null,vik_request=null,vik_request_date=null,vik_conclusion=null,vik_conclusion_date=null,
-        uzk_result=null,uzk_request=null,uzk_request_date=null,uzk_conclusion=null,uzk_conclusion_date=null,psto_required='да',pre_heat_treatment_required=true where id=$1`, [id])
-      await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
-        values ($1,'ВИК','UG-PRE-VIK','2026-09-01','ожидает НК',null,null),
-          ($1,'УЗК','UG-PRE-UZK','2026-09-02','ремонт','UG-PRE-UZK-C','2026-09-03')`, [id])
-    } else {
-      await db.query("update weld_joints set vik_result='ожидает НК',vik_conclusion=null,vik_conclusion_date=null where id=$1", [id])
-    }
-  })
+
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
   await lnkGridRow(page, joint).getByRole('checkbox').click()
@@ -86,13 +90,49 @@ for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИ
   expect(writes).toHaveLength(1)
 })
 
+test('повторное чтение того же результата после поиска сохраняет открытое редактирование', async ({ page }) => {
+  await seed()
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Все результаты ЛНК', exact: true }) })
+  await dialog.getByLabel('Вид контроля в реестре').selectOption('uzkRequest')
+  const row = dialog.getByRole('button', { name: new RegExp(`^${lineName} · ${joint}(?:\\s|$)`) })
+  await row.click()
+  await dialog.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  const editOptions = dialog.getByRole('group', { name: 'Результат выбранного стыка', exact: true })
+  await expect(editOptions).toBeVisible()
+  let resume!: () => void
+  const paused = new Promise<void>(resolve => { resume = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (rpcName(route.request().url()).startsWith('listLnkWorkflowRows')) await paused
+    await route.continue()
+  })
+  try {
+    const matching = (request: Request) => rpcName(request.url()).startsWith('listLnkWorkflowRows')
+    const requested = page.waitForRequest(matching)
+    const answered = page.waitForResponse(response => matching(response.request()))
+    await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(lineName)
+    await requested
+    resume()
+    await answered
+    await expect(row).toBeVisible()
+    await expect(editOptions).toBeVisible()
+    await expect(editOptions.getByRole('button', { name: 'годен', exact: true })).toBeDisabled()
+  } finally {
+    resume()
+    await page.unrouteAll({ behavior: 'wait' })
+  }
+})
+
 test('негодный неофициальный: запрет годного результата, отдельное восстановление официальности и защита от старого клиента', async ({ page }) => {
   const id = await seed(), writes: Request[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('updateWeldJoints_')) writes.push(request) })
   await page.goto('/lnk')
   let manager = await openManager(page)
-  await expect(manager.getByRole('button', { name: 'годен', exact: true }).last()).toBeDisabled()
+  const goodResult = manager.getByRole('group', { name: 'Результат выбранного стыка', exact: true }).getByRole('button', { name: 'годен', exact: true })
+  await expect(goodResult).toBeDisabled()
   await expect(manager.getByText(/Сначала верните стыку официальность/).first()).toBeVisible()
   await expect(manager.getByRole('button', { name: 'Удалить результат', exact: true })).toBeDisabled()
   await expect(manager.getByText(/последний негодный результат/)).toBeVisible()
@@ -110,10 +150,10 @@ test('негодный неофициальный: запрет годного �
   expect((await stored(id)).officiality).not.toBe('неофициальный')
 
   manager = await openManager(page)
-  await expect(manager.getByRole('button', { name: 'годен', exact: true }).last()).toBeEnabled()
+  await expect(goodResult).toBeEnabled()
   await page.waitForLoadState('networkidle')
   const before = await stored(id)
-  await manager.getByRole('button', { name: 'годен', exact: true }).last().click()
+  await goodResult.click()
   await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
   await confirmLnkResultChanges(page)
   await expect(manager).toBeHidden()

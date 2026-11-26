@@ -182,7 +182,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         tx,
       )
       const rowsById = new Map(rows.map((row) => [row.id, row]))
-      if (documentGrouping) assertCreationGrouping(data.groups.map(group => ({ name: group.name, rows: [...new Set(group.positions.map(position => position.rowId))].map(id => rowsById.get(id)!) })), documentGrouping.mode)
+      if (documentGrouping) assertCreationGrouping(data.groups.map(group => ({ name: group.name, rows: [...new Set(group.positions.map(position => position.rowId))].map(id => rowsById.get(id)!) })), documentGrouping.mode, data.action === 'result')
       const resultByPosition = new Map(data.results.map((entry) => [positionKey(entry), entry]))
       const rkExposureTable = data.action === 'result'
         ? workflowSettings.otherSettings.rkExposureTable
@@ -902,7 +902,7 @@ export async function syncPreHeatTreatmentDocuments({
       })
     }
   }
-  await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
+  await upsertSourcedSystemDocumentsInTransaction({ tx, documents, lockedRows: rowsById })
 }
 
 async function touchLnkRows(

@@ -1,3 +1,4 @@
+import { getConclusionJointFamily } from './connection-type'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
 import {
@@ -15,6 +16,7 @@ import {
   type SystemDocumentSplitGroup,
   type SystemDocumentSplitMode,
 } from '@/lib/system-document-splitting'
+import { formatDocumentCount } from '@/lib/document-count-label'
 import type { SystemDocumentType } from '@/lib/system-document-types'
 import { getDraftSpecialists, getSpecialistDocumentProfile, type SpecialistSelection } from './document-specialists'
 
@@ -47,6 +49,8 @@ export type SystemDocumentCreationPlan = {
   groups: SystemDocumentCreationGroup[]
   missingSummary: string
   error: string
+  familySummary?: string
+  batchSubmitLabel?: string
   documentCount?: number
 }
 
@@ -81,7 +85,7 @@ export function buildSystemDocumentCreationPlan({
   const settingId = getSystemDocumentSplitSettingId({ type, methodCode })
   const mode = naming.splitModes?.[settingId] ?? settings.splitModes[settingId]
   const splitGroups = partitionSystemDocumentSplitGroups(
-    buildSystemDocumentSplitGroups(rows, mode),
+    buildSystemDocumentSplitGroups(rows, mode, type === 'lnkConclusion'),
     partitionBy,
   )
   const manualMembers = new Map<string, string>()
@@ -139,12 +143,24 @@ export function buildSystemDocumentCreationPlan({
     ...(methodCode ? { methodCode } : {}),
     mode,
     groups,
+    familySummary: type === 'lnkConclusion' && groups.length > 1 ? getConclusionFamilySummary(groups, methodCode) : undefined,
+    batchSubmitLabel: groups.length > 1 ? `Создать ${formatDocumentCount(groups.length, type)}` : undefined,
     documentCount: groups.length,
     missingSummary: getSystemDocumentSplitMissingSummary(splitGroups),
     error: naming.groupingDefaultsState === 'loading' ? 'Загружаем актуальные правила документов…'
       : naming.groupingDefaultsState === 'error' ? 'Не удалось загрузить правила документов. Повторите загрузку рядом с разделением.'
       : getCreationPlanError(groups),
   }
+}
+
+function getConclusionFamilySummary(groups: SystemDocumentCreationGroup[], method?: string) {
+  const counts = new Map<string, number>()
+  for (const group of groups) {
+    const family = getConclusionJointFamily(group.rows[0].connectionType)
+    counts.set(family, (counts.get(family) ?? 0) + group.rows.length)
+  }
+  if (counts.size < 2) return undefined
+  return [...counts].map(([family, count]) => `${method ?? 'НК'} ${family} — ${formatDocumentCount(count, 'joint')}`).join(' · ')
 }
 
 function partitionSystemDocumentSplitGroups(

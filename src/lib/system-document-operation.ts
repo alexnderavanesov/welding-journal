@@ -1,3 +1,4 @@
+import { assertSameConclusionJointFamily, getConclusionJointFamily } from './connection-type'
 import type { WeldRow } from './dispatcher-types'
 import { getDocumentRequisiteErrors } from './document-requisites'
 import type { PreHeatTreatmentControlRecord } from './lnk-control-stage'
@@ -123,6 +124,9 @@ export function assertDocumentMergeCompatible(sources: DocumentOperationSource[]
     if ((document.sourceKind === 'beforeHeatTreatment') !== (first.sourceKind === 'beforeHeatTreatment')) reasons.push('разные этапы: НК до ТО и основной НК')
     if (reasons.length) throw new Error(`Нельзя объединить «${first.title}» и «${document.title}»: ${reasons.join('; ')}. Измените выбор. Ни один документ не будет изменён.`)
   }
+  if (first.type === 'lnkConclusion') {
+    assertSameConclusionJointFamily(positions.map(({ row }) => getConclusionJointFamily(row.connectionType)))
+  }
   const cyclesByJoint = new Map<number, string>()
   const exact = new Set<string>()
   for (const item of positions) {
@@ -162,7 +166,10 @@ export function buildDocumentOperationGroups({ sources, request, settings, nextN
     const rows = [...new Map(positions.map(item => [item.row.id, item.row])).values()].sort((a, b) => a.id - b.id)
     const positionsByRow = new Map<number, DocumentOperationPosition[]>()
     for (const item of positions) { const values = positionsByRow.get(item.row.id) ?? []; values.push(item); positionsByRow.set(item.row.id, values) }
-    const splits = buildSystemDocumentSplitGroups(rows, request.action === 'rename' ? 'none' : request.mode)
+    if (request.action === 'rename' && first.type === 'lnkConclusion') {
+      assertSameConclusionJointFamily(rows.map(row => getConclusionJointFamily(row.connectionType)))
+    }
+    const splits = buildSystemDocumentSplitGroups(rows, request.action === 'rename' ? 'none' : request.mode, first.type === 'lnkConclusion')
     const sourceIds = unit.map(source => source.document.documentId)
     const oldNumber = request.merge ? 0 : Number(getSystemDocumentNumber(first, settings))
     for (const [index, split] of splits.entries()) {

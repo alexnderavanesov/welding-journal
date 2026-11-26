@@ -1,3 +1,4 @@
+import { assertDispatcherRollback } from '../e2e/assert-dispatcher-rollback'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { and, eq } from 'drizzle-orm'
@@ -15,11 +16,8 @@ const db = requireDb(), project = 'E2E dispatcher atomic catch-up'
 assert.equal((await db.select({ id: weldJoints.id }).from(weldJoints).where(eq(weldJoints.projectTitle, project))).length, 0)
 const original = pg.Client.prototype.query
 let onWideRead: (() => Promise<void>) | undefined, wideReads = 0, pageStages = 0, failCatchUp = false
-const originalError = console.error
-let expectedFailure = false
 const isExpectedFailure = (value: unknown): boolean => value instanceof Error &&
   (value.message === 'EXPECTED_ATOMIC_CATCHUP_ROLLBACK' || isExpectedFailure(value.cause))
-console.error = (...args) => { if (!expectedFailure || !args.some(isExpectedFailure)) originalError(...args) }
 const readPublished = async () => {
   const states = await db.select().from(dispatcherTaskIndexState)
   const pages = await db.select().from(dispatcherTaskPages).orderBy(dispatcherTaskPages.scopeKey, dispatcherTaskPages.pageNumber)
@@ -114,15 +112,15 @@ try {
   assert.equal(wideReads, 2, 'A new global generation requires a complete retry')
 
   await markDispatcherTaskIndexDirty(db)
-  pageStages = 0; failCatchUp = true; expectedFailure = true
+  pageStages = 0; failCatchUp = true
   onWideRead = () => db.transaction(async tx => {
     await tx.update(weldJoints).set({ vikResult: 'годен' }).where(eq(weldJoints.id, changed.id))
     await markDispatcherTaskIndexDirty(tx, { scopes: [scope('A')] })
     // Read the invalidated state after the committed concurrent write below.
   }).then(async () => { publicationBefore = await readPublished() })
-  await assert.rejects(ensureDispatcherTaskIndexFresh(), isExpectedFailure)
+  await assertDispatcherRollback(() => ensureDispatcherTaskIndexFresh(), isExpectedFailure)
   assert.deepEqual(await readPublished(), publicationBefore!)
-  failCatchUp = false; expectedFailure = false
+  failCatchUp = false
   const recovered = await ensureDispatcherTaskIndexFresh()
   assert.equal(recovered.sourceRevision, recovered.computedRevision)
   const [current] = await db.select().from(weldJoints).where(and(eq(weldJoints.projectTitle, project), eq(weldJoints.id, changed.id)))
@@ -132,7 +130,6 @@ try {
     globalChangeRetried: true, atomicPublication: true, rollbackAndRetry: true }))
 } finally {
   pg.Client.prototype.query = original
-  console.error = originalError
   await db.delete(weldJoints).where(eq(weldJoints.projectTitle, project))
   await markDispatcherTaskIndexDirty(db)
 }

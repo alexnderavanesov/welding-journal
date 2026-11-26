@@ -14,6 +14,8 @@ import { projectPstoReportDisplayValues } from '../../src/server/report-filter-r
 import type { JournalGridRequest, JournalGridResult } from '../../src/lib/journal-server-grid'
 import type { JournalFilterPage } from '../../src/lib/journal-filter-options'
 import type { WeldRow } from '../../src/lib/dispatcher-types'
+import { closureDimension } from '../../src/lib/work-closure-columns'
+import { withClosureColumnFilters, type WorkClosureFilter } from '../../src/lib/work-closures'
 import { withLineProgramFixture, cleanupLineProgramProjects } from '../line-program-fixtures'
 import { withE2eDatabase } from '../database'
 import { rpcName, siblingRpcUrl, serializeRpcData, deserializeRpcResponse } from '../rpc'
@@ -52,6 +54,10 @@ test.beforeAll(async () => {
     await db.query(`insert into weld_joints(${names.join(',')}) select ${values.join(',')} from generate_series(1,$1::int) n`, [total])
     const seeded = (await db.query('select id from weld_joints where project_title is null or project_title=any($1::text[]) order by id', [['АЛЬФА-2', 'Альфа-10', '']])).rows.map(row => row.id)
     expect(seeded.length).toBe(total)
+    await db.query(`insert into work_closures(weld_joint_id,work_type,rate_code,act_number)
+      select id,kind,case when id%2=0 then '001' else '' end,case when id%4=0 then 'КС-1' else '' end
+      from unnest($1::int[]) id cross join (values ('Сварка'),('ВИК')) types(kind)
+      where id%3=0 and (kind='Сварка' or id%2=0)`, [seeded])
     await db.query(`update weld_joints w set project_title=$1||'-'||((s.ordinality-1)%4),subtitle_code='ШИФР-'||((s.ordinality-1)%3),
       line='ЛИНИЯ-'||((s.ordinality-1)%8),joint='F'||s.ordinality,isometry='ISO-'||(s.ordinality%6),
       officiality='действующий',revision_actuality='актуальная',connection_type='С17',welding_method='РД',material_group='M01',
@@ -115,6 +121,10 @@ test('every available weld-report field preserves exact membership, facets and g
   const rawRows = await withE2eDatabase(async db => (await db.query(`select id,psto_result as "primaryPstoResult",${rawColumns.map(([key,column]) => `"${column.name}"::text as "${key}"`).join(',')}
     from weld_joints where project_title=any($1::text[])`, [projects])).rows)
   const rawById = new Map(rawRows.map(row => [row.id, row]))
+  const closures = await withE2eDatabase(async db => (await db.query<{
+    id: number; workType: string; rateCode: string; actNumber: string
+  }>(`select w.id,c.work_type as "workType",c.rate_code as "rateCode",c.act_number as "actNumber"
+    from weld_joints w join work_closures c on c.weld_joint_id=w.id where w.project_title=any($1::text[])`, [projects])).rows)
   for (const report of reports) {
     const fields = getAvailableWeldTableSections({ hiddenFieldKeys:getReportHiddenFieldKeys(report),mergePstoSections:report==='heatTreatment',
       ...(report==='lnk' ? { sectionLayout:getLnkVisibleFieldSections() } : {}),
@@ -138,6 +148,42 @@ test('every available weld-report field preserves exact membership, facets and g
     for(const field of fields) {
       const timings: Record<string,number> = {}
       try {
+        // These columns have their own filter panel. Its choices are positions
+        // of work, and each joint contributes once per value.
+        const dimension = closureDimension(field.key)
+        if (dimension) {
+          const started = performance.now()
+          const facet = await call<{ options: { value: string; count: number }[]; specialCount: number }>(
+            'readWorkClosureFacet', { dimension, columnFilters: base.columnFilters })
+          const members = new Map<string, Set<number>>()
+          for (const entry of closures) {
+            const value = entry[dimension]
+            const ids = members.get(value) ?? new Set<number>()
+            ids.add(entry.id)
+            members.set(value, ids)
+          }
+          expect(new Map(facet.options.map(option => [option.value, option.count])))
+            .toEqual(new Map([...members].map(([value, ids]) => [value, ids.size])))
+          const withWorks = new Set(closures.map(entry => entry.id))
+          const noWorks = all.filter(row => !withWorks.has(row.id)).map(row => row.id)
+          const assigned = [...new Set(closures.filter(entry => entry.rateCode !== '').map(entry => entry.id))]
+          const selections: { filter: WorkClosureFilter; ids: number[] }[] = [...members]
+            .map(([value, ids]) => ({ filter: { [dimension]: [value] }, ids: [...ids] }))
+          if (dimension === 'workType') {
+            expect(facet.specialCount).toBe(noWorks.length)
+            selections.push({ filter: { noWorks: true }, ids: noWorks })
+          } else if (dimension === 'rateCode') {
+            expect(facet.specialCount).toBe(assigned.length)
+            selections.push({ filter: { rateAssigned: true }, ids: assigned })
+          }
+          for (const { filter, ids } of selections) {
+            const selected = await call<{ ids: number[] }>('selectJournalGridRows',
+              { ...base, revision: initial.revision, columnFilters: withClosureColumnFilters(base.columnFilters, filter) })
+            expect(new Set(selected.ids)).toEqual(new Set(ids))
+          }
+          measures.push({ report, field: field.key, rows: all.length, options: facet.options.length, elapsed: performance.now() - started })
+          continue
+        }
         let start=performance.now()
         const facets = await call<JournalFilterPage>('readJournalFilterPage',{report,fieldKey:field.key,search:marker})
         timings.facet=performance.now()-start

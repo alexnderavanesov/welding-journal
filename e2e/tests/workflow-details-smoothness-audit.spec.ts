@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 import { createSmoothnessProbe } from '../smoothness-probe'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { rpcName } from '../rpc'
 
 const enabled = !!process.env.SMOOTHNESS_LABEL
 const resultsProject = 'E2E smooth details results'
@@ -211,6 +213,73 @@ test('populated duplicate registry, three PSTO cycles and paged active exception
     })
     await page.keyboard.press('Escape')
   } finally { await probe.finish() }
+})
+
+test('registered duplicates after opening LNK and after the table shows its first rows', async ({ page }, info) => {
+  const samples = []
+  let requestUrl = ''
+  page.on('request', request => {
+    if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('listDuplicateControlRegistryPage_')) requestUrl = request.url()
+  })
+  for (const readyTable of [false, true]) {
+    requestUrl = ''
+    await page.goto('/lnk')
+    if (readyTable) {
+      const grid = page.locator('.journal-grid-frame')
+      await expect(grid.locator('.ag-row').first()).toBeVisible()
+      await expect(grid).toHaveAttribute('aria-busy', 'false')
+    }
+    await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Дубль контроль', exact: true }) })
+    // All timestamps in the same browser clock. A Playwright retry before
+    // dispatch is distinct from the operator waiting after an actual click.
+    const clock = await page.evaluateHandle(() => {
+      const timing = { command: performance.now(), visibleButton: 0, unobstructed: 0, clicked: 0, rowFrame: 0,
+        placements: [] as { at: number; top: number }[] }
+      const buttonFor = (label: string) => Array.from(document.querySelectorAll<HTMLButtonElement>(
+        '[role="dialog"] button, dialog[open] button',
+      )).find(button => button.textContent?.includes(label) && button.getClientRects().length)
+      const click = (event: MouseEvent) => {
+        if (event.isTrusted && event.target instanceof Element && event.target.closest('button')?.textContent?.includes('Внесенные дубли')) {
+          timing.clicked = performance.now()
+          document.removeEventListener('click', click, true)
+        }
+      }
+      document.addEventListener('click', click, true)
+      const frame = () => {
+        if (!timing.clicked) {
+          const button = buttonFor('Внесенные дубли')
+          if (button) {
+            const rect = button.getBoundingClientRect(), top = Math.round(rect.top)
+            if (!timing.visibleButton) timing.visibleButton = performance.now()
+            if (timing.placements.at(-1)?.top !== top) timing.placements.push({ at: performance.now(), top })
+            const center = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+            if (!timing.unobstructed && center && button.contains(center)) timing.unobstructed = performance.now()
+          }
+        }
+        if (timing.clicked && buttonFor('Изменить')) timing.rowFrame = performance.now()
+        if (!timing.rowFrame && performance.now() - timing.command < 15000) requestAnimationFrame(frame)
+      }
+      frame()
+      return timing
+    })
+    await dialog.getByRole('button', { name: /Внесенные дубли/ }).click()
+    await expect(dialog.getByText('из 120 строк', { exact: true })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Изменить', exact: true }).first()).toBeVisible()
+    await expect.poll(() => clock.evaluate(timing => timing.rowFrame)).toBeGreaterThan(0)
+    expect(requestUrl).toBeTruthy()
+    const { startTime, responseEnd } = await page.evaluate(url => {
+      const entry = performance.getEntriesByName(url).at(-1) as PerformanceResourceTiming
+      return { startTime: entry.startTime, responseEnd: entry.responseEnd }
+    }, requestUrl)
+    const timing = await clock.jsonValue()
+    expect(timing.clicked).toBeGreaterThanOrEqual(timing.command)
+    expect(startTime).toBeGreaterThanOrEqual(timing.clicked - 1)
+    expect(timing.rowFrame).toBeGreaterThanOrEqual(responseEnd - 1)
+    samples.push({ readyTable, ...timing, request: startTime, response: responseEnd })
+    await writeFile(info.outputPath('duplicate-click.json'), JSON.stringify(samples, null, 2))
+    await clock.dispose()
+  }
 })
 
 test('populated suspension history and existing-record editor reopen without saving', async ({ page }, info) => {

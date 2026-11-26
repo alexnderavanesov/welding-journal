@@ -38,14 +38,15 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
   const compositionTrigger = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
+    let active = true
     mounted.current = true
     openRequest.current ??= getDocumentGroupingDefaults()
     void openRequest.current.then(settings => {
-      if (!mounted.current) return
+      if (!active) return
       const initial = action === 'merge' ? 'none' : settings.splitModes[getSystemDocumentSplitSettingId(documents[0])]
       setMode(initial); void refresh(initial, action === 'merge', {}, true)
-    }).catch(cause => { if (mounted.current) { setError(message(cause)); setBusy(false) } })
-    return () => { mounted.current = false }
+    }).catch(cause => { if (active) { setError(message(cause)); setBusy(false) } })
+    return () => { active = false; mounted.current = false }
   }, [])
 
   async function refresh(nextMode = mode, nextMerge = merge, nextNames = names, repartition = false, index = batchIndex) {

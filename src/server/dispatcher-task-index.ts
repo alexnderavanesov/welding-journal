@@ -1,3 +1,5 @@
+import { logTechnicalError } from './error-diagnostics'
+import { PublicRequestError } from '@/lib/public-request-error'
 import { attachSupportProgramRates } from './support-program-context'
 import { and, asc, desc, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -160,8 +162,8 @@ export async function ensureDispatcherTaskIndexFresh() {
   const pending = ensureDispatcherTaskIndexFreshOnce().catch(error => {
     // Report once per coalesced calculation, even if all HTTP callers left.
     // All waiters receive the same readable message, not SQL/driver details.
-    console.error('Не удалось выполнить пересчет индекса диспетчера.', error)
-    throw new Error('Не удалось обновить расчёт. Повторите загрузку.', { cause: error })
+    logTechnicalError('dispatcherIndex', error)
+    throw new PublicRequestError('Не удалось обновить расчёт. Повторите загрузку.', 500, { cause: error })
   })
   pendingDispatcherTaskIndexRefresh = pending
   try {

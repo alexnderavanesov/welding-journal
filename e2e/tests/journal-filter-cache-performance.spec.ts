@@ -54,7 +54,17 @@ test('cached journal filters preserve complete matches with bounded SQL', async 
   const metrics = async () => {
     if (!process.env.AUDIT_SQL_COUNTS_FILE) return undefined
     await page.waitForTimeout(550) // Instrumentation flushes every 500 ms, outside timed work.
-    return JSON.parse(await readFile(process.env.AUDIT_SQL_COUNTS_FILE, 'utf8')) as { statements: number; dispatcherCalculations: unknown[] }
+    return JSON.parse(await readFile(process.env.AUDIT_SQL_COUNTS_FILE, 'utf8')) as {
+      statements: number
+      dispatcherCalculations: unknown[]
+      rpcStatements: Record<string, number>
+      rpcReleaseReadinessStatements: Record<string, number>
+      resources?: { reads: Record<string, { calls: number }> }
+    }
+  }
+  const ordinaryRpcSql = (snapshot: NonNullable<Awaited<ReturnType<typeof metrics>>>, url: string) => {
+    const id = new URL(url).pathname.split('/').at(-1)!
+    return (snapshot.rpcStatements[id] ?? 0) - (snapshot.rpcReleaseReadinessStatements[id] ?? 0)
   }
   // Measure the real input/click -> DOM result interval, not Playwright's
   // assertion polling interval (which can add 100–250 ms to fast responses).
@@ -108,6 +118,21 @@ test('cached journal filters preserve complete matches with bounded SQL', async 
     await page.waitForLoadState('networkidle')
     const first = await call({fieldKey:'joint',search})
     expect(first.total).toBe(total)
+    // Measure the protected request's authentication cost independently of the
+    // filter. The release gate has its own exact per-RPC telemetry.
+    const beforeIdentity = await metrics()
+    let identitySql = 0
+    if (beforeIdentity) {
+      const identityUrl = siblingRpcUrl(observed, 'getCurrentAccount_createServerFn_handler')
+      const identity = await page.request.get(identityUrl, { params: { payload: await serializeRpcData({}) },
+        headers: { origin: new URL(observed).origin, 'x-tsr-serverFn':'true' } })
+      expect(identity.ok()).toBe(true)
+      const payload = await deserializeRpcResponse(await identity.text()) as { result?: { id?: string } }
+      expect(payload.result?.id).toBeTruthy()
+      identitySql = ordinaryRpcSql((await metrics())!, identityUrl) - ordinaryRpcSql(beforeIdentity, identityUrl)
+      expect(identitySql).toBeGreaterThan(0)
+      expect(identitySql).toBeLessThanOrEqual(3)
+    }
     const before = await metrics(), requestMs: number[] = []
     for (let index=0; index<20; index++) {
       const prefix = `J${100+index}`
@@ -119,14 +144,23 @@ test('cached journal filters preserve complete matches with bounded SQL', async 
       expect(result.next).toBe(150)
     }
     const after = await metrics()
+    let filterSql: number | undefined
     if (before && after) {
       expect(after.dispatcherCalculations.length).toBe(before.dispatcherCalculations.length)
-      // The release-readiness gate can refresh its short-lived state during a batch.
-      expect(after.statements-before.statements).toBeLessThanOrEqual(20*5+4)
+      const filterUrl = siblingRpcUrl(observed, 'readJournalFilterPage_createServerFn_handler')
+      filterSql = ordinaryRpcSql(after, filterUrl) - ordinaryRpcSql(before, filterUrl)
+      // A warm hit checks the incoming revision, the dispatcher, the resulting
+      // revision and its validity before return. It must not read the joints again.
+      expect(filterSql - requestMs.length * identitySql).toBeLessThanOrEqual(requestMs.length * 4)
+      if (before.resources && after.resources) {
+        for (const key of ['weld_joints', 'weld_joints_join_line_programs']) {
+          expect(after.resources.reads[key]?.calls ?? 0).toBe(before.resources.reads[key]?.calls ?? 0)
+        }
+      }
     }
     samples.push({openingMs,browserSearchMs,requestMs,
       openingSql:coldBefore && coldAfter ? coldAfter.statements-coldBefore.statements : undefined,
-      warmSql:before && after ? after.statements-before.statements : undefined})
+      warmSql:before && after ? after.statements-before.statements : undefined, filterSql, identitySql})
     console.log('FILTER_CACHE_SAMPLE',JSON.stringify(samples.at(-1)))
   }
   expect(errors).toEqual([])

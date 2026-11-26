@@ -13,6 +13,7 @@ import { weldJoints } from '../../src/db/schema'
 import { SYSTEM_DOCUMENT_TYPES, type SystemDocumentType } from '../../src/lib/system-document-types'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-column-choice-filter'
 import { assertOriginalSystemDocumentGridFingerprint, buildOriginalSystemDocumentGridQuery } from '../deep-system-document-original'
+import { buildFullSystemDocumentGridQuery } from '../deep-system-document-full'
 
 const enabled = process.env.DEEP_SYSTEM_DOCUMENT_PROJECTION === '1'
 test.skip(!enabled, 'Opt-in read-only query experiment on owned local fixture')
@@ -29,6 +30,15 @@ const normalized = (item: Case) => normalizeSystemDocumentHistoryGridRequest({
   ...defaults, ...item.request, type: item.type ?? 'lnkRequest', documentId: item.documentId, columnFilters: item.filters ?? {},
 })
 const originalQuery = (item: Case) => buildOriginalSystemDocumentGridQuery(normalized(item))
+
+// Existing fixture searches target metadata. Their cards and counts should
+// still match the historical result apart from the two composition additions.
+function existingGridFields(records: pg.QueryResultRow[]) {
+  return records.map(({ revision: _revision, rows, ...rest }) => ({
+    ...rest,
+    rows: rows.map(({ jointComposition: _composition, filter_jointComposition: _filter, ...row }: Record<string, unknown>) => row),
+  }))
+}
 
 test.beforeAll(() => { assertOriginalSystemDocumentGridFingerprint() })
 
@@ -155,18 +165,20 @@ for (const total of sizes) test(`system document narrow projection equals comple
       for (const table of ['generated_documents', 'generated_document_weld_joints', 'weld_joints']) await client.query(`analyze ${table}`)
     })
     // Capturing monkey-patches pg.Client.query globally; never overlap captures.
-    const saved: Array<{ item: Case; baseline: Query; candidate: Query & { narrowed: boolean }; guarded: Query & { narrowed: boolean }; compact: Query & { narrowed: boolean }; production: Query & { narrowed: boolean } }> = []
+    const saved: Array<{ item: Case; baseline: Query; full: Query; candidate: Query & { narrowed: boolean }; guarded: Query & { narrowed: boolean }; compact: Query & { narrowed: boolean }; production: Query & { narrowed: boolean } }> = []
     for (const item of cases.filter(item => !requestedCases || requestedCases.includes(item.name))) {
       const baseline = originalQuery(item), production = await capture(item)
-      saved.push({ item, baseline, production, candidate: narrowQuery(baseline, item.request), guarded: narrowQuery(baseline, item.request, true), compact: compactQuery(baseline, item.request) })
+      saved.push({ item, baseline, production, full: buildFullSystemDocumentGridQuery(normalized(item)), candidate: narrowQuery(baseline, item.request), guarded: narrowQuery(baseline, item.request, true), compact: compactQuery(baseline, item.request) })
     }
     await withE2eDatabase(async client => {
-      for (const { item, baseline, candidate, guarded, compact, production } of saved) {
+      for (const { item, baseline, full, candidate, guarded, compact, production } of saved) {
         const before = await client.query(baseline.text, baseline.values), after = await client.query(candidate.text, candidate.values)
         expect(after.rows, `${item.name}/complete-output`).toEqual(before.rows)
         expect((await client.query(guarded.text, guarded.values)).rows, `${item.name}/guarded-complete-output`).toEqual(before.rows)
         expect((await client.query(compact.text, compact.values)).rows, `${item.name}/compact-complete-output`).toEqual(before.rows)
-        expect((await client.query(production.text, production.values)).rows, `${item.name}/production-complete-output`).toEqual(before.rows)
+        const current = await client.query(full.text, full.values)
+        expect(existingGridFields(current.rows), `${item.name}/existing-fields`).toEqual(existingGridFields(before.rows))
+        expect((await client.query(production.text, production.values)).rows, `${item.name}/production-complete-output`).toEqual(current.rows)
         if (item.name === 'first') expect(before.rows[0].total).toBe(total)
         expect(candidate.narrowed).toBe(!item.request?.rowGroupCols?.length && !item.request?.sortModel?.length && !item.request?.cells && !item.request?.countRoutes)
         const order = Array.from({ length: comparisonRepeats }, (_, round) => round % 2 ? [...comparisonVariants].reverse() : comparisonVariants).flat()
@@ -174,7 +186,7 @@ for (const total of sizes) test(`system document narrow projection equals comple
           const query = variant === 'baseline' ? baseline : variant === 'production' ? production : variant === 'guarded' ? guarded : variant === 'compact' ? compact : candidate
           const started = performance.now(), result = await client.query(query.text, query.values)
           const milliseconds = performance.now() - started
-          expect(result.rows, `${item.name}/${variant}/${iteration}`).toEqual(before.rows)
+          expect(result.rows, `${item.name}/${variant}/${iteration}`).toEqual(variant === 'production' ? current.rows : before.rows)
           const plan = iteration < comparisonVariants.length ? (await client.query('explain (analyze,buffers,format json) ' + query.text, query.values)).rows[0]['QUERY PLAN'] : undefined
           measurements.push({ name: item.name, variant, iteration, narrowed: variant === 'baseline' ? false : variant === 'production' ? production.narrowed : variant === 'compact' ? compact.narrowed : candidate.narrowed, milliseconds,
             bytes: Buffer.byteLength(JSON.stringify(result.rows)), ...(plan ? { query, plan } : {}) })
@@ -183,7 +195,7 @@ for (const total of sizes) test(`system document narrow projection equals comple
     })
     const first = saved.find(({ item }) => item.name === 'first') ?? await (async () => {
       const item = { name: 'mutation-scope' }, baseline = originalQuery(item), production = await capture(item)
-      return { baseline, production, candidate: narrowQuery(baseline), guarded: narrowQuery(baseline, {}, true), compact: compactQuery(baseline) }
+      return { baseline, production, full: buildFullSystemDocumentGridQuery(normalized(item)), candidate: narrowQuery(baseline), guarded: narrowQuery(baseline, {}, true), compact: compactQuery(baseline) }
     })()
     const compareCurrent = async () => withE2eDatabase(async client => {
       const baseline = await client.query(first.baseline.text, first.baseline.values)
@@ -191,8 +203,9 @@ for (const total of sizes) test(`system document narrow projection equals comple
       expect(candidate.rows).toEqual(baseline.rows)
       expect((await client.query(first.guarded.text, first.guarded.values)).rows).toEqual(baseline.rows)
       expect((await client.query(first.compact.text, first.compact.values)).rows).toEqual(baseline.rows)
-      expect((await client.query(first.production.text, first.production.values)).rows).toEqual(baseline.rows)
-      return String(baseline.rows[0].revision)
+      const full = await client.query(first.full.text, first.full.values)
+      expect((await client.query(first.production.text, first.production.values)).rows).toEqual(full.rows)
+      return String(full.rows[0].revision)
     })
     const initialRevision = await compareCurrent()
     const target = await withE2eDatabase(async client => (await client.query('select id from generated_documents where title=$1', [prefix + '000001'])).rows[0].id as number)
@@ -218,6 +231,7 @@ for (const total of sizes) test(`system document narrow projection equals comple
       positionsPerDocument: [1, 10, 100], comparisonRepeats, comparisonVariants, measurements,
       mutations: { membershipChangedRevision: initialRevision !== membershipRevision, factChangedRevision: membershipRevision !== factRevision, completeOutputEqual: true },
       limits: ['Original query reconstruction is checked against the pre-change SQL and parameter fingerprint.',
+        'Current production is checked against the full current registry, including membership text and joint revision.',
         'production is captured from the actual loader; candidate/guarded/compact remain diagnostic transformations.',
         'candidate/guarded are flat-default experiments; compact additionally covers groups and custom sorts.',
         'Two references to the original NOT MATERIALIZED CTE can cause extra scans; complete plans retained.',
@@ -254,15 +268,23 @@ test('compact projection preserves registry edge cases, typed groups and every s
   for (const type of SYSTEM_DOCUMENT_TYPES) await loadSystemDocumentSummaries(type)
   const compare = async (item: Case) => {
     activeCase = item.name
-    const baseline = originalQuery(item), production = await capture(item), compact = compactQuery(baseline, item.request)
+    const production = await capture(item), full = buildFullSystemDocumentGridQuery(normalized(item))
+    const compositionOnly = item.request?.rowGroupCols?.includes('jointComposition') || item.request?.sortModel?.some(field => field.colId === 'jointComposition')
     return withE2eDatabase(async client => {
-      const before = (await client.query(baseline.text, baseline.values)).rows
-      const after = (await client.query(compact.text, compact.values)).rows
-      expect(after, item.name).toEqual(before)
-      expect((await client.query(production.text, production.values)).rows, `${item.name}/production`).toEqual(before)
-      checks.push({ name: item.name, compact: compact.narrowed, production: production.narrowed, rows: before[0].rows.length, rowCount: before[0].rowCount,
-        total: before[0].total, revision: before[0].revision })
-      return { value: before[0], baseline, compact }
+      const expected = (await client.query(full.text, full.values)).rows
+      let historicalCompact: boolean | undefined
+      if (!compositionOnly) {
+        const baseline = originalQuery(item), compact = compactQuery(baseline, item.request)
+        const before = await client.query(baseline.text, baseline.values)
+        expect((await client.query(compact.text, compact.values)).rows, item.name).toEqual(before.rows)
+        expect(existingGridFields(expected), `${item.name}/existing-fields`).toEqual(existingGridFields(before.rows))
+        historicalCompact = compact.narrowed
+      }
+      expect((await client.query(production.text, production.values)).rows, `${item.name}/production`).toEqual(expected)
+      const value = expected[0]
+      checks.push({ name: item.name, compact: historicalCompact, production: production.narrowed, rows: value.rows.length, rowCount: value.rowCount,
+        total: value.total, revision: value.revision })
+      return { value }
     })
   }
   try {

@@ -12,7 +12,7 @@ const exec = promisify(execFile)
 const count = 200_000, project = 'E2E simultaneous complete exports'
 const limited = process.env.AUDIT_EXPORT_LIMIT === '1'
 
-test(`${limited ? 'one complete export and two busy responses' : 'three complete exports'}: 200k × ${expectedHeaders.length} alongside editing/search; cancellation releases storage and retry stays complete`, async ({ browser }, info) => {
+test(`${limited ? 'one complete export and two busy responses' : 'three complete exports'}: 200k × ${expectedHeaders.length} alongside editing/search; cancellation releases storage and retry stays complete`, async ({ browser, baseURL }, info) => {
   test.skip(process.env.AUDIT_EXPORT_CONCURRENCY !== '1', 'Own isolated database, 4 CPU/4 GiB server and disk temporary storage')
   test.setTimeout(900_000)
   expect(process.env.AUDIT_CONTAINER_MEMORY_MIB).toBe('4096')
@@ -34,7 +34,7 @@ test(`${limited ? 'one complete export and two busy responses' : 'three complete
     md5(string_agg(md5((to_jsonb(w)-'final_status')::text),'' order by id)) facts
     from weld_joints w where project_title=$1`, [project])).rows[0])
   const before = await facts()
-  const contexts = await Promise.all(Array.from({ length: 5 }, () => browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
+  const contexts = await Promise.all(Array.from({ length: 5 }, () => browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL, viewport: { width: 1600, height: 1000 } })))
   contexts.forEach(context => { context.setDefaultTimeout(90_000); context.setDefaultNavigationTimeout(180_000) })
   const clients = contexts.map((context, index) => observeMixedClient(context, ['export-1', 'export-2', 'export-3', 'writer', 'reader'][index]))
   const pages = await Promise.all(contexts.map(context => context.newPage()))

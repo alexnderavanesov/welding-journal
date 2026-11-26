@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PublicRequestError } from '@/lib/public-request-error'
 import { handleSchemeFile } from './line-scheme-http'
 
 const mocks = vi.hoisted(() => ({ permission: vi.fn(), store: vi.fn(), upload: vi.fn(), prepare: vi.fn(), publish: vi.fn(),
@@ -31,12 +32,12 @@ beforeEach(() => {
 
 describe('PDF route integration with mocked persistence only', () => {
   it('checks view permission before resolving storage or accessing metadata', async () => {
-    mocks.permission.mockRejectedValue(new Error('AUTH_REQUIRED'))
+    mocks.permission.mockRejectedValue(new PublicRequestError('AUTH_REQUIRED', 401))
     expect((await handleSchemeFile(new Request('http://localhost/pdf'))).status).toBe(401)
     expect(mocks.store).not.toHaveBeenCalled(); expect(mocks.db).not.toHaveBeenCalled()
   })
   it('does not upload or reserve a file without edit permission', async () => {
-    mocks.permission.mockImplementation(async permission => { if (permission === 'schemes.edit') throw new Error('Недостаточно прав') })
+    mocks.permission.mockImplementation(async permission => { if (permission === 'schemes.edit') throw new PublicRequestError('Недостаточно прав', 403) })
     expect((await handleSchemeFile(uploadRequest())).status).toBe(403)
     expect(mocks.upload).not.toHaveBeenCalled(); expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.db).not.toHaveBeenCalled()
@@ -53,7 +54,7 @@ describe('PDF route integration with mocked persistence only', () => {
     expect(mocks.cleanup).toHaveBeenCalledTimes(1)
   })
   it('never replaces the active revision after upload failure and schedules staging cleanup', async () => {
-    mocks.upload.mockRejectedValue(new Error('Хранилище PDF недоступно.'))
+    mocks.upload.mockRejectedValue(new PublicRequestError('Хранилище PDF недоступно.'))
     const response = await handleSchemeFile(uploadRequest())
     expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: 'Хранилище PDF недоступно.', retryable: false })
     expect(mocks.publish).not.toHaveBeenCalled(); expect(mocks.update).toHaveBeenCalledTimes(1)
@@ -68,7 +69,10 @@ describe('PDF route integration with mocked persistence only', () => {
   it('preserves the existing retry flow when publication has an unknown outcome', async () => {
     mocks.publish.mockRejectedValue(new Error('publication result unknown'))
     const response = await handleSchemeFile(uploadRequest())
-    expect(await response.json()).toEqual({ error: 'publication result unknown', retryable: true })
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body).toEqual({ error: expect.stringContaining('Код события:'), retryable: true })
+    expect(body.error).not.toContain('publication result unknown')
     expect(mocks.cleanup).toHaveBeenCalledTimes(1)
   })
 })

@@ -161,3 +161,12 @@ describe('selected document grouping — agreed business rules', () => {
     expect(getSystemDocumentNumber({ ...source.document, sourceKind: undefined, title: groups[1].name }, settings)).toBe('127')
   })
 })
+
+it('refuses a merge across joint families and accepts C together with U', () => {
+  function source(id: number, connectionType: string): DocumentOperationSource {
+    const rows = [{ id, joint: String(id), connectionType, vikConclusion: 'ВИК-' + id, vikConclusionDate: date }] as WeldRow[]
+    return { rows, document: { ...buildSystemDocumentSummaries(rows, 'lnkConclusion')[0], documentId: id } }
+  }
+  expect(() => assertDocumentMergeCompatible([source(1, 'У19'), source(2, 'Т1')])).toThrow('разные заключения')
+  expect(() => assertDocumentMergeCompatible([source(1, 'С17'), source(2, 'У19')])).not.toThrow()
+})

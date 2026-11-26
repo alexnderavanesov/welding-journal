@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
+import { createHash, randomUUID } from 'node:crypto'
+import { PDFDocument } from 'pdf-lib'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, openSync, closeSync, statSync } from 'node:fs'
+import { mkdtempSync, openSync, closeSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
@@ -13,6 +15,12 @@ const admin = new pg.Client({ connectionString: `${base}postgres` })
 const owned = new Map<string, number>()
 const directory = mkdtempSync(join(tmpdir(), 'welding-synthetic-backup-'))
 const dump = join(directory, 'synthetic.dump')
+const pdfKey = randomUUID() + '.pdf'
+const pdf = await PDFDocument.create()
+pdf.addPage()
+const pdfBytes = Buffer.from(await pdf.save())
+const legacyKey = randomUUID() + '.pdf'
+for (const key of [pdfKey, legacyKey]) writeFileSync(join(directory, key), pdfBytes, { mode: 0o600, flag: 'wx' })
 const command = (program: string, args: string[], options: Parameters<typeof spawnSync>[2] = {}) => {
   const result = spawnSync(program, args, { encoding: 'utf8', timeout: 60_000, ...options })
   assert.equal(result.status, 0, `${program}: ${result.error ?? ''} ${result.stderr ?? ''}`)
@@ -56,6 +64,14 @@ try {
   }
   migrate(names[0])
   await connect(names[0], async client => {
+    const bundle = (await client.query("insert into line_scheme_bundles(line_program_id,project_title,subtitle_code,line) values(1,'SYNTHETIC','BACKUP','L1') returning id")).rows[0].id
+    for (const key of [pdfKey, legacyKey]) {
+      await client.query("insert into line_scheme_files(key,state) values($1,'ready')", [key])
+      await client.query(`insert into line_scheme_revisions(id,bundle_id,file_key,file_name,size,page_count,author_id,author_name,sha256)
+        values($1,$2,$3,'test.pdf',$4,1,'fixture','fixture',$5)`,
+        [randomUUID(), bundle, key, pdfBytes.length, key === pdfKey ? createHash('sha256').update(pdfBytes).digest('hex') : null])
+    }
+    await client.query('update line_scheme_bundles set active_revision_id=(select id from line_scheme_revisions where file_key=$1) where id=$2', [pdfKey, bundle])
     await client.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,material_group,connection_type,d1,t1,d2,t2)
       select 'SYNTHETIC','BACKUP','L1','F'||n,'2026-10-01',case when n%2=0 then 'М05 + М01' else 'М01' end,'С17',108,6,108,8 from generate_series(1,200) n`)
     await client.query("insert into duplicate_controls(weld_joint_id,method,result,conclusion) values(1,'ПВК','ремонт','Историческое заключение')")
@@ -80,9 +96,16 @@ try {
   try { command('docker', ['exec', '-i', container, 'pg_restore', '-U', 'welding', '-d', names[1], '--no-owner', '--exit-on-error'], { stdio: [input, 'pipe', 'pipe'] }) }
   finally { closeSync(input) }
   assert.deepEqual(await fingerprint(names[1]), before, 'Restored facts, links, settings, decisions and sequences must match')
+  const verifyPdfs = () => command('pnpm', ['exec', 'tsx', 'scripts/verify-restored-scheme-pdfs.ts', directory],
+    { env: { ...process.env, WELDING_ENV_LOADED: '1', DATABASE_URL: base + names[1] } })
+  assert.deepEqual(JSON.parse(verifyPdfs()), { database: names[1], confirmedByChecksum: 1, legacySizeOnly: 1 })
+  const damaged = Buffer.from(pdfBytes); damaged[damaged.length - 1] ^= 1
+  writeFileSync(join(directory, pdfKey), damaged)
+  try { assert.throws(verifyPdfs, /PDF checksum mismatch/) }
+  finally { writeFileSync(join(directory, pdfKey), pdfBytes) }
   migrate(names[1]); migrate(names[1])
   assert.deepEqual(await fingerprint(names[1]), before, 'Current migrations are idempotent after restore')
-  console.log(JSON.stringify({ kind: 'synthetic-current-schema-only', joints: 200, tables: Object.keys(before).length - 1, dumpBytes: statSync(dump).size, dump, restored: true, repeatedMigrationPreservedFacts: true, externalTemplateBlobsTested: false }))
+  console.log(JSON.stringify({ kind: 'synthetic-current-schema-only', joints: 200, tables: Object.keys(before).length - 1, dumpBytes: statSync(dump).size, dump, restored: true, checkedPdfs: 1, legacyPdfs: 1, sameSizeCorruptionRejected: true, repeatedMigrationPreservedFacts: true, externalTemplateBlobsTested: false }))
 } finally {
   for (const [name, oid] of owned) {
     const current = (await admin.query('select oid from pg_database where datname=$1', [name])).rows[0]

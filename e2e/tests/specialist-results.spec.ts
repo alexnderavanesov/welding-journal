@@ -124,7 +124,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   await expect(dropdown).toBeHidden()
   await expect(dialog).toBeVisible()
   await dialog.screenshot({ path: `/private/tmp/specialist-design-results-${stage}.png` })
-  await dialog.getByRole('button', { name: isPre ? 'Сохранить результат до ТО' : 'Сохранить результат', exact: true }).click()
+  await dialog.getByRole('button', { name: isPre ? 'Создать 2 заключения' : 'Создать 2 диаграммы', exact: true }).click()
   await expect(dialog).toBeHidden()
   const stored = () => withE2eDatabase(async db => (await db.query(`select distinct d.id,d.title,d.specialists from generated_documents d join generated_document_weld_joints a on a.document_id=d.id join weld_joints w on w.id=a.weld_joint_id where w.project_title=$1 and d.type=$2 and d.period_from='2026-09-06' order by d.id`, [project, isPre ? 'system:lnkConclusionVik' : 'system:pstoConclusion'])).rows)
   const snapshots = await stored()

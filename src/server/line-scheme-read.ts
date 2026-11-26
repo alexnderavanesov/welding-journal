@@ -259,11 +259,13 @@ export async function readSchemeBundle(db: SchemeDb, bundleId: number): Promise<
   const [entry] = await db.select({ bundle: lineSchemeBundles, line: linePrograms }).from(lineSchemeBundles)
     .leftJoin(linePrograms, eq(linePrograms.id, lineSchemeBundles.lineProgramId)).where(eq(lineSchemeBundles.id, bundleId))
   if (!entry) throw new Error('Схема не найдена. Обновите список линий.')
-  const revisions = await db.select().from(lineSchemeRevisions).where(eq(lineSchemeRevisions.bundleId, bundleId)).orderBy(asc(lineSchemeRevisions.createdAt))
+  const { id, fileName, changeNumber, size, pageCount, pageRotations, version, authorName, createdAt } = lineSchemeRevisions
+  const revisions = await db.select({ id, fileName, changeNumber, size, pageCount, pageRotations, version, authorName, createdAt })
+    .from(lineSchemeRevisions).where(eq(lineSchemeRevisions.bundleId, bundleId)).orderBy(asc(createdAt))
   const name = entry.line ?? entry.bundle
   return { id: bundleId, lineId: entry.bundle.lineProgramId, projectTitle: name.projectTitle, subtitleCode: name.subtitleCode, line: name.line,
     deleted: !entry.line, activeRevisionId: entry.bundle.activeRevisionId, version: entry.bundle.version,
-    revisions: revisions.map(row => ({ id: row.id, fileName: row.fileName, changeNumber: row.changeNumber, size: row.size, pageCount: row.pageCount, pageRotations: row.pageRotations, version: row.version, authorName: row.authorName, createdAt: row.createdAt.toISOString() })) }
+    revisions: revisions.map(row => ({ ...row, createdAt: row.createdAt.toISOString() })) }
 }
 
 export async function readSchemeJoints(data: { bundleId: number; revisionId?: string; page?: number; search?: string; unplaced?: boolean }) {

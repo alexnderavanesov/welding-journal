@@ -4,7 +4,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { expect, type APIRequestContext } from '@playwright/test'
-import { E2E_DATABASE_URL, assertSafeE2eDatabaseUrl, withE2eDatabase } from './database'
+import { E2E_DATABASE_NAME, E2E_DATABASE_URL, assertSafeE2eDatabaseUrl, withE2eDatabase } from './database'
 
 const markerKey = 'maintenance:release:line-program:v1'
 const oldSchemaTime = 1793350023807
@@ -30,15 +30,18 @@ async function captureMatchingSchemaAccountHtml(input: CaptureInput, journal: Sc
     assert.notEqual(oldBuild, currentBuild)
     const contract = async (build: string) => {
       const directory = resolve(build, 'server/_ssr')
-      const files = (await readdir(directory)).filter(file => /^release-readiness-[^/]+\.mjs$/.test(file))
-      assert.equal(files.length, 1, 'Expected one actual compiled release-readiness contract')
-      const source = await readFile(resolve(directory, files[0]), 'utf8')
-      assert.ok(source.includes(markerKey))
+      // Depending on the bundler this can be a separate release-contract
+      // chunk, an inline contract, or a facade with only re-exports.
+      const files = (await readdir(directory)).filter(file => /^release-(?:contract|readiness)-[^/]+\.mjs$/.test(file))
+      const chunks = await Promise.all(files.map(async file => ({ file, source: await readFile(resolve(directory, file), 'utf8') })))
+      const definitions = chunks.filter(({ source }) => source.includes(markerKey) && /\bentries:\s*\[/.test(source))
+      assert.equal(definitions.length, 1, 'Expected one compiled release contract with its embedded journal')
+      const [{ file, source }] = definitions
       assert.match(source, /REQUIRED_SCHEMA_TIME\s*=\s*_journal_default\.entries\.at\(-1\)\.when/)
       const embedded = source.match(/\bentries:\s*(\[[\s\S]*?\])\s*\n};/)
       assert.ok(embedded, 'The compiled contract must retain its migration journal')
       assert.deepEqual(JSON.parse(embedded[1]), journal.entries, 'Compiled and source migration journals must match exactly')
-      return { source, file: files[0], sha256: createHash('sha256').update(source).digest('hex') }
+      return { source, file, sha256: createHash('sha256').update(source).digest('hex') }
     }
     const [oldContract, currentContract] = await Promise.all([contract(oldBuild), contract(currentBuild)])
     assert.equal(oldContract.source, currentContract.source, 'Same-schema mode requires byte-identical compiled release contracts')
@@ -51,7 +54,7 @@ async function captureMatchingSchemaAccountHtml(input: CaptureInput, journal: Sc
       current: { file: currentContract.file, sha256: currentContract.sha256 } }
     let html!: CapturedPreviousHtml
     await withE2eDatabase(async client => {
-      assert.equal((await client.query('select current_database() as name')).rows[0]?.name, 'welding_tracker_e2e')
+      assert.equal((await client.query('select current_database() as name')).rows[0]?.name, E2E_DATABASE_NAME)
       const applied = (await client.query('select created_at::text as time, hash from drizzle.__drizzle_migrations order by created_at')).rows
       assert.deepEqual(applied.map(row => Number(row.time)), journal.entries.map(entry => entry.when))
       assert.equal(applied.at(-1)?.hash, createHash('sha256').update(migration).digest('hex'))
@@ -74,7 +77,7 @@ async function captureMatchingSchemaAccountHtml(input: CaptureInput, journal: Sc
     })
     await expect.poll(async () => {
       const old = await input.request.get(input.oldOrigin + '/health/ready', { timeout: 5_000 })
-      const current = await input.request.get('http://127.0.0.1:3100/health/ready', { timeout: 5_000 })
+      const current = await input.request.get('/health/ready', { timeout: 5_000 })
       const result = { oldStatus: old.status(), oldReady: (await old.json()).ready,
         currentStatus: current.status(), currentReady: (await current.json()).ready }
       diagnostics.health = result
@@ -114,7 +117,7 @@ export async function capturePreviousAccountHtml(input: CaptureInput): Promise<C
   let html: CapturedPreviousHtml | undefined
   try {
     await withE2eDatabase(async client => {
-      assert.equal((await client.query('select current_database() as name')).rows[0]?.name, 'welding_tracker_e2e')
+      assert.equal((await client.query('select current_database() as name')).rows[0]?.name, E2E_DATABASE_NAME)
       const applied = (await client.query('select created_at::text as time, hash from drizzle.__drizzle_migrations order by created_at')).rows
       assert.deepEqual(applied.map(row => Number(row.time)), journal.entries.map(entry => entry.when))
       assert.equal(applied.at(-1)?.hash, createHash('sha256').update(migration).digest('hex'))
@@ -147,7 +150,7 @@ export async function capturePreviousAccountHtml(input: CaptureInput): Promise<C
     await delay(5_100)
     await expect.poll(async () => {
       const old = await input.request.get(input.oldOrigin + '/health/ready', { timeout: 5_000 })
-      const current = await input.request.get('http://127.0.0.1:3100/health/ready', { timeout: 5_000 })
+      const current = await input.request.get('/health/ready', { timeout: 5_000 })
       const result = { oldStatus: old.status(), oldReady: (await old.json()).ready,
         currentStatus: current.status(), currentReady: (await current.json()).ready }
       diagnostics.restoredHealth = result

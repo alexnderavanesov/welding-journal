@@ -2,14 +2,26 @@
 
 FROM node:22-bookworm-slim AS pnpm-installer
 
-ENV PNPM_HOME=/pnpm \
-    PATH=/pnpm/bin:$PATH
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl openssl \
-  && curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=12.0.0-rc.7 ENV=/root/.shrc SHELL=/bin/sh sh - \
-  && pnpm_package="$(find "$PNPM_HOME" -path '*/node_modules/@pnpm/exe/pnpm' -type f -print -quit)" \
-  && cp -a "$(dirname "$pnpm_package")" /opt/pnpm
+WORKDIR /installer
+COPY package.json pnpm-lock.yaml ./
+# Verify the standalone archive against the committed platform-specific integrity.
+RUN node --input-type=module <<'JS'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+const version = JSON.parse(readFileSync('package.json')).packageManager.slice('pnpm@'.length)
+const name = 'exe.linux-' + process.arch
+const lock = readFileSync('pnpm-lock.yaml', 'utf8').split('\n')
+const i = lock.indexOf("  '@pnpm/" + name + "@" + version + "':")
+const integrity = i >= 0 && lock[i + 1]?.match(/integrity: (sha512-[A-Za-z0-9+/=]+)/)?.[1]
+if (!integrity) throw new Error('Missing pinned pnpm archive integrity')
+const url = 'https://registry.npmjs.org/@pnpm/' + name + '/-/' + name + '-' + version + '.tgz'
+const response = await fetch(url)
+if (!response.ok) throw new Error('Could not download pinned pnpm archive')
+const archive = Buffer.from(await response.arrayBuffer())
+if ('sha512-' + createHash('sha512').update(archive).digest('base64') !== integrity) throw new Error('pnpm archive integrity mismatch')
+writeFileSync('pnpm.tgz', archive)
+JS
+RUN mkdir -p /opt/pnpm && tar -xzf pnpm.tgz -C /opt/pnpm --strip-components=1
 
 FROM node:22-bookworm-slim AS pnpm-base
 
@@ -43,6 +55,9 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
+RUN mkdir -p /app/data/document-templates /app/data/line-schemes \
+  && chown -R node:node /app/data
+USER node
 RUN pnpm config set --global verifyDepsBeforeRun false
 
 COPY package.json ./

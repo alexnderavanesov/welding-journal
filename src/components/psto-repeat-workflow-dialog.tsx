@@ -536,7 +536,7 @@ export function PstoRepeatWorkflowDialog({
         disabledReasonActionLabel={creationPlan.error && workspaceTab !== 'documents'
           ? `Открыть ${mode === 'request' ? 'заявки' : 'диаграммы'} и имена`
           : undefined}
-        submitLabel={mode === 'request' ? 'Создать заявку' : 'Сохранить результат'}
+        submitLabel={creationPlan.batchSubmitLabel ?? (mode === 'request' ? 'Создать заявку' : 'Сохранить результат')}
         onDisabledReasonAction={creationPlan.error && workspaceTab !== 'documents'
           ? () => setWorkspaceTab('documents')
           : undefined}

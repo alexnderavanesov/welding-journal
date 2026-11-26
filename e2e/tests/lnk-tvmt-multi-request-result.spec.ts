@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { eq, inArray } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { readSystemDocumentNextNumber } from '../../src/server/system-document-sequences'
 import { requireDb } from '../../src/db'
+import * as schema from '../../src/db/schema'
 import { pstoRepeatCycles, preHeatTreatmentControls, weldJoints } from '../../src/db/schema'
 import { buildSystemDocumentSummaries } from '../../src/lib/system-document-types'
 import { buildPstoRepeatSystemDocumentRow } from '../../src/lib/system-document-virtual-row'
@@ -185,7 +188,11 @@ for (const { kind, method } of scenarios) test(`${kind} ${method.code}: one conc
   await date.fill('2026-09-05')
   await expect(save).toBeDisabled()
   await date.fill('2026-09-09')
-  await dialog.getByRole('combobox', { name: 'Разделение документов', exact: true }).selectOption('none')
+  const split = dialog.getByRole('combobox', { name: 'Разделение документов', exact: true })
+  await split.selectOption('joint')
+  await expect(dialog.getByRole('button', { name: 'Создать 2 заключения', exact: true })).toBeEnabled()
+  await split.selectOption('none')
+  await expect(save).toBeEnabled()
   await dialog.getByRole('tab', { name: /^Заключения и имена/ }).click()
   const input = dialog.getByRole('textbox', { name: /^Название заключения/ })
   await expect(input).toHaveCount(1)
@@ -245,4 +252,181 @@ for (const { kind, method } of scenarios) test(`${kind} ${method.code}: one conc
     await expect(page.locator('[data-workflow-menu]')).toHaveCount(0)
   }
   expect(errors).toEqual([])
+})
+
+const familyCases = [
+  { kind: 'primary', naming: 'system' }, { kind: 'primary', naming: 'manual' },
+  { kind: 'primary', naming: 'combined' }, { kind: 'pre', naming: 'system' },
+] as const
+for (const { kind, naming } of familyCases) test(`joint families: ${kind} VIK with ${naming} names`, async ({ page }) => {
+  const ids = await seed(kind, methods[0])
+  await withLineProgramFixture(db => db.query("update weld_joints set joint='ОП88302', connection_type='Т1' where id=$1", [ids[1]]))
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('8830')
+  await expect(page.getByText('Найдено: 2', { exact: true })).toBeVisible()
+  await page.locator('[data-weld-report-grid] .ag-header-cell').getByRole('checkbox').check()
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: kind === 'pre' ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ЛНК', exact: true }) })
+  const method = dialog.getByRole('combobox', { name: 'Метод контроля', exact: true })
+  if (kind === 'pre') await expect(method).toHaveValue('ВИК')
+  else {
+    await method.click()
+    await page.getByRole('listbox').getByRole('option', { name: 'ВИК', exact: true }).click()
+  }
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных' }).getByRole('button', { name: 'годен', exact: true }).click()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-09')
+  await expect(dialog.getByRole('status').filter({ hasText: 'ВИК С/У — 1 стык' })).toContainText('ВИК Т — 1 стык')
+  await dialog.getByRole('tab', { name: /^Заключения и имена/ }).click()
+  const base = dialog.getByRole('textbox', { name: /Название заключения.*С\/У$/ })
+  const support = dialog.getByRole('textbox', { name: /Название заключения.*Т$/ })
+  const counter = () => readSystemDocumentNextNumber(requireDb(), kind === 'pre' ? 'lnkConclusionVik:beforeHeatTreatment' : 'lnkConclusionVik')
+  const next = await counter()
+  const save = dialog.getByRole('button', { name: 'Создать 2 заключения' })
+  if (naming !== 'system') {
+    await support.fill('ВИК-опоры-01')
+    await support.press('Tab')
+    if (naming === 'manual') {
+      await base.fill('ВИК-опоры-01')
+      await base.press('Tab')
+      await expect(save).toBeDisabled()
+      await base.fill('ВИК-трубы-01')
+      await base.press('Tab')
+    }
+  }
+  await expect(save).toBeEnabled()
+  const names = [await base.inputValue(), await support.inputValue()]
+  if (naming === 'system') {
+    expect(names.map(value => Number(value.split('-').at(-1))).sort((a, b) => a - b)).toEqual([next, next + 1])
+  }
+  if (kind === 'primary' && naming === 'system') {
+    // Fail inside the real transaction, after number allocation, when the indexed
+    // conclusion receives its links. The disposable database belongs to this run.
+    const before = await snapshot()
+    await withE2eDatabase(db => db.query(`create function fail_family_link() returns trigger language plpgsql as $$
+      begin raise exception 'fixture failure during conclusion issuance'; end $$;
+      create trigger test_family_link before insert on generated_document_weld_joints for each row
+      when (new.weld_joint_id = ${Number(ids[1])}) execute function fail_family_link()`))
+    try {
+      const failed = page.waitForResponse(response => rpcName(response.url()).startsWith('updateWeldJoints_'))
+      await save.click()
+      await failed
+      await expect(dialog).toBeVisible()
+      expect(await snapshot()).toEqual(before)
+      expect(await counter()).toBe(next)
+    } finally {
+      await withE2eDatabase(db => db.query('drop trigger test_family_link on generated_document_weld_joints; drop function fail_family_link()'))
+    }
+  }
+  const saving = page.waitForRequest(request => /^(updateWeldJoints_|savePreHeatTreatmentLnkWorkflow_)/.test(rpcName(request.url())) && request.method() === 'POST')
+  await save.click()
+  const sent = await saving
+  await expect(dialog).toBeHidden()
+  const state = await snapshot()
+  const stored = kind === 'pre' ? ids.slice(0, 2).map(id => state.controls.find(c => c.weld_joint_id === id && c.method === 'ВИК')?.conclusion_name)
+    : state.rows.slice(0, 2).map(row => row.vik_conclusion)
+  expect(stored).toEqual(names)
+  expect(state.documents.filter(doc => names.includes(doc.title)).map(doc => doc.row_count)).toEqual([1, 1])
+  await page.request.post(sent.url(), { data: sent.postData()!, headers: { 'content-type': sent.headers()['content-type'], origin: new URL(sent.url()).origin, 'sec-fetch-site': 'same-origin' } })
+  expect(await snapshot()).toEqual(state)
+  expect(await counter()).toBe(next + (naming === 'system' ? 2 : naming === 'manual' ? 0 : 1))
+})
+
+test('joint families: existing primary and pre-TO conclusions reject a T addition without grouping options', async () => {
+  for (const kind of ['primary', 'pre'] as const) {
+    const ids = await seed(kind, methods[0])
+    const title = 'ВИК-СУ'
+    const save = (id: number) => requireDb().transaction(async tx => {
+      const [before] = await tx.select().from(weldJoints).where(eq(weldJoints.id, id))
+      if (kind === 'primary') {
+        const [after] = await tx.update(weldJoints).set({ vikResult: 'годен', vikConclusion: title, vikConclusionDate: '2026-09-09' })
+          .where(eq(weldJoints.id, id)).returning()
+        await syncSystemDocumentsForWeldChangesInTransaction(tx, [after], new Map([[id, before]]))
+      } else {
+        const controls = await tx.update(preHeatTreatmentControls).set({ result: 'годен', conclusionName: title, conclusionDate: '2026-09-09' })
+          .where(eq(preHeatTreatmentControls.weldJointId, id)).returning()
+        await syncPreHeatTreatmentDocumentsInTransaction(tx, [before as WeldRow], controls)
+      }
+    })
+    await withLineProgramFixture(db => db.query("update weld_joints set joint='ОП88302',connection_type='Т1' where id=$1", [ids[1]]))
+    await save(ids[0])
+    const existing = await snapshot()
+    await expect(save(ids[1])).rejects.toThrow('разные заключения')
+    expect(await snapshot()).toEqual(existing)
+    await cleanupLineProgramProjects([project])
+  }
+})
+
+for (const stage of ['primary', 'pre'] as const) test(`joint families: clarifying a legacy type preserves the issued ${stage} conclusion`, async () => {
+  const ids = await seed(stage, methods[0])
+  const date = '2026-09-09'
+  const titles = ['ВИК-общий', 'ВИК-одиночный']
+  await requireDb().transaction(async tx => {
+    for (const [index, id] of ids.entries()) {
+      const title = titles[index < 2 ? 0 : 1]!
+      const [previous] = await tx.select().from(weldJoints).where(eq(weldJoints.id, id))
+      const [current] = await tx.update(weldJoints).set({
+        connectionType: [null, 'С17', 'старый код'][index],
+        ...(stage === 'primary' ? { vikResult: 'годен', vikConclusion: title, vikConclusionDate: date } : {}),
+      }).where(eq(weldJoints.id, id)).returning()
+      await syncSystemDocumentsForWeldChangesInTransaction(tx, [current], new Map([[id, previous]]))
+      if (stage === 'pre') {
+        const controls = await tx.update(preHeatTreatmentControls).set({ result: 'годен', conclusionName: title, conclusionDate: date })
+          .where(eq(preHeatTreatmentControls.weldJointId, id)).returning()
+        await syncPreHeatTreatmentDocumentsInTransaction(tx, [current], controls)
+      }
+    }
+  })
+  const clarify = (id: number) => requireDb().transaction(async tx => {
+    const [previous] = await tx.select().from(weldJoints).where(eq(weldJoints.id, id))
+    const [current] = await tx.update(weldJoints).set({ connectionType: 'Т1', joint: 'ОП' + id })
+      .where(eq(weldJoints.id, id)).returning()
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, [current], new Map([[id, previous]]))
+  })
+  const before = await snapshot()
+  const identities = (state: typeof before) => state.documents.filter(row => titles.includes(row.title))
+    .map(row => [row.id, row.title, row.document_number, row.row_count])
+  expect(identities(before)).toHaveLength(2)
+  await expect(clarify(ids[0])).rejects.toThrow('разные заключения')
+  expect(await snapshot()).toEqual(before)
+  await clarify(ids[2])
+  const after = await snapshot()
+  expect(after.rows.find(row => row.id === ids[2])?.connection_type).toBe('Т1')
+  expect(identities(after)).toEqual(identities(before))
+  expect(after.counters).toEqual(before.counters)
+})
+
+test('joint families: indexing two conclusions uses bounded SQL for 2 and 200 joints', async () => {
+  async function measure(size: number) {
+    return withE2eDatabase(async client => {
+      let statements = 0
+      const instrumented = drizzle(client, { schema, logger: { logQuery: () => { statements++ } } })
+      return instrumented.transaction(async tx => {
+        const date = '2026-10-15'
+        const rows = await tx.insert(weldJoints).values(Array.from({ length: size }, (_, i) => {
+          const family = i % 2 ? 'Т' : 'С'
+          return { projectTitle: project, subtitleCode: 'SQL', line: 'SQL-' + size, joint: (i % 2 ? 'ОП' : 'F') + i,
+            connectionType: family + '1', vikRequest: 'REQ-' + size, vikRequestDate: date,
+            vikResult: 'годен', vikConclusion: 'MAIN-' + size + family, vikConclusionDate: date }
+        })).returning()
+        let start = statements
+        await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map(), { documentNamesOnly: true })
+        const primary = statements - start
+        const controls = await tx.insert(preHeatTreatmentControls).values(rows.map(row => ({
+          weldJointId: row.id, method: 'ВИК', requestName: 'PRE-REQ-' + size, requestDate: date,
+          result: 'годен', conclusionName: 'PRE-' + row.vikConclusion, conclusionDate: date,
+        }))).returning()
+        start = statements
+        await syncPreHeatTreatmentDocumentsInTransaction(tx, rows as WeldRow[], controls)
+        return { primary, beforeHeat: statements - start }
+      })
+    })
+  }
+  const small = await measure(2)
+  const large = await measure(200)
+  expect(small.primary).toBeGreaterThan(0)
+  expect(small.beforeHeat).toBeGreaterThan(0)
+  expect(large.primary).toBeLessThanOrEqual(small.primary)
+  expect(large.beforeHeat).toBeLessThanOrEqual(small.beforeHeat)
+  console.info('SQL for 2 and 200 joints', small, large)
 })

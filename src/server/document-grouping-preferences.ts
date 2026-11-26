@@ -58,7 +58,7 @@ export function validatePrimaryCreationGrouping(command: DocumentGroupingCommand
       group.rows.set(row.id, row); groups.set(key, group); byDate.set(date, groups)
     }
   }
-  for (const groups of byDate.values()) assertCreationGrouping([...groups.values()].map(group => ({ name: group.name, rows: [...group.rows.values()] })), command.mode)
+  for (const groups of byDate.values()) assertCreationGrouping([...groups.values()].map(group => ({ name: group.name, rows: [...group.rows.values()] })), command.mode, command.settingId.startsWith('lnkConclusion') || command.settingId === 'tvmtConclusion')
   return byDate.size > 0
 }
 

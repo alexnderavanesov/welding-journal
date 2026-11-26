@@ -13,11 +13,13 @@ import { loadXlsx, decodeCellReference, encodeCellReference } from '@/lib/docume
 import { getTemplateCellText } from '@/lib/document-template-workbook'
 
 /** With no source file, check only the saved addresses. Never infer a shift or drop bindings. */
-export async function validateDocumentTemplateRecovery(config: DocumentTemplateConstructorConfig | undefined, fileData: ArrayBuffer | Uint8Array): Promise<string[]> {
+export async function validateDocumentTemplateRecovery(config: DocumentTemplateConstructorConfig | undefined, source: ArrayBuffer | Uint8Array | XLSXTypes.WorkBook): Promise<string[]> {
   if (!config) return []
-  const target = await readDocumentTemplateWorkbookStructure(fileData)
-  const sheet = target.sheets.get(config.sheetName)
-  if (!sheet) return [`В новом файле нет листа «${config.sheetName}».`]
+  const XLSX = await loadXlsx()
+  const workbook = 'SheetNames' in source ? source : XLSX.read(source, { type: 'array', cellStyles: true })
+  const worksheet = workbook.SheetNames.includes(config.sheetName) && workbook.Sheets[config.sheetName]
+  if (!worksheet) return [`В новом файле нет листа «${config.sheetName}».`]
+  const sheet = getDocumentTemplateSheetBounds(worksheet, XLSX)
   const issues: string[] = []
   for (const binding of config.bindings) {
     const cell = decodeCellReference(binding.cell)
@@ -299,6 +301,24 @@ type DocumentTemplateWorkbookStructure = {
   sheets: Map<string, DocumentTemplateSheetStructure>
 }
 
+function getDocumentTemplateSheetBounds(worksheet: XLSXTypes.WorkSheet, XLSX: typeof XLSXTypes) {
+  const range = worksheet['!ref']
+    ? XLSX.utils.decode_range(worksheet['!ref'])
+    : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } }
+  return {
+    startRow: range.s.r + 1,
+    endRow: range.e.r + 1,
+    startColumn: range.s.c + 1,
+    endColumn: range.e.c + 1,
+    merges: (worksheet['!merges'] ?? []).map(merge => ({
+      startRow: merge.s.r + 1,
+      endRow: merge.e.r + 1,
+      startColumn: merge.s.c + 1,
+      endColumn: merge.e.c + 1,
+    })),
+  }
+}
+
 async function readDocumentTemplateWorkbookStructure(
   fileData: ArrayBuffer | Uint8Array,
 ): Promise<DocumentTemplateWorkbookStructure> {
@@ -309,15 +329,6 @@ async function readDocumentTemplateWorkbookStructure(
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName]
     if (!worksheet) continue
-    const range = worksheet['!ref']
-      ? XLSX.utils.decode_range(worksheet['!ref'])
-      : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } }
-    const merges = (worksheet['!merges'] ?? []).map((merge) => ({
-      startRow: merge.s.r + 1,
-      endRow: merge.e.r + 1,
-      startColumn: merge.s.c + 1,
-      endColumn: merge.e.c + 1,
-    }))
     const anchors = Object.entries(worksheet).flatMap(([address, cell]) => {
       if (address.startsWith('!')) return []
       const reference = decodeCellReference(address)
@@ -328,11 +339,7 @@ async function readDocumentTemplateWorkbookStructure(
     })
     sheets.set(sheetName, {
       name: sheetName,
-      startRow: range.s.r + 1,
-      endRow: range.e.r + 1,
-      startColumn: range.s.c + 1,
-      endColumn: range.e.c + 1,
-      merges,
+      ...getDocumentTemplateSheetBounds(worksheet, XLSX),
       anchors,
     })
   }
@@ -508,7 +515,7 @@ function validateDocumentTemplateTransfer(
 }
 
 function isDocumentTemplateCellInsideSheet(
-  sheet: DocumentTemplateSheetStructure,
+  sheet: ReturnType<typeof getDocumentTemplateSheetBounds>,
   row: number,
   column: number,
 ) {
@@ -521,7 +528,7 @@ function isDocumentTemplateCellInsideSheet(
 }
 
 function findDocumentTemplateMerge(
-  sheet: DocumentTemplateSheetStructure,
+  sheet: Pick<DocumentTemplateSheetStructure, 'merges'>,
   row: number,
   column: number,
 ) {

@@ -2,6 +2,7 @@ import { expect as playwrightExpect, test, type Locator, type Page } from '@play
 import { access, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { seedAgGridScaleFixture, AG_GRID_SCALE_PROJECT } from '../ag-grid-scale-fixture'
+import { assertFullWeldReportColumns } from '../full-weld-report-columns'
 import { createSmoothnessProbe } from '../smoothness-probe'
 import { auditSqlCount } from '../audit-sql'
 import { rpcName } from '../rpc'
@@ -116,12 +117,17 @@ test('20 identical flat and grouped vertical gestures in journal and PSTO on one
         await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(AG_GRID_SCALE_PROJECT)
         await expect(root.getByText('Найдено: 250000', { exact: true })).toBeVisible({ timeout: 240000 })
         await idle(frame)
+        const expectedColumns = await assertFullWeldReportColumns(frame)
         if (grouped) {
           for (const column of ['projectTitle', 'subtitleCode', 'line']) {
             await frame.locator(`.ag-header-cell[col-id="${column}"]`).click({ button: 'right' })
             await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
           }
-          await frame.locator('.ag-row-group .ag-cell[col-id="projectTitle"]').first().click({ button: 'right' })
+          const firstProject = frame.locator('.ag-row-group .ag-cell[col-id="projectTitle"]').first()
+          const groupedAt = performance.now()
+          await expect(firstProject).toBeVisible({ timeout: 240000 })
+          console.log('PRECOMMIT_SCROLL_GROUP_READY', profile, Math.round(performance.now() - groupedAt))
+          await firstProject.click({ button: 'right' })
           await page.getByTestId('context-action-menu').getByRole('button', { name: 'Развернуть все', exact: true }).click()
           await expect(frame.locator('.ag-row:not(.ag-row-group) .ag-cell[col-id="joint"]').first()).toHaveText(/^(?:F|ОП)\d+/)
           await idle(frame)
@@ -135,7 +141,7 @@ test('20 identical flat and grouped vertical gestures in journal and PSTO on one
         await reset(page, frame); await auditSqlCount()
         const baseline = await geometry(frame)
         expect(baseline.windowY).toBe(0); expect(baseline.viewportX).toBe(0)
-        expect(baseline.columns).toBeGreaterThan(60)
+        expect(baseline.columns).toBeGreaterThanOrEqual(expectedColumns)
         expect(baseline.scrollWidth).toBeGreaterThan(baseline.viewportWidth * 5)
         expect(baseline.rows).toBeGreaterThan(0)
         preparation.push({ profile, geometry: baseline }); await save()

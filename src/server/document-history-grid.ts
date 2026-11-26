@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { sql, type SQL } from 'drizzle-orm'
 import {
   DOCUMENT_HISTORY_GRID_BLOCK_LIMIT,
@@ -19,7 +20,7 @@ export function normalizeDocumentHistoryGridRequest(
   const endRow = value?.endRow ?? startRow + 100
   if (!Number.isSafeInteger(startRow) || startRow < 0 || !Number.isSafeInteger(endRow)
     || endRow <= startRow || !value?.cells?.summary && endRow - startRow > DOCUMENT_HISTORY_GRID_BLOCK_LIMIT) {
-    throw new Error(`Размер блока документов должен быть от 1 до ${DOCUMENT_HISTORY_GRID_BLOCK_LIMIT}.`)
+    throw new PublicRequestError(`Размер блока документов должен быть от 1 до ${DOCUMENT_HISTORY_GRID_BLOCK_LIMIT}.`)
   }
   const rowGroupCols = value?.rowGroupCols ?? []
   const groupKeys = value?.groupKeys ?? []
@@ -29,25 +30,25 @@ export function normalizeDocumentHistoryGridRequest(
     || !Array.isArray(groupKeys) || groupKeys.length > rowGroupCols.length
     || !Array.isArray(sortModel) || sortModel.some(item => !item || !allowedKeys.includes(item.colId)
       || !['asc', 'desc'].includes(item.sort)) || new Set(sortModel.map(item => item.colId)).size !== sortModel.length) {
-    throw new Error('Некорректная группировка или сортировка реестра документов.')
+    throw new PublicRequestError('Некорректная группировка или сортировка реестра документов.')
   }
   const normalizedGroupKeys = groupKeys.map(key => JSON.stringify(parseGroupKey(key)))
   const selectedIds = value?.selectedIds
   if (selectedIds !== undefined && (!Array.isArray(selectedIds) || selectedIds.some(id => !isDocumentId(id, idKind)))) {
-    throw new Error('Некорректный выбор документов.')
+    throw new PublicRequestError('Некорректный выбор документов.')
   }
-  if (value?.selectionOnly !== undefined && typeof value.selectionOnly !== 'boolean') throw new Error('Некорректный режим восстановления выбора.')
+  if (value?.selectionOnly !== undefined && typeof value.selectionOnly !== 'boolean') throw new PublicRequestError('Некорректный режим восстановления выбора.')
   if (value?.selectionOnly && (!selectedIds || selectedIds.length > 10_000)) {
-    throw new Error('Восстановление выбора поддерживает не более 10000 явно выбранных документов.')
+    throw new PublicRequestError('Восстановление выбора поддерживает не более 10000 явно выбранных документов.')
   }
   if (value?.idsOnly !== undefined && typeof value.idsOnly !== 'boolean'
     || value?.revision !== undefined && !/^[a-f0-9]{32}$/.test(value.revision)
     || value?.cells && (!Array.isArray(value.cells.columns) || !value.cells.columns.length
       || value.cells.columns.some(key => !cellKeys.includes(key)) || new Set(value.cells.columns).size !== value.cells.columns.length
       || value.cells.summary !== undefined && typeof value.cells.summary !== 'boolean')
-    || value?.idsOnly && (value.selectionOnly || value.cells)) throw new Error('Некорректная операция реестра документов.')
+    || value?.idsOnly && (value.selectionOnly || value.cells)) throw new PublicRequestError('Некорректная операция реестра документов.')
   if (value?.countRoutes && (!Array.isArray(value.countRoutes) || value.countRoutes.length > 256
-    || value.countRoutes.some(route => !Array.isArray(route) || route.length > rowGroupCols.length))) throw new Error('Некорректные группы выбора.')
+    || value.countRoutes.some(route => !Array.isArray(route) || route.length > rowGroupCols.length))) throw new PublicRequestError('Некорректные группы выбора.')
   return {
     startRow, endRow, rowGroupCols: [...rowGroupCols], groupKeys: normalizedGroupKeys,
     sortModel: sortModel.map(({ colId, sort }) => ({ colId, sort })),
@@ -75,11 +76,11 @@ function parseGroupKey(value: unknown): GroupKey {
       if (key.length === 2 && key[0] === 'value' && typeof key[1] === 'string' && key[1].trim()) return key as GroupKey
     }
   } catch { /* Reject malformed opaque keys instead of broadening the query. */ }
-  throw new Error('Некорректная группа документов.')
+  throw new PublicRequestError('Некорректная группа документов.')
 }
 
 function field(key: string) {
-  if (!/^[a-z][a-zA-Z0-9]*$/.test(key)) throw new Error('Некорректный столбец документов.')
+  if (!/^[a-z][a-zA-Z0-9]*$/.test(key)) throw new PublicRequestError('Некорректный столбец документов.')
   return sql.identifier(`filter_${key}`)
 }
 
@@ -164,7 +165,7 @@ export function buildDocumentHistoryGridSql({
   ), '[]'::jsonb)`
   const requestedSorts = request.sortModel.map(({ colId, sort }) => {
     const expression = sortExpressions[colId]
-    if (!expression) throw new Error('Сортировка этого столбца документов недоступна.')
+    if (!expression) throw new PublicRequestError('Сортировка этого столбца документов недоступна.')
     return sql`${expression} ${sql.raw(sort)} nulls last`
   })
   const leafOrder = requestedSorts.length
@@ -250,7 +251,7 @@ export function normalizeDocumentHistoryGridResult<T>(
 ): DocumentHistoryGridResult<T> {
   const value = isRecord(raw) ? raw : {}
   const revision = typeof value.revision === 'string' ? value.revision : undefined
-  if (request.revision !== undefined && request.revision !== revision) throw new Error('Данные реестра изменились. Обновите таблицу и повторите действие.')
+  if (request.revision !== undefined && request.revision !== revision) throw new PublicRequestError('Данные реестра изменились. Обновите таблицу и повторите действие.')
   const groupColumn = request.selectionOnly || request.idsOnly ? undefined : request.rowGroupCols[request.groupKeys.length]
   const rows = (Array.isArray(value.rows) ? value.rows : []).filter(isRecord).map((row, index) => {
     if (!groupColumn) return mapDocument(row)

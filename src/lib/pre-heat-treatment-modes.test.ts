@@ -80,3 +80,16 @@ it('counts preliminary waiting in line and welder summaries, including stage sub
   const welders = buildWelderStatisticsSummary(rows, [], '', '', 'joints')
   expect(welders.rows[0]).toMatchObject({ waitingRequest: 1, waitingControl: 1 })
 })
+
+it('keeps a mixed pre-TO request together and separates the results by method and joint family', () => {
+  const rows = ['С17', 'У19', 'Т1'].map((connectionType, index) => row({ id: index + 1, connectionType }))
+  const { items } = buildPreHeatTreatmentFillItems(rows, {})
+  const { groups, errors } = groupPreHeatTreatmentFillItems(rows, items, split)
+  expect(errors).toEqual([])
+  expect(groups.filter(group => group.action === 'request').map(group => group.items.length)).toEqual([3])
+  for (const method of ['ВИК', 'ПВК']) {
+    const results = groups.filter(group => group.action === 'result' && group.positions[0].methodCode === method)
+    expect(results.map(group => group.items.map(item => item.rowId))).toEqual(expect.arrayContaining([[1, 2], [3]]))
+    expect(results).toHaveLength(2)
+  }
+})

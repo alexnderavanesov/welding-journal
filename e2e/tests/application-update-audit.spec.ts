@@ -9,7 +9,8 @@ import { capturePreviousAccountHtml, previousAccountPath } from '../application-
 test('an open previous build recovers when its unloaded module disappears after an application update', async ({page,request},info) => {
   test.skip(!process.env.AUDIT_OLD_BUILD, 'Requires the preserved previous local build')
   expect(process.env.E2E_USE_PRODUCTION_BUILD).toBe('1')
-  expect(info.project.use.baseURL).toBe('http://127.0.0.1:3100')
+  const currentOrigin = `http://127.0.0.1:${Number(process.env.E2E_PORT || 3100)}`
+  expect(info.project.use.baseURL).toBe(currentOrigin)
   test.setTimeout(120_000)
   const oldBuild=resolve(process.env.AUDIT_OLD_BUILD!), oldOrigin='http://127.0.0.1:3117'
   const currentBuild=resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output')
@@ -36,7 +37,7 @@ test('an open previous build recovers when its unloaded module disappears after 
   page.on('response',r=>{
     const url=new URL(r.url())
     if(r.status()===404&&url.pathname.startsWith('/assets/'))failedOldModules.push(url.pathname)
-    if(url.origin==='http://127.0.0.1:3100'&&url.pathname.startsWith('/_serverFn/')&&r.ok())currentRpcSuccesses++
+    if(url.origin===currentOrigin&&url.pathname.startsWith('/_serverFn/')&&r.ok())currentRpcSuccesses++
   })
   try {
     await expect.poll(async()=>{
@@ -46,9 +47,9 @@ test('an open previous build recovers when its unloaded module disappears after 
     const previousHtml=await capturePreviousAccountHtml({request,oldOrigin,oldEntry,diagnosticPath:info.outputPath('previous-html-capture.json')})
     await page.route('**/*',async route=>{
       const url=new URL(route.request().url())
-      if(oldDelivery && url.origin==='http://127.0.0.1:3100' && url.pathname+url.search===previousAccountPath) {
+      if(oldDelivery && url.origin===currentOrigin && url.pathname+url.search===previousAccountPath) {
         await route.fulfill({status:200,...previousHtml})
-      } else if(oldDelivery && url.origin==='http://127.0.0.1:3100' && url.pathname.startsWith('/assets/')) {
+      } else if(oldDelivery && url.origin===currentOrigin && url.pathname.startsWith('/assets/')) {
         const response=await request.get(oldOrigin+url.pathname+url.search)
         await route.fulfill({response})
       } else await route.continue()

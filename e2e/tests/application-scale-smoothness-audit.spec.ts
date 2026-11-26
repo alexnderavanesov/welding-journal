@@ -21,7 +21,7 @@ test('scale: 200000 joints across reports, program details and every statistics 
         select p.id,p.project_title,p.subtitle_code,p.line,case when n%5=0 then 'ОП' else 'F' end||lpad(n::text,4,'0'),date '2026-10-01'+(n%28),
         case when n%5=0 then 'Т1' else 'С17' end,'действующий','актуальная','РД','М01',108,108,4,4,
         case when n%5=0 then 600.123 end,case when n%5<>0 then 0.42 end,'Q'||lpad((n%1000)::text,3,'0'),'Q'||lpad((n%1000)::text,3,'0'),
-        'да','SM-SCALE-V-'||p.line,'2026-10-01','годен','SM-SCALE-C-'||p.line,'2026-10-02','нет'
+        'да','SM-SCALE-V-'||p.line,'2026-10-01','годен','SM-SCALE-C-'||p.line||case when n%5=0 then '-T' else '' end,'2026-10-02','нет'
         from line_programs p cross join generate_series(101,4000) n where p.project_title=$1`, [SMOOTHNESS_PROJECT])
       await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id) select id,'primary',id from weld_joints where project_title=$1 on conflict(weld_joint_id) do nothing`, [SMOOTHNESS_PROJECT])
       expect((await db.query('select count(*)::int n from weld_joints where project_title=$1', [SMOOTHNESS_PROJECT])).rows[0].n).toBe(200000)

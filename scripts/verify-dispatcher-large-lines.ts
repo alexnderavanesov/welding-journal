@@ -1,3 +1,4 @@
+import { assertDispatcherRollback } from '../e2e/assert-dispatcher-rollback'
 import assert from 'node:assert/strict'
 import { channel } from 'node:diagnostics_channel'
 import pg from 'pg'
@@ -23,11 +24,10 @@ const listeners = ['full', 'scoped'].map(kind => {
   channel(`welding.dispatcher.${kind}-calculation`).subscribe(listener)
   return { kind, listener }
 })
-const original = pg.Client.prototype.query, originalError = console.error, OriginalDate = globalThis.Date
+const original = pg.Client.prototype.query, OriginalDate = globalThis.Date
 let stampId: number | undefined
 let onRead: (() => Promise<void>) | undefined, failPublish = false, hydrateIds: number[] = []
 const failure = (value: unknown): boolean => value instanceof Error && (value.message === 'EXPECTED_LARGE_LINE_ROLLBACK' || failure(value.cause))
-console.error = (...args) => { if (!failPublish || !args.some(failure)) originalError(...args) }
 pg.Client.prototype.query = function (this: pg.Client, ...args: Parameters<pg.Client['query']>) {
   const text = typeof args[0] === 'string' ? args[0] : (args[0] as { text?: string })?.text ?? ''
   if (failPublish && /^\s*delete from "dispatcher_task_pages"/i.test(text)) {
@@ -143,7 +143,7 @@ try {
   })
   const beforeFailure = await publication()
   failPublish = true
-  await assert.rejects(ensureDispatcherTaskIndexFresh(), failure)
+  await assertDispatcherRollback(() => ensureDispatcherTaskIndexFresh(), failure)
   assert.deepEqual(await publication(), beforeFailure, 'Index, pages and calculated statuses all roll back')
   failPublish = false
   await ensureDispatcherTaskIndexFresh()
@@ -195,7 +195,7 @@ try {
     concurrentWriters: true, moveCreateDelete: true, coalesced: true, globalRetry: true, atomicRollback: true,
     boundedRetry: true, recovery: true, fullParity: true, registryRace: true, midnight: true }))
 } finally {
-  pg.Client.prototype.query = original; console.error = originalError; globalThis.Date = OriginalDate
+  pg.Client.prototype.query = original; globalThis.Date = OriginalDate
   for (const { kind, listener } of listeners) channel(`welding.dispatcher.${kind}-calculation`).unsubscribe(listener)
   await db.delete(weldJoints).where(eq(weldJoints.projectTitle, project))
   if (stampId) await db.delete(welderStamps).where(eq(welderStamps.id, stampId))

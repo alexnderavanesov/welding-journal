@@ -1,9 +1,9 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test, type Locator, type Request } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { authenticateE2eSafari } from '../authentication'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
+import { deserializeRpcPayload, rpcName } from '../rpc'
 
 const project = 'E2E checkbox response'
 const safariProject = 'E2E Safari checkbox response'
@@ -49,6 +49,53 @@ test.beforeAll(async () => {
 })
 test.afterAll(() => cleanupLineProgramProjects([project, safariProject, smallProject]))
 
+for (const input of ['mouse', 'keyboard'] as const) test(`lnk: a checked group keeps keyboard focus when an earlier group finishes expanding (${input})`, async ({ page }) => {
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
+  await expect(page.getByText('Найдено: 60', { exact: true })).toBeVisible()
+  await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
+  const first = page.getByRole('checkbox', { name: 'Выбрать стыки группы CLICK-L01', exact: true })
+  const next = page.getByRole('checkbox', { name: 'Выбрать стыки группы CLICK-L02', exact: true })
+  let release!: () => void
+  const delay = new Promise<void>(resolve => { release = resolve })
+  let loading = false
+  await page.route('**/_serverFn/**', async route => {
+    const request = route.request()
+    if (rpcName(request.url()).startsWith('readJournalGrid_')) {
+      const payload = deserializeRpcPayload(request.postData()!) as { data: { route: string[] } }
+      if (payload.data.route[0] === 'CLICK-L01') {
+        loading = true
+        await delay
+      }
+    }
+    await route.continue()
+  })
+  try {
+    await first.locator('xpath=ancestor::*[@role="row"]').locator('.journal-group-toggle').click()
+    await expect.poll(() => loading).toBe(true)
+    await next.click()
+    await expect(next).toBeChecked()
+    if (input === 'keyboard') {
+      // Arrow navigation leaves the grid cell itself focused. Space on it uses
+      // the grid keyboard handler rather than a native click on the input.
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('ArrowUp')
+      await expect(next.locator('xpath=ancestor::*[@role="gridcell"]')).toBeFocused()
+      await page.keyboard.press('Space')
+      await expect(next).not.toBeChecked()
+      await page.keyboard.press('Space')
+      await expect(next).toBeChecked()
+    }
+  } finally {
+    release()
+  }
+  await expect(page.getByRole('checkbox', { name: 'Выбрать стык F95001', exact: true })).toBeVisible()
+  await expect(page.locator('.ag-cell-focus .journal-server-checkbox input')).toHaveAttribute('aria-label', 'Выбрать стыки группы CLICK-L02')
+  await page.keyboard.press('Space')
+  await expect(next).not.toBeChecked()
+})
+
 test('lnk: checkboxes stay aligned after loading distant expanded groups', async ({ page }, info) => {
   await page.setViewportSize({ width: 1728, height: 975 })
   await page.addInitScript(() => localStorage.setItem('lnk-ag-grid:v1', JSON.stringify({ columns: [], views: {}, appearance: { density: 'compact', wrapText: false, taskFill: false } })))
@@ -58,24 +105,35 @@ test('lnk: checkboxes stay aligned after loading distant expanded groups', async
   await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
   await page.locator('.ag-row-group').first().click({ button: 'right' })
+  const pending = new Set<Request>()
+  let completed = 0
+  let lastBlock = 0
+  page.on('request', request => {
+    if (rpcName(request.url()).startsWith('readJournalGrid_')) pending.add(request)
+  })
+  const finish = (request: Request) => {
+    if (pending.delete(request)) { completed++; lastBlock = Date.now() }
+  }
+  page.on('requestfinished', finish)
+  page.on('requestfailed', finish)
   await page.getByRole('button', { name: 'Развернуть все', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: 'Выбрать стык F95001', exact: true })).toBeAttached()
   await page.evaluate(() => scrollTo(0, 20000))
-  await page.waitForLoadState('networkidle')
-  let previous = '', stable = 0
-  await expect.poll(async () => {
-    const scene = await page.locator('.ag-row').evaluateAll(rows => JSON.stringify(rows.map(row => [row.getAttribute('row-id'), row.getBoundingClientRect().y])))
-    stable = scene === previous ? stable + 1 : 0; previous = scene
-    return stable >= 3
-  }).toBe(true)
-  const labels = await page.locator('.ag-row .journal-server-checkbox input').evaluateAll(inputs => {
+  const visibleLabels = () => page.locator('.ag-row .journal-server-checkbox input').evaluateAll(inputs => {
     const header = document.querySelector('.ag-header')!.getBoundingClientRect().bottom
     const top = Math.max(header, ...[...document.querySelectorAll('.ag-grid-sticky-top-rows-container .ag-row')].map(el => el.getBoundingClientRect().bottom))
     const bottom = document.querySelector('.ag-body-horizontal-scroll')!.getBoundingClientRect().top
     return inputs.filter(el => { const r = el.getBoundingClientRect(); return r.top > top && r.bottom < bottom })
       .map(el => el.getAttribute('aria-label')!)
   })
-  expect(labels.length).toBeGreaterThan(5)
+  // After Expand All, lazily fetched child rows can replace a single loading
+  // row and move neighbouring groups. Wait for real leaves in the far viewport.
+  let labels: string[] = []
+  await expect.poll(async () => {
+    labels = await visibleLabels()
+    return completed > 0 && !pending.size && Date.now() - lastBlock >= 500 &&
+      labels.length > 5 && labels.some(label => /^Выбрать стык F95[1-6]\d{2}$/.test(label))
+  }, { timeout: 30_000 }).toBe(true)
   for (const label of labels.slice(0, 12)) {
     const check = page.getByRole('checkbox', { name: label, exact: true })
     const point = await stablePoint(check), selected = await check.isChecked()

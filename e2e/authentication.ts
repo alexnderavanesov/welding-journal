@@ -18,7 +18,8 @@ export async function prepareE2eAuthentication(directory: string) {
   Object.assign(process.env, { DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1',
     BETTER_AUTH_SECRET: randomBytes(48).toString('base64url'), BETTER_AUTH_URL: baseURL,
     AUTH_MAIL_MODE: 'local', AUTH_MAIL_LOCAL_DIR: directory, SMTP_HOST: '127.0.0.1',
-    E2E_AUTH_PASSWORD: randomBytes(16).toString('hex') })
+    E2E_AUTH_PASSWORD: randomBytes(16).toString('hex'),
+    ...(process.env.E2E_DATABASE_PROFILE === 'release-access' ? { MAINTENANCE_TOKEN: randomBytes(32).toString('hex') } : {}) })
   const { bootstrapOwner, completeAccountLink } = await import('../src/server/account-management')
   const { closeDatabase } = await import('../src/db')
   try {

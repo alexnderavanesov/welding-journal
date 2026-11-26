@@ -43,7 +43,7 @@ for (const count of sizes) {
     stamp1K: 'A001', hasVik: 'да', vikResult: 'годен', wdi: 1.25,
   }))
   const preview = measure(`${count}x${fields.length}: preview model`, () => buildTabularReport({
-    rows, fields, title: 'Аудит', sheetName: 'Аудит', filename: 'audit.xlsx', emptyMessage: '',
+    rows, fields, title: 'Аудит', sheetName: 'Аудит', emptyMessage: '',
   }).report)
   assert.equal(preview.tables?.[0].rows.length, count)
   const html = measure(`${count}x${fields.length}: preview HTML (no DOM)`, () => buildPrintableReportHtml(preview, { embedded: true }))

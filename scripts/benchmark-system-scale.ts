@@ -3,6 +3,7 @@ import 'dotenv/config'
 import { performance } from 'node:perf_hooks'
 
 import { Client } from 'pg'
+import { assertLocalMigrationDatabaseUrl } from '../src/lib/migration-branch-guard'
 import { sql, TransactionRollbackError } from 'drizzle-orm'
 
 const LOAD_DATABASE_NAME = 'welding_tracker_load_200k'
@@ -12,11 +13,8 @@ const MAX_ROW_COUNT = 200_000
 const command = process.argv[2] ?? 'measure'
 const rowCount = readPositiveInteger(process.argv[3], DEFAULT_ROW_COUNT, MAX_ROW_COUNT)
 const databaseUrl = process.env.DATABASE_URL ?? ''
+assertLocalMigrationDatabaseUrl(databaseUrl)
 const parsedUrl = new URL(databaseUrl)
-
-if (!new Set(['localhost', '127.0.0.1', '[::1]']).has(parsedUrl.hostname)) {
-  throw new Error('System scale benchmark can run only against local PostgreSQL.')
-}
 if (parsedUrl.pathname.slice(1) !== LOAD_DATABASE_NAME) {
   throw new Error(`System scale benchmark requires the isolated ${LOAD_DATABASE_NAME} database.`)
 }
@@ -36,19 +34,26 @@ async function seedDatabase(totalRows: number) {
   await client.connect()
   try {
     const measurements: Record<string, number> = {}
-    measurements.truncateMs = await measureMs(async () => {
-      await client.query(`
-        do $$
-        declare table_record record;
-        begin
-          for table_record in
-            select tablename from pg_tables where schemaname = 'public'
-          loop
-            execute format('truncate table %I restart identity cascade', table_record.tablename);
-          end loop;
-        end $$;
-      `)
-    })
+    await client.query('begin')
+    const target = await client.query('select current_database() as name')
+    if (target.rows[0]?.name !== LOAD_DATABASE_NAME) throw new Error('Unexpected benchmark database')
+    // Keep all rows intact. Lock before inspecting so a concurrent seed cannot pass this check.
+    await client.query(`
+      do $$
+      declare tbl record; populated boolean;
+      begin
+        for tbl in select tablename from pg_tables where schemaname = 'public' order by tablename loop
+          execute format('lock table public.%I in share row exclusive mode nowait', tbl.tablename);
+          if tbl.tablename = 'app_settings' then
+            select exists(select 1 from public.app_settings
+              where (key, value) is distinct from ('maintenance:lnk-defect-descriptions:v1', 'complete')) into populated;
+          else
+            execute format('select exists(select 1 from public.%I)', tbl.tablename) into populated;
+          end if;
+          if populated then raise exception 'Benchmark requires a newly migrated empty database'; end if;
+        end loop;
+      end $$;
+    `)
 
     measurements.weldJointsMs = await measureMs(async () => {
       await client.query(buildWeldJointSeedSql(), [totalRows])
@@ -264,6 +269,7 @@ async function seedDatabase(totalRows: number) {
       select pg_database_size(current_database())::text as bytes,
              pg_size_pretty(pg_database_size(current_database())) as display
     `)
+    await client.query('commit')
     console.log(JSON.stringify({
       database: LOAD_DATABASE_NAME,
       rowCount: totalRows,
@@ -271,6 +277,9 @@ async function seedDatabase(totalRows: number) {
       counts: counts.rows[0],
       databaseSize: size.rows[0],
     }, null, 2))
+  } catch (error) {
+    await client.query('rollback')
+    throw error
   } finally {
     await client.end()
   }

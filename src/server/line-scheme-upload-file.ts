@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { createWriteStream } from 'node:fs'
 import { mkdir, open, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,7 +14,7 @@ type StagedPdf = SchemeUploadResult & { path: string; contentMd5: string }
 let validationTail: Promise<unknown> = Promise.resolve()
 
 export function assertSchemeFileKey(key: string) {
-  if (!/^[a-f0-9-]{36}\.pdf$/.test(key)) throw new Error('Недопустимый ключ PDF.')
+  if (!/^[a-f0-9-]{36}\.pdf$/.test(key)) throw new PublicRequestError('Недопустимый ключ PDF.')
 }
 
 function stagingDirectory(key: string, parentDirectory: string) {
@@ -41,12 +42,12 @@ export async function withValidatedSchemeUpload<T>(key: string, body: ReadableSt
     const sha256 = createHash('sha256'), md5 = createHash('md5')
     const limit = new Transform({ transform(chunk: Buffer, _encoding, done) {
       size += chunk.length
-      if (size > SCHEME_MAX_BYTES) { done(new Error('Размер PDF превышает 100 МБ.')); return }
+      if (size > SCHEME_MAX_BYTES) { done(new PublicRequestError('Размер PDF превышает 100 МБ.')); return }
       sha256.update(chunk); md5.update(chunk)
       done(null, chunk)
     } })
     await pipeline(Readable.fromWeb(body as never), limit, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal })
-    if (!size) throw new Error('Загружен пустой файл.')
+    if (!size) throw new PublicRequestError('Загружен пустой файл.')
     const validation = validationTail.catch(() => {}).then(() => {
       signal?.throwIfAborted()
       return validateSchemePdf(path, SCHEME_MAX_BYTES, SCHEME_MAX_PAGES, signal)

@@ -9,7 +9,7 @@ import type { ReportOutputSnapshot } from '@/server/weld-contracts'
 
 type LoadedOutput = ReportOutputSnapshot & { onDownloadExcel?: (signal?: AbortSignal) => Promise<void> }
 
-export type LnkOutputRowsKind = 'current' | 'waitingNk' | 'waitingRequest' | 'conclusions'
+export type LnkOutputRowsKind = 'current' | 'waitingNk' | 'waitingRequest' | 'conclusions' | 'waitingRepair'
 export type PstoOutputRowsKind = 'current' | 'waitingRequest' | 'results'
 export type WeldingJournalOutputRowsKind =
   | 'current'
@@ -24,9 +24,9 @@ type UseReportOutputActionsParams = {
   outputContext?: string
   currentRowsReady?: boolean
   reportExportFieldsRef: WeldReportExportFieldsRef
-  loadLnkRows: (kind: LnkOutputRowsKind, fields?: WeldField[]) => Promise<LoadedOutput>
-  loadPstoRows: (kind: PstoOutputRowsKind, fields?: WeldField[]) => Promise<LoadedOutput>
-  loadWeldingJournalRows: (kind: WeldingJournalOutputRowsKind, fields?: WeldField[]) => Promise<LoadedOutput>
+  loadLnkRows: (kind: LnkOutputRowsKind, fields?: WeldField[], signal?: AbortSignal) => Promise<LoadedOutput>
+  loadPstoRows: (kind: PstoOutputRowsKind, fields?: WeldField[], signal?: AbortSignal) => Promise<LoadedOutput>
+  loadWeldingJournalRows: (kind: WeldingJournalOutputRowsKind, fields?: WeldField[], signal?: AbortSignal) => Promise<LoadedOutput>
   setIsLnkShowMenuOpen: (value: boolean) => void
   setIsPstoShowMenuOpen: (value: boolean) => void
   setIsWeldingJournalShowMenuOpen: (value: boolean) => void
@@ -53,11 +53,11 @@ export function useReportOutputActions({
       setMessage('Дождитесь загрузки строк текущей выборки.')
       return false
     }
-    async function openLoadedReport(reportLabel: string, loadRows: () => Promise<LoadedOutput>) {
+    async function openLoadedReport(reportLabel: string, loadRows: (signal: AbortSignal) => Promise<LoadedOutput>) {
       setMessage(null)
-      await open(async () => {
+      await open(async signal => {
         try {
-          const snapshot = await loadRows()
+          const snapshot = await loadRows(signal)
           return { report: snapshot.report, onDownloadExcel: snapshot.onDownloadExcel }
         } catch (error) { throw error instanceof Error ? error : new Error(`Не удалось загрузить данные отчёта ${reportLabel}.`) }
       })
@@ -70,23 +70,28 @@ export function useReportOutputActions({
       setIsLnkShowMenuOpen(false)
       await openLoadedReport(
         'ЛНК',
-        () => loadLnkRows('current', fields),
+        signal => loadLnkRows('current', fields, signal),
       )
     }
 
     async function openLnkWaitingNkReport() {
       setIsLnkShowMenuOpen(false)
-      await openLoadedReport('ЛНК «Ожидание НК»', () => loadLnkRows('waitingNk'))
+      await openLoadedReport('ЛНК «Ожидание НК»', signal => loadLnkRows('waitingNk', undefined, signal))
     }
 
     async function openLnkToRequestReport() {
       setIsLnkShowMenuOpen(false)
-      await openLoadedReport('ЛНК «Ожидание заявки»', () => loadLnkRows('waitingRequest'))
+      await openLoadedReport('ЛНК «Ожидание заявки»', signal => loadLnkRows('waitingRequest', undefined, signal))
+    }
+
+    async function openLnkWaitingRepairReport() {
+      setIsLnkShowMenuOpen(false)
+      await openLoadedReport('ЛНК «Ожидает ремонта»', signal => loadLnkRows('waitingRepair', undefined, signal))
     }
 
     async function openLnkConclusionsReport() {
       setIsLnkShowMenuOpen(false)
-      await openLoadedReport('ЛНК «Заключения»', () => loadLnkRows('conclusions'))
+      await openLoadedReport('ЛНК «Заключения»', signal => loadLnkRows('conclusions', undefined, signal))
     }
 
     async function openPstoCurrentReport() {
@@ -96,18 +101,18 @@ export function useReportOutputActions({
       setIsPstoShowMenuOpen(false)
       await openLoadedReport(
         'ПСТО и ТВМТ',
-        () => loadPstoRows('current', fields),
+        signal => loadPstoRows('current', fields, signal),
       )
     }
 
     async function openPstoWaitingRequestReport() {
       setIsPstoShowMenuOpen(false)
-      await openLoadedReport('ПСТО «Ожидание заявки»', () => loadPstoRows('waitingRequest'))
+      await openLoadedReport('ПСТО «Ожидание заявки»', signal => loadPstoRows('waitingRequest', undefined, signal))
     }
 
     async function openPstoResultsReport() {
       setIsPstoShowMenuOpen(false)
-      await openLoadedReport('ПСТО «Результаты»', () => loadPstoRows('results'))
+      await openLoadedReport('ПСТО «Результаты»', signal => loadPstoRows('results', undefined, signal))
     }
 
     function currentGridFields(report: AgGridWeldReport): WeldField[] | null {
@@ -130,33 +135,33 @@ export function useReportOutputActions({
       setIsWeldingJournalShowMenuOpen(false)
       await openLoadedReport(
         'сварочного журнала',
-        () => loadWeldingJournalRows('current', fields),
+        signal => loadWeldingJournalRows('current', fields, signal),
       )
     }
 
     async function openWeldingJournalWaitingWeldReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      await openLoadedReport('«Ожидает сварку»', () => loadWeldingJournalRows('waitingWeld'))
+      await openLoadedReport('«Ожидает сварку»', signal => loadWeldingJournalRows('waitingWeld', undefined, signal))
     }
 
     async function openWeldingJournalWaitingRequestReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      await openLoadedReport('«Ожидание заявки»', () => loadWeldingJournalRows('waitingRequest'))
+      await openLoadedReport('«Ожидание заявки»', signal => loadWeldingJournalRows('waitingRequest', undefined, signal))
     }
 
     async function openWeldingJournalWaitingControlReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      await openLoadedReport('«Ожидание НК»', () => loadWeldingJournalRows('waitingControl'))
+      await openLoadedReport('«Ожидание НК»', signal => loadWeldingJournalRows('waitingControl', undefined, signal))
     }
 
     async function openWeldingJournalWaitingRepairReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      await openLoadedReport('«Ожидает ремонт»', () => loadWeldingJournalRows('waitingRepair'))
+      await openLoadedReport('«Ожидает ремонт»', signal => loadWeldingJournalRows('waitingRepair', undefined, signal))
     }
 
     async function openWeldingJournalSystemReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      await openLoadedReport('системной версии сварочного журнала', () => loadWeldingJournalRows('system'))
+      await openLoadedReport('системной версии сварочного журнала', signal => loadWeldingJournalRows('system', undefined, signal))
     }
 
     return {
@@ -164,6 +169,7 @@ export function useReportOutputActions({
       openLnkCurrentReport,
       openLnkToRequestReport,
       openLnkWaitingNkReport,
+      openLnkWaitingRepairReport,
       openPstoCurrentReport,
       openPstoResultsReport,
       openPstoWaitingRequestReport,

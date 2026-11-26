@@ -5,6 +5,7 @@ import { seedAgGridScaleFixture, readAgGridScaleCalculationSignature, AG_GRID_SC
 import { createOpeningRecorder, type OpeningSurface } from '../deep-report-opening-probe'
 import { createSmoothnessProbe } from '../smoothness-probe'
 import { auditSqlCount, auditSqlDetails } from '../audit-sql'
+import { assertFullWeldReportColumns } from '../full-weld-report-columns'
 import { sampleLocalAuditResources } from '../audit-resources'
 import { withE2eDatabase } from '../database'
 import { openDocumentGridFilter, openDocumentGridColumnMenu } from '../document-grid'
@@ -154,8 +155,6 @@ test('five sections at the exact scale: openings, groups, full facets and native
         })
         surfaces.push({ name, ...geometry })
         if (/^(journal|lnk|psto):/.test(name)) {
-          // Full PSTO has 57 columns after the eight retired stamp fields.
-          expect(geometry.columns).toBeGreaterThanOrEqual(name.startsWith('psto:') ? 57 : 100)
           expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth * 5)
         }
         for (let round = 0; round < 3; round++) {
@@ -178,6 +177,7 @@ test('five sections at the exact scale: openings, groups, full facets and native
         await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(AG_GRID_SCALE_PROJECT)
         const root = page.locator(report.root), grid = root.locator('.journal-grid-frame')
         await total(root, count); await idle(page, grid)
+        await assertFullWeldReportColumns(grid)
         await probe.measure(`${report.name}:facet:first`, async () => {
           await grid.locator('.ag-header-cell[col-id="joint"] .ag-header-cell-filter-button').click()
           await expect(page.getByRole('dialog', { name: 'Фильтр: Стык', exact: true }).getByRole('checkbox').first()).toBeVisible()

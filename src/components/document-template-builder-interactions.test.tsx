@@ -218,3 +218,79 @@ describe('document template builder cell clipboard', () => {
 })
 
 function render(ui: ReactElement) { return rtlRender(<ConfirmActionProvider>{ui}</ConfirmActionProvider>) }
+
+it('keeps both assemblies and the active family when moving a configured repeat row', async () => {
+  const template = createConfiguredTemplate()
+  const binding = { ...template.constructorConfig!.bindings[0], cell: 'A4' }
+  template.id = 'lnkConclusionVik'
+  template.constructorConfig = { ...template.constructorConfig!, repeatRow: 4, repeatRowEnd: 4,
+    bindings: [binding, { cell: 'A1', mode: 'summary', field: 'line' }] }
+  const rows = [1, 2, 3, 4]
+  readWorkbookPreviewMock.mockResolvedValue({ ...preview, rowCount: rows.length,
+    cells: rows.flatMap(row => preview.cells.filter(cell => row !== 2 || cell.column !== 1)
+      .map(cell => ({ ...cell, row, address: cell.address.replace('1', String(row)), rowSpan: row === 1 && cell.column === 1 ? 2 : 1 }))),
+    hiddenCells: ['A2'], rowHeights: rows.map(() => 24) })
+  const save = vi.fn()
+  render(<DocumentTemplateBuilder template={template} onSave={save} onClose={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Разное заполнение для С/У и Т' }))
+  const prefix = () => screen.getAllByLabelText('Текст перед')[0]
+  fireEvent.change(prefix(), { target: { value: 'Опора № ' } })
+  const rowHeader = (row: number) => screen.getByRole('button', { name: String(row) })
+  fireEvent.click(rowHeader(1))
+  expect(rowHeader(4)).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByText(/A1.*уже настроена/)).toBeVisible()
+  fireEvent.click(rowHeader(2))
+  expect(rowHeader(4)).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByText(/A2.*объединённой/)).toBeVisible()
+  fireEvent.click(rowHeader(3))
+  expect(rowHeader(3)).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('heading', { name: 'Содержимое ячейки для стыков Т' })).toBeVisible()
+  expect(prefix()).toHaveValue('Опора № ')
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить конструктор' }))
+  await waitFor(() => expect(save).toHaveBeenCalledOnce())
+  expect(save.mock.calls[0][0].bindings).toEqual(expect.arrayContaining([
+    expect.objectContaining({ cell: 'A1', field: 'line' }),
+    expect.objectContaining({ cell: 'A3', parts: binding.parts,
+      supportContent: expect.objectContaining({ parts: [expect.objectContaining({ prefix: 'Опора № ' }), binding.parts![1]] }) }),
+  ]))
+})
+
+it('copies the complete C/U assembly into T and edits its parts independently', async () => {
+  const template = { ...createConfiguredTemplate(), id: 'lnkConclusionVik' as const }
+  const save = vi.fn()
+  render(<DocumentTemplateBuilder template={template} onSave={save} onClose={vi.fn()} />)
+  const toggle = await screen.findByRole('checkbox', { name: 'Разное заполнение для С/У и Т' })
+  expect(toggle).not.toBeChecked()
+  expect(screen.queryByRole('group', { name: 'Вариант заполнения' })).not.toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Содержимое ячейки' })).toBeVisible()
+  fireEvent.click(toggle)
+  const variants = screen.getByRole('group', { name: 'Вариант заполнения' })
+  expect(within(variants).getByRole('button', { pressed: true })).toHaveAccessibleName('Т')
+  expect(screen.getByRole('heading', { name: 'Содержимое ячейки для стыков Т' })).toBeVisible()
+  const prefix = () => screen.getAllByLabelText('Текст перед')[0]
+  expect(prefix()).toHaveValue('Стык ')
+  fireEvent.change(prefix(), { target: { value: 'Опора № ' } })
+  fireEvent.click(within(variants).getByRole('button', { name: 'С/У' }))
+  expect(within(variants).getByRole('button', { pressed: true })).toHaveAccessibleName('С/У')
+  expect(screen.getByRole('heading', { name: 'Содержимое ячейки для стыков С/У' })).toBeVisible()
+  expect(prefix()).toHaveValue('Стык ')
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить конструктор' }))
+  await waitFor(() => expect(save).toHaveBeenCalled())
+  const binding = save.mock.calls[0][0].bindings[0]
+  expect(binding.parts[0].prefix).toBe('Стык ')
+  expect(binding.supportContent.parts[0]).toMatchObject({ prefix: 'Опора № ', lineBreakAfter: true })
+  expect(binding.supportContent.parts[1]).toEqual(binding.parts[1])
+})
+
+it('opens the exact joint-family variant when a formula has an error', async () => {
+  const template = createConfiguredTemplate()
+  template.id = 'lnkConclusionVik'
+  template.constructorConfig!.bindings[0].supportContent = {
+    parts: [{ field: 'd1', numericOperation: 'min' }],
+  }
+  render(<DocumentTemplateBuilder template={template} onSave={vi.fn()} onClose={vi.fn()} />)
+  await screen.findByLabelText('Ячейка A1')
+  expect(screen.getByRole('heading', { name: 'Содержимое ячейки для стыков С/У' })).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: /A1.*Т.*выберите второе числовое поле/ }))
+  expect(screen.getByRole('heading', { name: 'Содержимое ячейки для стыков Т' })).toBeVisible()
+})

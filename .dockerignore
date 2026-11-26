@@ -8,6 +8,7 @@ node_modules
 !.env.example
 data
 backups
+src/data/seed-welds.json
 outputs
 # Standalone local UI prototypes must not enter the build context.
 prototypes
@@ -19,5 +20,6 @@ db_dump*.bak
 .DS_Store
 playwright-report
 test-results
+test-results *
 e2e
 docs

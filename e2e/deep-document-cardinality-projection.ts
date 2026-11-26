@@ -5,6 +5,7 @@ import type { DocumentHistoryGridRequest } from '../src/lib/document-history-gri
 import { loadIndexedSystemDocumentHistoryGrid } from '../src/server/system-document-index'
 import { normalizeSystemDocumentHistoryGridRequest } from '../src/server/system-documents'
 import { assertOriginalSystemDocumentGridFingerprint, buildOriginalSystemDocumentGridQuery } from './deep-system-document-original'
+import { buildFullSystemDocumentGridQuery } from './deep-system-document-full'
 import { withE2eDatabase } from './database'
 
 type Query = { text: string; values: unknown[] }
@@ -25,6 +26,8 @@ export async function verifyCompactDocumentCardinality(info: TestInfo) {
       const initialRequest = normalizeSystemDocumentHistoryGridRequest({ ...defaults, type, columnFilters: {} })
       const initialQuery = buildOriginalSystemDocumentGridQuery(initialRequest)
       const initial = await withE2eDatabase(db => db.query(initialQuery.text, initialQuery.values))
+      const initialFullQuery = buildFullSystemDocumentGridQuery(initialRequest)
+      const initialFull = await withE2eDatabase(db => db.query(initialFullQuery.text, initialFullQuery.values))
       expect(initial.rows[0].total).toBe(expectedTotal)
       const ids = initial.rows[0].rows.slice(0, 3).map((row: { documentId: number }) => `system-document:${row.documentId}`)
       expect(ids).toHaveLength(3)
@@ -37,8 +40,12 @@ export async function verifyCompactDocumentCardinality(info: TestInfo) {
       ]
       for (const [name, partial] of cases) {
         activeCase = `${type}/${name}`
-        const request = normalizeSystemDocumentHistoryGridRequest({ ...defaults, ...partial, type, columnFilters: {} })
-        const baseline = buildOriginalSystemDocumentGridQuery(request)
+        const historicalRequest = normalizeSystemDocumentHistoryGridRequest({ ...defaults, ...partial, type, columnFilters: {} })
+        const historicalQuery = buildOriginalSystemDocumentGridQuery(historicalRequest)
+        const request = partial.selectionOnly
+          ? { ...historicalRequest, revision: initialFull.rows[0].revision }
+          : historicalRequest
+        const baseline = buildFullSystemDocumentGridQuery(request)
         const queries: Query[] = [], original = pg.Client.prototype.query
         pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
           const text = typeof args[0] === 'string' ? args[0] : (args[0] as { text?: string })?.text ?? ''
@@ -58,7 +65,14 @@ export async function verifyCompactDocumentCardinality(info: TestInfo) {
         expect(production.text).not.toMatch(/"filtered_documents" as materialized\s*\(\s*select \* from "document_history"/)
         await withE2eDatabase(async db => {
           const reference = await db.query(baseline.text, baseline.values)
-          expect(reference.rows[0].revision).toBe(initial.rows[0].revision)
+          expect(reference.rows[0].revision).toBe(initialFull.rows[0].revision)
+          const historical = await db.query(historicalQuery.text, historicalQuery.values)
+          expect(historical.rows[0].revision).toBe(initial.rows[0].revision)
+          // The historical public shape predates composition and its revision.
+          // Check every common field and the row order against that independent query.
+          const { rows, revision, ...other } = reference.rows[0]
+          expect({ ...other, revision: historical.rows[0].revision,
+            rows: rows.map(({ jointComposition, ...row }: Record<string, unknown>) => row) }).toEqual(historical.rows[0])
           for (let round = 0; round < repeats; round++) {
             for (const variant of round % 2 ? ['production', 'baseline'] : ['baseline', 'production']) {
               const query = variant === 'baseline' ? baseline : production
@@ -81,7 +95,7 @@ export async function verifyCompactDocumentCardinality(info: TestInfo) {
     return writeFile(info.outputPath('document-compact-cardinality.json'), JSON.stringify({
       fixture: { joints: 200000, documents: 600000, relations: 2880000, positions: 3280000 },
       repeats, activeCase, measurements,
-      limits: 'Warm local SQL. Actual production loader query versus fingerprinted original; complete raw JSON, revision and byte equality. No replacement for the separate browser, mutation and filtered-path checks in the parent profile.',
+      limits: 'Warm local SQL. Actual production loader versus the full current registry, including composition and revision. Common fields and order also checked against the fingerprinted historical query. Separate browser, mutation and filtered-path checks run in the parent profile.',
     }, null, 2))
   }
 }

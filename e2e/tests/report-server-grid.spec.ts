@@ -7,7 +7,38 @@ import type { JournalGridResult } from '../../src/lib/journal-server-grid'
 
 const PROJECT = 'E2E report server transfer'
 const total = process.env.REPORT_GRID_SCALE === '1' ? 200000 : 1200
+// The scale fixture can still be publishing the dispatcher index in beforeEach.
+// Its 240-second readiness check starts before the timeout inside the test body.
+if (process.env.REPORT_GRID_SCALE === '1') test.describe.configure({ timeout: 300_000 })
 let observed = ''
+async function searchReport(page: Page, text: string, count: number) {
+  const input = page.getByRole('searchbox')
+  const isLoadProfile = process.env.REPORT_GRID_SCALE === '1'
+  const measurePrefix = isLoadProfile && text === 'F000'
+  if (measurePrefix) {
+    await input.evaluate(element => {
+      performance.clearMarks('report-prefix-input')
+      element.addEventListener('input', () => performance.mark('report-prefix-input'), { once: true, capture: true })
+    })
+  }
+  const started = performance.now()
+  await input.fill(text)
+  if (measurePrefix) {
+    // Sample the visible count on the browser frame clock; assertion polling can add hundreds of milliseconds.
+    const elapsed = await page.waitForFunction(expected => {
+      const start = performance.getEntriesByName('report-prefix-input', 'mark')[0]
+      const counter = document.querySelector('[data-weld-report-grid] .journal-loaded-count')
+      if (start && counter?.textContent === expected && counter.getClientRects().length) return performance.now() - start.startTime
+      return false
+    }, `Найдено: ${count}`, { polling: 'raf', timeout: 45_000 })
+    console.info('REPORT_GRID_PREFIX_VISIBLE_MS', new URL(page.url()).pathname, count, Math.round(await elapsed.jsonValue() as number))
+    await elapsed.dispose()
+  }
+  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible(
+    isLoadProfile ? { timeout: 45_000 } : undefined,
+  )
+  if (isLoadProfile) console.info('REPORT_GRID_SEARCH', new URL(page.url()).pathname, text, count, Math.round(performance.now() - started))
+}
 async function call<T>(page: Page, name: string, data: unknown): Promise<T> {
   const response = await page.request.post(siblingRpcUrl(observed, `${name}_createServerFn_handler`), {
     data: await serializeRpcData(data), headers: { origin: new URL(observed).origin, 'sec-fetch-site': 'same-origin',
@@ -135,8 +166,7 @@ test(`${report} selects the full filtered report and keeps actions for hidden se
   test.setTimeout(300000)
   if (report === 'heatTreatment') {
     await page.goto(route)
-    await page.getByRole('searchbox').fill(PROJECT)
-    await expect(page.getByText(`Найдено: ${count}`,{exact:true})).toBeVisible()
+    await searchReport(page, PROJECT, count)
   }
   const grid=page.locator(`[data-weld-report-grid="${report}"]`)
   await expect(page.getByRole('combobox',{name:'Размер порции строк'})).toHaveCount(0)
@@ -155,22 +185,19 @@ test(`${report} selects the full filtered report and keeps actions for hidden se
     // All fixture joints have six digits. This prefix selects 999 joints
     // (499 even-numbered PSTO joints), including many unloaded blocks.
     selectedCount = report === 'lnk' ? 999 : 499
-    await page.getByRole('searchbox').fill('F000')
-    await expect(page.getByText(`Найдено: ${selectedCount}`, { exact: true })).toBeVisible()
+    await searchReport(page, 'F000', selectedCount)
   }
   await all.click()
   await expect(all).toBeChecked()
   await expect(grid.getByText(`Выбрано: ${selectedCount}`,{exact:true})).toBeVisible()
   await expect(grid.getByLabel('Статистика выделения')).toContainText(`Стыков: ${selectedCount}`)
   await expect(grid.getByLabel('Статистика выделения')).toContainText('Сварка: 01.10.2026')
-  await page.getByRole('searchbox').fill('NO SUCH TRANSFER JOINT')
-  await expect(page.getByText('Найдено: 0',{exact:true})).toBeVisible()
+  await searchReport(page, 'NO SUCH TRANSFER JOINT', 0)
   await expect(grid.getByText(`Выбрано: ${selectedCount}`,{exact:true})).toBeVisible()
   await expect(grid.getByRole('button',{name:'Действия',exact:true})).toBeEnabled()
   await expect(grid.getByLabel('Статистика выделения')).toContainText(`Стыков: ${selectedCount}`)
   await expect(grid.getByRole('button',{name:'Снять выбор',exact:true})).toHaveCount(0)
-  await page.getByRole('searchbox').fill(count > 5000 ? 'F000' : PROJECT)
-  await expect(page.getByText(`Найдено: ${selectedCount}`,{exact:true})).toBeVisible()
+  await searchReport(page, count > 5000 ? 'F000' : PROJECT, selectedCount)
   await expect(all).toBeChecked()
   await all.click()
   await expect(grid.getByText(`Выбрано: ${selectedCount}`,{exact:true})).toHaveCount(0)
@@ -180,8 +207,7 @@ for (const [report, route, count] of [['lnk', '/lnk', total], ['heatTreatment', 
 test(`${report} Shift+Space adds the area to existing selection`, async ({ page }) => {
   if (report === 'heatTreatment') {
     await page.goto(route)
-    await page.getByRole('searchbox').fill(PROJECT)
-    await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
+    await searchReport(page, PROJECT, count)
   }
   const grid = page.locator(`[data-weld-report-grid="${report}"]`)
   const row = (index: number) => grid.locator(`.ag-row[row-index="${index}"]`)

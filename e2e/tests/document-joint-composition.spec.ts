@@ -67,6 +67,9 @@ test('composition uses exact document membership in every automatic registry, cl
     expect(headers.indexOf('jointComposition')).toBe(headers.indexOf('rowCount') + 1)
     const cells = grid.locator('.ag-row:not(.ag-opacity-zero) [col-id="jointComposition"]')
     await expect(cells).toHaveText(Array.from({ length: count }, () => expected))
+    // All registries deliberately contain the same three names. A previous
+    // tab's successful copy must not satisfy this tab's assertion.
+    await page.evaluate(() => navigator.clipboard.writeText('pending composition copy'))
     await cells.first().click()
     await page.keyboard.press('ControlOrMeta+c')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected)

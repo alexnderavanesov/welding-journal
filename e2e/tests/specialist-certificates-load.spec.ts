@@ -14,6 +14,8 @@ import { deserializeRpcResponse, isAccountRefreshRpc, rpcName, serializeRpcData,
 import { createSmoothnessProbe } from '../smoothness-probe'
 
 const enabled = process.env.AUDIT_SPECIALIST_CERTIFICATES_LOAD === '1'
+const localOrigin = process.env.E2E_DATABASE_PROFILE === 'precommit-performance'
+  ? 'http://127.0.0.1:3177' : 'http://127.0.0.1:3100'
 test.skip(!enabled, 'Opt-in specialist RPC/SQL profile on the runner-owned local database')
 test.use({ trace: 'off', video: 'off' })
 const count = 10_000
@@ -34,7 +36,7 @@ test('10k specialist assignments and certificate requirements stay batched throu
   test.setTimeout(300_000)
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
   expect(process.env.DATABASE_URL).toBe(E2E_DATABASE_URL)
-  expect(baseURL).toBe('http://127.0.0.1:3100')
+  expect(baseURL).toBe(localOrigin)
   expect(process.env.E2E_USE_PRODUCTION_BUILD).toBe('1')
   expect(process.env.AUDIT_SQL_COUNTS).toBe('1')
   expect(process.env.AUDIT_MEMORY).toBe('1')
@@ -231,7 +233,7 @@ test('a shared 10k-position conclusion keeps name typing and composition paginat
   test.setTimeout(300_000)
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
   expect(process.env.DATABASE_URL).toBe(E2E_DATABASE_URL)
-  expect(baseURL).toBe('http://127.0.0.1:3100')
+  expect(baseURL).toBe(localOrigin)
   expect(process.env.E2E_USE_PRODUCTION_BUILD).toBe('1')
   expect(process.env.AUDIT_SQL_COUNTS).toBe('1')
   expect(process.env.AUDIT_MEMORY).toBe('1')

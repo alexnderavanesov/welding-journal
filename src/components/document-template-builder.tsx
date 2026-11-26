@@ -55,7 +55,9 @@ import {
   isManualGeneratedDocumentType,
   isLayeredControlDocumentType,
 } from '@/lib/generated-document-types'
-import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import { Button } from '@/components/ui/button'
+import { cellContent, mapCellContents, supportCellBinding } from '@/lib/document-template-model'
+import { isLnkConclusionTemplateId, isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { getSpecialistTemplateFields, SPECIALIST_TEMPLATE_FIELDS } from '@/lib/document-specialists'
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
@@ -317,9 +319,9 @@ export function applyDocumentTemplateRepeatTarget(
         return binding.mode === 'summary' ? { ...binding, scope: undefined } : binding
       }
       if (repeatMode !== 'groups') {
-        return convertDocumentTemplateBindingToJointRow(binding)
+        return mapCellContents(binding, convertDocumentTemplateBindingToJointRow)
       }
-      return convertDocumentTemplateBindingToGroupSummary(binding)
+      return mapCellContents(binding, convertDocumentTemplateBindingToGroupSummary)
     }),
   }
 }
@@ -358,14 +360,14 @@ export function pasteDocumentTemplateCellBinding(
 
   if (config.repeatRow && isCellInRepeatBlock(config, preview, targetCell)) {
     nextBinding = config.repeatMode === 'groups'
-      ? convertDocumentTemplateBindingToGroupSummary(copied)
-      : convertDocumentTemplateBindingToJointRow(copied)
+      ? mapCellContents(copied, convertDocumentTemplateBindingToGroupSummary)
+      : mapCellContents(copied, convertDocumentTemplateBindingToJointRow)
   } else if (config.repeatRow) {
-    nextBinding = convertDocumentTemplateBindingToDocumentSummary(copied)
+    nextBinding = mapCellContents(copied, convertDocumentTemplateBindingToDocumentSummary)
   } else if (copied.mode === 'row' || copied.scope === 'group') {
-    nextBinding = convertDocumentTemplateBindingToJointRow(copied)
+    nextBinding = mapCellContents(copied, convertDocumentTemplateBindingToJointRow)
   } else {
-    nextBinding = convertDocumentTemplateBindingToDocumentSummary(copied)
+    nextBinding = mapCellContents(copied, convertDocumentTemplateBindingToDocumentSummary)
   }
 
   nextBinding = { ...nextBinding, cell: targetCell }
@@ -395,7 +397,7 @@ export function getUnavailableDocumentTemplatePasteFields(
   const pastedBinding = candidate.bindings.find((binding) => binding.cell === targetCell)
   if (!pastedBinding) return []
 
-  const fields = getBindingParts(pastedBinding).flatMap((part) =>
+  const fields = [...getBindingParts(pastedBinding), ...(pastedBinding.supportContent ? getBindingParts(supportCellBinding(pastedBinding)) : [])].flatMap((part) =>
     part.compareField ? [part.field, part.compareField] : [part.field],
   )
   return [...new Set(fields.filter((field) => !availableFields.has(field)))]
@@ -412,6 +414,7 @@ export function validateDocumentTemplateBuilderConfig(
 export type DocumentTemplateBuilderIssue = {
   message: string
   cell?: string
+  family?: 'С/У' | 'Т'
 }
 
 export function getDocumentTemplateBuilderIssues(
@@ -419,7 +422,12 @@ export function getDocumentTemplateBuilderIssues(
   preview: DocumentTemplateWorkbookPreview | null,
   options: { requireNameConfig?: boolean } = {},
 ) {
-  const issues: DocumentTemplateBuilderIssue[] = getParticipantTemplateIssues(draft)
+  const assemblies = draft.bindings.flatMap<{ binding: DocumentTemplateCellBinding; family?: DocumentTemplateBuilderIssue['family'] }>(
+    binding => binding.supportContent
+      ? [{ binding, family: 'С/У' }, { binding: supportCellBinding(binding), family: 'Т' }]
+      : [{ binding }],
+  )
+  const issues: DocumentTemplateBuilderIssue[] = getParticipantTemplateIssues({ ...draft, bindings: assemblies.map(entry => entry.binding) })
   if (!draft.sheetName) issues.push({ message: 'Выберите лист шаблона.' })
   if (!draft.bindings.length) issues.push({ message: 'Назначьте хотя бы одну ячейку.' })
   const rowBindings = draft.bindings.filter((binding) => binding.mode === 'row')
@@ -446,23 +454,27 @@ export function getDocumentTemplateBuilderIssues(
   ) {
     issues.push({ message: 'Сводные ячейки должны находиться вне повторяемого блока строк.' })
   }
-  for (const binding of draft.bindings.filter((binding) => getBindingParts(binding).length === 0)) {
+  for (const binding of draft.bindings.filter(binding => !getBindingParts(binding).length && (!binding.supportContent || !getBindingParts(supportCellBinding(binding)).length))) {
     issues.push({ cell: binding.cell, message: `Ячейка ${binding.cell}: выберите поле для заполнения или нажмите «Убрать назначение», чтобы оставить её как в Excel.` })
   }
-  for (const binding of draft.bindings) {
+  for (const { binding, family } of assemblies) {
     const parts = getBindingParts(binding)
     for (const [partIndex, part] of parts.entries()) {
+      const addIssue = (message: string) => issues.push({
+        cell: binding.cell, family,
+        message: `В ячейке ${binding.cell}${family ? ` (${family})` : ''}, часть ${partIndex + 1}: ${message}`,
+      })
       if ((part.numericOperation || part.multiplier?.trim()) && !isNumericTemplateField(part.field)) {
-        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: числовая формула доступна только для числового поля.` })
+        addIssue('числовая формула доступна только для числового поля.')
       }
       if (part.numericOperation && !part.compareField) {
-        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: выберите второе числовое поле.` })
+        addIssue('выберите второе числовое поле.')
       }
       if (part.compareField && !isNumericTemplateField(part.compareField)) {
-        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: второе поле формулы должно быть числовым.` })
+        addIssue('второе поле формулы должно быть числовым.')
       }
       if (!isValidTemplateMultiplier(part.multiplier)) {
-        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: укажите корректный коэффициент умножения.` })
+        addIssue('укажите корректный коэффициент умножения.')
       }
     }
   }
@@ -540,7 +552,11 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     setError(null)
   }, [draft])
 
-  const selectedBinding = draft.bindings.find((binding) => binding.cell === selectedCell)
+  const [editingSupportCell, setEditingSupportCell] = useState<string | null>(null)
+  const storedBinding = draft.bindings.find((binding) => binding.cell === selectedCell)
+  const editingSupport = editingSupportCell === selectedCell && Boolean(storedBinding?.supportContent)
+  const editingFamily = storedBinding?.supportContent ? (editingSupport ? 'Т' : 'С/У') : undefined
+  const selectedBinding = editingSupport && storedBinding ? supportCellBinding(storedBinding) : storedBinding
   const supportsCurrentDocumentFields = isSystemTemplate || isLayeredControlDocumentType(template.id)
   const builderIssues = useMemo(
     () => getDocumentTemplateBuilderIssues(draft, preview, { requireNameConfig: !isSystemTemplate }),
@@ -651,6 +667,9 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     cell: string,
     clipboard: DocumentTemplateCellClipboardPayload,
   ) => {
+    if (clipboard.binding.supportContent && !isLnkConclusionTemplateId(template.id) && template.id !== 'tvmtConclusion') {
+      return 'Ячейку с вариантами С/У и Т можно вставить в шаблон заключения НК.'
+    }
     const unavailableFields = getUnavailableDocumentTemplatePasteFields(
       draft,
       preview,
@@ -697,6 +716,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     setCellContextMenu({
       x: event.clientX,
       y: event.clientY,
+      anchorElement: event.currentTarget,
       heading: `Ячейка ${cell}`,
       description: binding ? formatTemplateBindingSummary(binding) : 'Назначение не задано',
       items: [
@@ -760,9 +780,9 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       ) return
 
       const key = event.key.toLowerCase()
-      if (key === 'c' && selectedBinding) {
+      if (key === 'c' && storedBinding) {
         event.preventDefault()
-        copyCellBinding(selectedBinding)
+        copyCellBinding(storedBinding)
         return
       }
       if (key !== 'v' || !selectedCell) return
@@ -773,7 +793,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     }
     window.addEventListener('keydown', handleClipboardShortcut)
     return () => window.removeEventListener('keydown', handleClipboardShortcut)
-  }, [activeTab, copyCellBinding, pasteCellBinding, readCurrentCellClipboard, selectedBinding, selectedCell])
+  }, [activeTab, copyCellBinding, pasteCellBinding, readCurrentCellClipboard, storedBinding, selectedCell])
 
   const setRepeatRow = (row: number) => {
     const currentStart = draft.repeatRow
@@ -789,31 +809,34 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       })
       return
     }
-    const shouldMoveSelection =
-      Boolean(selectedBinding && (selectedBinding.mode === 'row' || selectedBinding.scope === 'group')) &&
-      currentStart === currentEnd
-    setDraft((current) => {
-      const next = {
-        ...current,
-        repeatRow: row,
-        repeatRowEnd: row,
-        bindings: current.bindings.map((binding) => {
-        if (currentStart !== currentEnd || (binding.mode !== 'row' && binding.scope !== 'group')) {
-          return binding
+    const moves = new Map<string, string>()
+    if (currentStart === currentEnd && row !== currentStart) {
+      const hidden = new Set(preview?.hiddenCells)
+      const occupied = new Set(draft.bindings
+        .filter(binding => binding.mode !== 'row' && binding.scope !== 'group')
+        .map(binding => binding.cell))
+      for (const binding of draft.bindings) {
+        if (binding.mode !== 'row' && binding.scope !== 'group') continue
+        const target = replaceCellRow(binding.cell, row)
+        if (hidden.has(target)) {
+          setError(`Ячейка ${target} находится внутри объединённой ячейки. Выберите другую строку для переноса.`)
+          return
         }
-        return {
-          ...binding,
-          cell: replaceCellRow(binding.cell, row),
+        if (occupied.has(target)) {
+          setError(`Ячейка ${target} уже настроена. Выберите другую строку для переноса.`)
+          return
         }
-      }),
+        occupied.add(target)
+        moves.set(binding.cell, target)
       }
-      return applyDocumentTemplateRepeatTarget(
-        next,
-        preview,
-        getDocumentTemplateRepeatTarget(current),
-      )
-    })
-    if (shouldMoveSelection) setSelectedCell((current) => replaceCellRow(current, row))
+    }
+    const next = { ...draft, repeatRow: row, repeatRowEnd: row,
+      bindings: draft.bindings.map(binding => moves.has(binding.cell)
+        ? { ...binding, cell: moves.get(binding.cell)! } : binding) }
+    setDraft(applyDocumentTemplateRepeatTarget(next, preview, getDocumentTemplateRepeatTarget(draft)))
+    const selectedTarget = moves.get(selectedCell)
+    if (selectedTarget) setSelectedCell(selectedTarget)
+    if (editingSupportCell && moves.has(editingSupportCell)) setEditingSupportCell(moves.get(editingSupportCell)!)
   }
 
   const setRepeatBlockBoundary = (boundary: 'start' | 'end', value: number) => {
@@ -843,6 +866,10 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     if (!selectedCell) return
     setDraft((current) => {
       const existing = current.bindings.find((binding) => binding.cell === selectedCell)
+      if (editingSupport && existing?.supportContent) {
+        const supportContent = cellContent({ ...supportCellBinding(existing), ...patch })
+        return { ...current, bindings: current.bindings.map(binding => binding === existing ? { ...existing, supportContent } : binding) }
+      }
       const startsRepeatBlock = !current.repeatRow
       const insideRepeatBlock =
         startsRepeatBlock || isCellInRepeatBlock(current, preview, selectedCell)
@@ -872,6 +899,17 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
         ? includeTemplateCellInRepeatBlock(nextDraft, preview, selectedCell)
         : nextDraft
     })
+  }
+
+  const setSeparateContent = async (enabled: boolean) => {
+    if (!storedBinding) return
+    if (!enabled && !await confirm({ title: 'Использовать одно заполнение?', description: 'Для обеих групп будет использована сборка С/У. Отдельная сборка Т будет удалена.', confirmLabel: 'Использовать сборку С/У' })) return
+    setDraft(current => ({ ...current, bindings: current.bindings.map(binding => {
+      if (binding.cell !== selectedCell) return binding
+      const { supportContent, ...base } = binding
+      return enabled ? { ...base, supportContent: structuredClone(cellContent(base)) } : base
+    }) }))
+    setEditingSupportCell(enabled ? selectedCell : null)
   }
 
   const updateSelectedParts = (parts: DocumentTemplateCellPart[]) => {
@@ -1122,7 +1160,11 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   <button
                     key={`${issue.message}-${index}`}
                     type="button"
-                    onClick={() => issue.cell && setSelectedCell(issue.cell)}
+                    onClick={() => {
+                      if (!issue.cell) return
+                      setSelectedCell(issue.cell)
+                      if (issue.family) setEditingSupportCell(issue.family === 'Т' ? issue.cell : null)
+                    }}
                     disabled={!issue.cell}
                     className="block w-full rounded px-2 py-1 text-left text-xs leading-4 text-rose-700 hover:bg-rose-100 disabled:cursor-default"
                   >
@@ -1236,8 +1278,36 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                 <p className="mt-1 text-xs leading-5 text-slate-500">{selectedModeInfo.description}</p>
               </div>
 
+              {(isLnkConclusionTemplateId(template.id) || template.id === 'tvmtConclusion') && (
+                <div className="space-y-2">
+                  <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox checked={Boolean(storedBinding?.supportContent)} onChange={event => void setSeparateContent(event.target.checked)} />
+                    Разное заполнение для С/У и Т
+                  </label>
+                  {editingFamily && (
+                    <div className="inline-grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Вариант заполнения">
+                      {(['С/У', 'Т'] as const).map(family => (
+                        <Button
+                          key={family}
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="min-w-16 gap-1.5 rounded-md px-3 aria-pressed:bg-sky-700 aria-pressed:font-semibold aria-pressed:text-white"
+                          aria-pressed={editingFamily === family}
+                          onClick={() => setEditingSupportCell(family === 'Т' ? selectedCell : null)}
+                        >
+                          {editingFamily === family && <Check aria-hidden="true" className="size-4" />}
+                          {family}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {selectedBinding.mode === 'row' || selectedBinding.mode === 'summary' ? (
                 <CellPartsEditor
+                  editingFamily={editingFamily}
                   parts={getBindingParts(selectedBinding)}
                   deduplicateValues={
                     selectedBinding.mode === 'row'
@@ -1632,6 +1702,7 @@ function DocumentTemplateNameEditor({
 }
 
 function CellPartsEditor({
+  editingFamily,
   parts,
   deduplicateValues,
   mode,
@@ -1640,6 +1711,7 @@ function CellPartsEditor({
   onChange,
   onDeduplicateChange,
 }: {
+  editingFamily?: 'С/У' | 'Т'
   parts: DocumentTemplateCellPart[]
   deduplicateValues: boolean
   mode: 'row' | 'summary'
@@ -1683,7 +1755,9 @@ function CellPartsEditor({
   return (
     <div className="space-y-3">
       <div>
-        <div className="text-xs font-semibold uppercase text-slate-500">Содержимое ячейки</div>
+        <h3 className="text-xs font-semibold uppercase text-slate-600">
+          {editingFamily ? `Содержимое ячейки для стыков ${editingFamily}` : 'Содержимое ячейки'}
+        </h3>
         <p className="mt-1 text-xs leading-5 text-slate-500">
           {mode === 'summary'
             ? scope === 'group'

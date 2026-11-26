@@ -461,7 +461,7 @@ test('composited grouped rows follow native scrolling between JavaScript updates
   await expect.poll(async () => {
     await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
     return page.getByRole('button', { name: 'T18', exact: true }).isVisible()
-  }).toBe(true)
+  }, { intervals: [100, 200], timeout: 15_000 }).toBe(true)
   await expect(page.locator('.journal-loading-cell')).toHaveCount(0)
   await page.waitForLoadState('networkidle')
   await journalCompositorProbe(page, info, true)

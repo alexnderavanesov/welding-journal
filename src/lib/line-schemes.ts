@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 export const SCHEME_MAX_BYTES = 100 * 1024 * 1024
 export const SCHEME_MAX_PAGES = 100
 export const SCHEME_PAGE_SIZE = 50
@@ -5,7 +6,7 @@ export const SCHEME_LOCK_MS = 180_000
 export const SCHEME_CHANGE_NUMBER_MAX_LENGTH = 32
 export function schemeChangeNumber(value: unknown): string | null {
   if (value == null) return null
-  if (typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || value.trim().length > SCHEME_CHANGE_NUMBER_MAX_LENGTH) throw new Error('Номер изменения: не более 32 символов, без переносов строк.')
+  if (typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || value.trim().length > SCHEME_CHANGE_NUMBER_MAX_LENGTH) throw new PublicRequestError('Номер изменения: не более 32 символов, без переносов строк.')
   return value.trim() || null
 }
 export type SchemeColor = 'planned' | 'waiting' | 'good' | 'rejected' | 'repair' | 'inactive' | 'error'
@@ -87,11 +88,11 @@ export function hasSchemePlacementChanges(changes: Pick<SchemeChanges, 'upsert' 
 }
 
 export function schemeId(value: unknown, label = 'Идентификатор'): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error(`${label}: недопустимое значение.`)
+  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new PublicRequestError(`${label}: недопустимое значение.`)
   return value as number
 }
 export function schemeToken(value: unknown): string {
-  if (typeof value !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)) throw new Error('Недопустимый идентификатор операции схемы.')
+  if (typeof value !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)) throw new PublicRequestError('Недопустимый идентификатор операции схемы.')
   return value
 }
 export function validateSchemeChanges(value: SchemeChanges, pageCount = SCHEME_MAX_PAGES): SchemeChanges {

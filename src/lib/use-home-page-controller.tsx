@@ -1960,18 +1960,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const generateWeldingJournalDocument = () => void generateDocumentFromCurrentFilter('weldingJournal')
   const generateChecklistDocument = () => void generateDocumentFromCurrentFilter('checklist')
   const generateZniDocument = () => void generateDocumentFromCurrentFilter('zni')
-  const loadLnkOutputRows = useCallback((kind: LnkOutputRowsKind, fields?: WeldField[]) => loadReportOutputSnapshot({
+  const loadLnkOutputRows = useCallback((kind: LnkOutputRowsKind, fields?: WeldField[], signal?: AbortSignal) => loadReportOutputSnapshot({
     report: 'lnk', kind, fieldKeys: fields?.map(field => field.key),
     ...(kind === 'current' ? { columnFilters: dispatcherTaskServerFilters, sort: activeReportSort } : {}),
-  }), [dispatcherTaskServerFilters, activeReportSort])
-  const loadPstoOutputRows = useCallback((kind: PstoOutputRowsKind, fields?: WeldField[]) => loadReportOutputSnapshot({
+  }, signal), [dispatcherTaskServerFilters, activeReportSort])
+  const loadPstoOutputRows = useCallback((kind: PstoOutputRowsKind, fields?: WeldField[], signal?: AbortSignal) => loadReportOutputSnapshot({
     report: 'heatTreatment', kind, fieldKeys: fields?.map(field => field.key),
     ...(kind === 'current' ? { columnFilters: dispatcherTaskServerFilters, sort: activeReportSort } : {}),
-  }), [dispatcherTaskServerFilters, activeReportSort])
-  const loadWeldingJournalOutputRows = useCallback((kind: WeldingJournalOutputRowsKind, fields?: WeldField[]) => loadReportOutputSnapshot({
+  }, signal), [dispatcherTaskServerFilters, activeReportSort])
+  const loadWeldingJournalOutputRows = useCallback((kind: WeldingJournalOutputRowsKind, fields?: WeldField[], signal?: AbortSignal) => loadReportOutputSnapshot({
     report: 'weldingJournal', kind, fieldKeys: fields?.map(field => field.key),
     ...(kind === 'current' ? { columnFilters: dispatcherTaskServerFilters, sort: activeReportSort } : {}),
-  }), [dispatcherTaskServerFilters, activeReportSort])
+  }, signal), [dispatcherTaskServerFilters, activeReportSort])
   const reportExportFieldsRef = useRef<WeldReportExportFieldsRef['current']>(null)
   const {
     reportPreviewProps,
@@ -1979,6 +1979,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openLnkCurrentReport,
     openLnkToRequestReport,
     openLnkWaitingNkReport,
+    openLnkWaitingRepairReport,
     openPstoCurrentReport,
     openPstoResultsReport,
     openPstoWaitingRequestReport,
@@ -3686,6 +3687,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenLnkCurrentReport: openLnkCurrentReport,
     onOpenLnkToRequestReport: openLnkToRequestReport,
     onOpenLnkWaitingNkReport: openLnkWaitingNkReport,
+    onOpenLnkWaitingRepairReport: openLnkWaitingRepairReport,
     onOpenLnkConclusionsReport: openLnkConclusionsReport,
     onLnkWorkflowMenuOpenChange: setIsLnkWorkflowMenuOpen,
   })
@@ -4607,6 +4609,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestRows: heatTreatmentRows,
       availableRowsCount: filteredAvailablePstoRequestRows.length,
       selectedIds: selectedHeatTreatmentIds,
+      isContextReady: isPstoRowsContextReady,
       isPending: pstoRequestMutation.isPending,
       saveCheckSettings,
       onClose: closeCreatePstoRequestModal,

@@ -75,6 +75,7 @@ export type ReportHeaderActionsProps = {
   onOpenLnkCurrentReport: () => void
   onOpenLnkToRequestReport: () => void
   onOpenLnkWaitingNkReport: () => void
+  onOpenLnkWaitingRepairReport: () => void
   onOpenLnkConclusionsReport: () => void
   onLnkWorkflowMenuOpenChange: (open: boolean) => void
 }
@@ -147,6 +148,7 @@ export function ReportHeaderActions({
   onOpenLnkCurrentReport,
   onOpenLnkToRequestReport,
   onOpenLnkWaitingNkReport,
+  onOpenLnkWaitingRepairReport,
   onOpenLnkConclusionsReport,
   onLnkWorkflowMenuOpenChange,
 }: ReportHeaderActionsProps) {
@@ -209,6 +211,7 @@ export function ReportHeaderActions({
           onOpenCurrentReport={onOpenLnkCurrentReport}
           onOpenToRequestReport={onOpenLnkToRequestReport}
           onOpenWaitingNkReport={onOpenLnkWaitingNkReport}
+          onOpenWaitingRepairReport={onOpenLnkWaitingRepairReport}
           onOpenConclusionsReport={onOpenLnkConclusionsReport}
           onWorkflowMenuOpenChange={onLnkWorkflowMenuOpenChange}
         />

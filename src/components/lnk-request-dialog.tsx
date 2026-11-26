@@ -588,7 +588,7 @@ export function LnkRequestDialog({
             }))
           : undefined}
         onClose={onClose}
-        submitLabel={submitMode === 'create' ? 'Создать заявку' : 'Добавить в заявку'}
+        submitLabel={submitMode === 'create' ? creationPlan.batchSubmitLabel : 'Добавить в заявку'}
         onSubmit={() => {
           if (submitMode === 'create') onSubmit(selectedMethodKeys)
           else if (selectedExistingRequest) onExtendRequest(selectedMethodKeys, selectedExistingRequest)

@@ -15,6 +15,7 @@ export async function captureReportExcel(page: Page, modal: Locator, path?: stri
   const sqlBefore = await auditSqlCount()
   await modal.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
   const download = await pending
+  expect(download.suggestedFilename()).toMatch(/^.+ \d{2}\.\d{2}\.\d{4} \d{2}꞉\d{2}\.xlsx$/)
   expect(await download.failure()).toBeNull()
   const sqlAfter = await auditSqlCount()
   if (!freshDownload && sqlBefore !== undefined && sqlAfter !== undefined) expect(sqlAfter - sqlBefore).toBe(0)

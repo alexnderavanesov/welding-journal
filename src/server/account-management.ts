@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto'
-import { and, eq, sql } from 'drizzle-orm'
+import { PublicRequestError } from '@/lib/public-request-error'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
+import { and, eq, gt, inArray, sql, type SQL } from 'drizzle-orm'
 import { generateRandomString } from 'better-auth/crypto'
 import { requireDb } from '@/db'
 import { authAccounts, authOwner, authRateLimits, authSessions, authUsers, authVerifications } from '@/db/schema'
@@ -16,7 +17,7 @@ export async function lockAccessChanges(tx: AuditTransaction, exclusive = false)
 }
 export async function requireCurrentActor(tx: AuditTransaction, actor: AccessIdentity) {
   const [user] = await tx.select().from(authUsers).where(eq(authUsers.id, actor.id))
-  if (!user || user.status !== 'active' || !user.emailVerified) throw new Error('AUTH_REQUIRED: Доступ отозван.')
+  if (!user || user.status !== 'active' || !user.emailVerified) throw new PublicRequestError('AUTH_REQUIRED: Доступ отозван.', 401)
   return toAccessIdentity(user)
 }
 export function requireAccountName(value: unknown) {
@@ -47,16 +48,34 @@ async function managedTarget(tx: AuditTransaction, actor: AccessIdentity, id: st
 function requireAdministrator(actor: AccessIdentity) {
   if (actor.role !== 'owner' && actor.role !== 'admin') throw new Error('Требуются права администратора.')
 }
-export async function accountRateLimit(key: string, max = 10) {
+export class AccountRateLimitError extends Error {}
+export async function accountRateLimit(key: string | SQL<string>, max = 10) {
   // One atomic statement; shared by all server processes, never one query per row.
   const now = Date.now(), windowMs = 60000
   const [entry] = await requireDb().insert(authRateLimits).values({ id: randomUUID(), key, count: 1, lastRequest: now })
     .onConflictDoUpdate({ target: authRateLimits.key, set: {
-      count: sql`case when ${authRateLimits.lastRequest} < ${now - windowMs} then 1 else ${authRateLimits.count} + 1 end`,
+      count: sql`case when ${authRateLimits.lastRequest} < ${now - windowMs} then 1 else least(${authRateLimits.count}, ${max}) + 1 end`,
       lastRequest: sql`case when ${authRateLimits.lastRequest} < ${now - windowMs} then ${now} else ${authRateLimits.lastRequest} end`,
     } }).returning({ count: authRateLimits.count })
-  if (entry.count > max) throw new Error('Слишком много попыток. Повторите через минуту.')
+  if (entry.count > max) throw new AccountRateLimitError('Слишком много попыток. Повторите через минуту.')
 }
+// Use exact, backwards-compatible limits for existing accounts. Arbitrary input
+// can occupy only a bounded number of counters, regardless of how many names arrive.
+export async function limitSignInAccount(email: string, busySource: boolean, secret: string) {
+  const digest = createHmac('sha256', secret).update(email).digest()
+  const accountKey = 'signin:' + createHash('sha256').update(email).digest('hex')
+  const unknownKey = 'signin-unknown:' + digest.readUInt16BE(0) % 1024
+  const known = sql`exists (select 1 from ${authUsers} where ${authUsers.email} = ${email})`
+  await accountRateLimit(sql<string>`case when ${known}
+    then ${accountKey}::text else ${unknownKey}::text end`, 8)
+  if (busySource) {
+    // Unknown addresses cannot spend the office's reserve for employees.
+    const lane = digest[0]! % 32
+    await accountRateLimit(sql<string>`case when ${known}
+      then ${'signin-reserve:' + lane}::text else ${'signin-reserve-unknown:' + lane}::text end`, 2)
+  }
+}
+
 async function issueLink(tx: AuditTransaction, user: typeof authUsers.$inferSelect, kind: 'invite' | 'recovery') {
   const token = generateRandomString(48)
   const generation = user.tokenGeneration + 1
@@ -147,6 +166,7 @@ export async function deleteAccount(input: { id: string; revision: number; confi
   })
   return { ok: true }
 }
+let activeLinkHashes = 0
 export async function completeAccountLink(input: { token: string; kind: 'invite' | 'recovery'; password: string }) {
   assertOnlyKeys(input, ['token', 'kind', 'password'])
   const password = requireAccountPassword(input.password)
@@ -155,12 +175,24 @@ export async function completeAccountLink(input: { token: string; kind: 'invite'
   let ip = 'operator'
   try { ip = getRequestIP({ xForwardedFor: process.env.AUTH_TRUST_PROXY === 'true' }) ?? 'unknown' } catch { /* Explicit local verification has no HTTP context. */ }
   await accountRateLimit(`complete:${ip}`)
-  const { hashPassword } = await import('better-auth/crypto')
-  const hash = await hashPassword(password)
+  const identifier = `account-link:${input.token}`
+  // Better Auth 1.7 stores SHA-256/base64url identifiers and also accepts
+  // legacy plaintext rows. Match both using the existing identifier index.
+  const encoded = createHash('sha256').update(identifier).digest('base64url')
+  const [available] = await requireDb().select({ value: authVerifications.value }).from(authVerifications)
+    .where(and(inArray(authVerifications.identifier, [encoded, identifier]), gt(authVerifications.expiresAt, new Date()))).limit(1)
+  if (!available?.value.startsWith(input.kind + ':')) throw new Error('Ссылка истекла, отозвана или уже использована.')
+  if (activeLinkHashes >= 2) throw new PublicRequestError('Сейчас выполняются другие запросы доступа. Повторите через минуту.', 429)
+  activeLinkHashes++
+  let hash: string
+  try {
+    const { hashPassword } = await import('better-auth/crypto')
+    hash = await hashPassword(password)
+  } finally { activeLinkHashes-- }
   await requireDb().transaction(async tx => {
     await lockAccessChanges(tx, true)
     const context = await createAuth(tx as unknown as ReturnType<typeof requireDb>).$context
-    const verification = await context.internalAdapter.consumeVerificationValue(`account-link:${input.token}`)
+    const verification = await context.internalAdapter.consumeVerificationValue(identifier)
     if (!verification) throw new Error('Ссылка истекла, отозвана или уже использована.')
     const [kind, id, generation] = verification.value.split(':')
     const [user] = await tx.select().from(authUsers).where(eq(authUsers.id, id)).for('update')

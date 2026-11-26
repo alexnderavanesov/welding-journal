@@ -19,6 +19,7 @@ import {
 import { getJointTitle } from '@/lib/report-ui-state'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { getPreHeatTreatmentControl } from '@/lib/lnk-control-stage'
+import { isRejectedLnkDefectResult, LNK_NO_DEFECTS_DESCRIPTION } from '@/lib/lnk-defect-description'
 
 export type RkExposureEditDialogProps = {
   editing: RkExposureEditingState
@@ -40,6 +41,7 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
   const currentResult = isBeforeHeatTreatment
     ? preRkControl?.result
     : editing.record.rkResult
+  const suggestNoDefects = isRejectedLnkDefectResult(currentResult)
   const [lines, setLines] = useState<RkExposureLine[]>(() => parseRkExposureDescription(currentDescription))
   const [isConfirmingScheme, setIsConfirmingScheme] = useState(false)
   const diameter = getRkEffectiveDiameter(editing.record)
@@ -82,6 +84,14 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
 
   function updateLine(index: number, patch: Partial<RkExposureLine>) {
     setLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line))
+  }
+
+  function save() {
+    // A space is an intentional blank. The existing serializer trims it after this decision.
+    const savedLines = suggestNoDefects
+      ? lines.map(line => line.description === '' ? { ...line, description: LNK_NO_DEFECTS_DESCRIPTION } : line)
+      : lines
+    onSave({ lines: savedLines, confirmedDiameter: diameter })
   }
 
   function moveLine(index: number, direction: -1 | 1) {
@@ -148,13 +158,15 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
 
         <div className="mt-5 overflow-hidden rounded-md border border-slate-200">
           <div className="grid grid-cols-[minmax(150px,0.8fr)_minmax(220px,1.4fr)_112px] gap-2 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
-            <span>Снимок / координаты</span><span>Описание после «:»</span><span className="text-center">Порядок</span>
+            <span>Снимок / координаты</span><span>Описание дефекта (запись после «:»)</span><span className="text-center">Порядок</span>
           </div>
           <div className="divide-y divide-slate-200 bg-white">
             {lines.map((line, index) => (
               <div key={index} className="grid grid-cols-[minmax(150px,0.8fr)_minmax(220px,1.4fr)_112px] items-center gap-2 px-3 py-2">
                 <Input value={line.coordinate} onChange={(event) => updateLine(index, { coordinate: event.target.value })} placeholder="Например, 0-250" />
-                <Input value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} placeholder="Например, ДНО или описание дефекта" />
+                <Input value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })}
+                  placeholder={suggestNoDefects ? LNK_NO_DEFECTS_DESCRIPTION : 'Например, ДНО или описание дефекта'}
+                  className={suggestNoDefects ? 'placeholder:text-sky-600' : undefined} />
                 <div className="flex justify-end gap-1">
                   <Button variant="ghost" size="icon" onClick={() => moveLine(index, -1)} disabled={index === 0} title="Поднять">
                     <ArrowUp className="h-4 w-4" />
@@ -178,7 +190,7 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
 
       <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
         <Button variant="outline" onClick={onClose}>Отмена</Button>
-        <Button onClick={() => onSave({ lines, confirmedDiameter: diameter })} disabled={isSaving}>
+        <Button onClick={save} disabled={isSaving}>
           <Check className="mr-2 h-4 w-4" />Сохранить
         </Button>
       </div>

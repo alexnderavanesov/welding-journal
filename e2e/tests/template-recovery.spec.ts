@@ -219,6 +219,69 @@ test('metadata and file readers wait for a concurrent replacement instead of fal
   expect(inventory.templates.find(template => template.id === 'weldingJournal')).not.toHaveProperty('fileDataBase64')
 })
 
+test('two simultaneous uploads preserve both independent template files', async () => {
+  const version = (await stored()).updated_at.toISOString()
+  await withE2eDatabase(async db => {
+    expect((await db.query("select id from document_templates where id='checklist'")).rows).toHaveLength(0)
+  })
+  expect(await store.list('checklist/')).toEqual([])
+  const upload = (id: 'weldingJournal' | 'checklist', sheetName: string, expectedVersion: string | null) => {
+    const { buffer, name } = file(sheetName)
+    return { id, expectedVersion, fileName: name, fileType: 'xlsx', fileSize: buffer.length,
+      fileDataBase64: buffer.toString('base64'), sheetNames: [sheetName], fields: [], markerCount: 0, locations: [], warnings: [] }
+  }
+  const inputs = [upload('weldingJournal', 'Бланк', version), upload('checklist', 'Чек-лист', null)]
+  try {
+    const results = await Promise.allSettled(inputs.map(data => saveRemoteDocumentTemplate({ data })))
+    for (const result of results) if (result.status === 'rejected') throw result.reason
+    for (const input of inputs) {
+      const saved = await getRemoteDocumentTemplate({ data: { id: input.id } })
+      expect(saved?.fileDataBase64 === input.fileDataBase64).toBe(true)
+      expect(saved?.sheetNames).toEqual(input.sheetNames)
+    }
+    const previous = await getRemoteDocumentTemplate({ data: { id: 'checklist' } })
+    const next = upload('checklist', 'Повтор', previous!.version!)
+    const [stale, valid] = await Promise.allSettled([
+      saveRemoteDocumentTemplate({ data: inputs[0] }),
+      saveRemoteDocumentTemplate({ data: next }),
+    ])
+    expect(stale).toMatchObject({ status: 'rejected', reason: { message: expect.stringContaining('уже изменен') } })
+    expect(valid.status).toBe('fulfilled')
+    const current = await getRemoteDocumentTemplate({ data: { id: 'checklist' } })
+    expect(current?.fileDataBase64 === next.fileDataBase64).toBe(true)
+    const sameVersion = ['Первая', 'Вторая'].map(name => upload('checklist', name, current!.version!))
+    const competing = await Promise.allSettled(sameVersion.map(data => saveRemoteDocumentTemplate({ data })))
+    expect(competing.filter(r => r.status === 'fulfilled')).toHaveLength(1)
+    expect(competing.find(r => r.status === 'rejected')).toMatchObject({ reason: { message: expect.stringContaining('уже изменен') } })
+    const winner = sameVersion[competing.findIndex(r => r.status === 'fulfilled')]
+    const latest = await getRemoteDocumentTemplate({ data: { id: 'checklist' } })
+    expect(latest?.fileDataBase64 === winner.fileDataBase64).toBe(true)
+    await withE2eDatabase(async blocker => {
+      await blocker.query('begin')
+      const pending: Promise<unknown>[] = []
+      try {
+        await blocker.query("select pg_advisory_xact_lock(hashtext('document-template:weldingJournal'))")
+        const journal = upload('weldingJournal', 'Бланк', (await stored()).updated_at.toISOString())
+        pending.push(saveRemoteDocumentTemplate({ data: journal }))
+        void pending[0].catch(() => {})
+        await expect.poll(async () => (await blocker.query(`select exists(select 1 from pg_stat_activity
+          where datname=current_database() and pg_backend_pid()=any(pg_blocking_pids(pid))) as waiting`)).rows[0].waiting).toBe(true)
+        let published = false
+        pending.push(saveRemoteDocumentTemplate({ data: upload('checklist', 'Независимый', latest!.version!) }).then(() => { published = true }))
+        void pending[1].catch(() => {})
+        await expect.poll(() => published).toBe(true)
+      } finally {
+        await blocker.query('rollback')
+        const results = await Promise.allSettled(pending)
+        for (const result of results) if (result.status === 'rejected') throw result.reason
+      }
+    })
+  } finally {
+    await withE2eDatabase(db => db.query("delete from document_templates where id='checklist'"))
+    for (const key of await store.list('checklist/')) await store.delete(key)
+  }
+})
+
 const getRemoteDocumentTemplate = asE2eOwner(raw_getRemoteDocumentTemplate, 'welding.view')
 const getRemoteDocumentTemplateInventory = asE2eOwner(raw_getRemoteDocumentTemplateInventory, 'templates.view')
 const saveRemoteDocumentTemplate = asE2eOwner(raw_saveRemoteDocumentTemplate, 'templates.edit')

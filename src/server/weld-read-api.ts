@@ -93,7 +93,7 @@ export const readReportOutputSnapshot = createServerFn({ method: 'POST' })
   .validator((data: ReportOutputRequest) => data)
   .handler(async ({ data }): Promise<ReportOutputSnapshot> => {
     const server = await import('@/server/weld-read')
-    return server.readReportOutputSnapshot(data)
+    return server.readReportOutputSnapshot(data, (await import('@tanstack/react-start/server')).getRequest().signal)
   })
 
 export const listWeldReportContextRows = createServerFn({ method: 'GET' })

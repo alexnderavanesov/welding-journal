@@ -1,8 +1,8 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
+import { deserializeRpcPayload, rpcName } from '../rpc'
 import { lnkActionRow } from './lnk-grid-helpers'
 
 const project = 'E2E workflow grid stability', joint = 'F97001'
@@ -15,11 +15,24 @@ test.beforeEach(async () => withLineProgramFixture(async db => {
 }))
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
+function isFilteredLnkRead(response: Response, operation: 'readJournalGrid_' | 'readJournalGridBlocks_') {
+  if (!response.ok() || !rpcName(response.url()).startsWith(operation)) return false
+  const payload = response.request().postData()
+  if (!payload) return false
+  const { data } = deserializeRpcPayload(payload) as { data: { report: string; columnFilters?: { search?: string } } }
+  return data.report === 'lnk' && data.columnFilters?.search === project
+}
+
 async function openExpanded(page: Page) {
   await page.addInitScript(() => localStorage.setItem('lnk-ag-grid:v1', JSON.stringify({ columns: [{ colId: 'line', rowGroup: true, rowGroupIndex: 0 }], views: [] })))
   await page.goto('/lnk')
   const root = page.locator('[data-weld-report-grid="lnk"]')
-  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
+  // The first filtered block waits for the dispatcher after the 2000-row seed.
+  // Keep the normal UI assertions for rendering and every subsequent save.
+  await Promise.all([
+    page.waitForResponse(response => isFilteredLnkRead(response, 'readJournalGrid_'), { timeout: 30_000 }),
+    page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project),
+  ])
   await expect(root.getByText('Найдено: 2000', { exact: true })).toBeVisible()
   await expect(root.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
   const group = root.locator('.ag-row-group.ag-row-level-0').filter({ hasText: 'STABLE-0000' }).first()
@@ -49,7 +62,12 @@ test('expanded report keeps visible rows through NK request and result saves wit
   await row.getByRole('button', { name: 'Выполнить: Внести результат НК', exact: true }).click()
   await page.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
   await page.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
-  await page.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
+  // The dialog closes when the write succeeds. The report uses the subsequent
+  // batch response to redraw the visible blocks at their new revision.
+  await Promise.all([
+    page.waitForResponse(response => isFilteredLnkRead(response, 'readJournalGridBlocks_'), { timeout: 30_000 }),
+    page.getByRole('button', { name: 'Сохранить результат', exact: true }).click(),
+  ])
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toBeHidden()
   // This deliberately partial weld fixture can still have СП-03. Saving NK
   // must update its factual result without hiding unrelated dispatcher checks.
@@ -66,7 +84,7 @@ test('expanded report keeps visible rows through NK request and result saves wit
   await expect.poll(async () => {
     await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
     return root.locator('.ag-row').filter({ hasText: 'F99000' }).first().isVisible()
-  }).toBe(true)
+  }, { timeout: 15_000 }).toBe(true)
   expect(reads.length - afterSaves).toBeLessThan(30)
   expect(errors).toEqual([])
   await writeFile(info.outputPath('grid-data-reads.json'), JSON.stringify({ requestsAfterTwoSaves: afterSaves - before, requestsToUnloadedEnd: reads.length - afterSaves }))

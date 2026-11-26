@@ -1917,3 +1917,24 @@ function writeCfbText(cfb: ReturnType<typeof XLSX.CFB.read>, path: string, value
   cfb.FileIndex[index].content = new TextEncoder().encode(value)
   cfb.FileIndex[index].size = cfb.FileIndex[index].content.length
 }
+
+it('exports both assemblies of a conclusion cell for every joint in the repeat block', async () => {
+  const template = createXlsxTemplate([[''], ['']])
+  template.id = 'lnkConclusionVik'
+  template.constructorConfig = { version: 1, sheetName: 'Шаблон', repeatRow: 1, bindings: [
+    { cell: 'A1', mode: 'row', parts: [{ field: 'joint', prefix: 'Стык № ' }],
+      supportContent: { parts: [{ field: 'joint', prefix: 'Опора ', lineBreakAfter: true },
+        { field: 'weldLength', prefix: 'Длина шва ', suffix: ' мм' }] } },
+    { cell: 'A2', mode: 'summary', field: 'joint', supportContent: { parts: [], emptyMode: 'custom', emptyText: 'Для опор' } },
+  ] }
+  async function contents(rows: WeldInput[]) {
+    const blob = await createWeldingJournalBlobFromTemplate(template, rows)
+    const sheet = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' }).Sheets['Шаблон']
+    return [sheet.A1?.v, sheet.A2?.v, sheet.A3?.v]
+  }
+  const pipe = [{ connectionType: 'С17', joint: '1' }, { connectionType: 'У19', joint: '2' }]
+  const support = [{ connectionType: 'Т1', joint: 'ОП1', weldLength: '150' }, { connectionType: 'Т1', joint: 'ОП2', weldLength: '180' }]
+  expect((await contents(pipe)).slice(0, 2)).toEqual(['Стык № 1', 'Стык № 2'])
+  expect(await contents(support)).toEqual(['Опора ОП1\nДлина шва 150 мм', 'Опора ОП2\nДлина шва 180 мм', 'Для опор'])
+  await expect(contents([pipe[0], support[0]])).rejects.toThrow('разные заключения')
+})

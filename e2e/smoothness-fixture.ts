@@ -1,4 +1,9 @@
 import { withLineProgramFixture, cleanupLineProgramProjects } from './line-program-fixtures'
+import { withE2eDatabase } from './database'
+import { eq } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import * as schema from '../src/db/schema'
+import { syncSystemDocumentsForWeldChangesInTransaction } from '../src/server/system-document-index'
 export const SMOOTHNESS_PROJECT = 'E2E smoothness 2026-11-05'
 export async function seedSmoothnessFixture() {
   await withLineProgramFixture(async db => {
@@ -16,7 +21,7 @@ export async function seedSmoothnessFixture() {
       case when n%5=0 then 600.123 end,case when n%5<>0 then 0.42 end,
       s.naks_stamp,case when n%5<>0 then s.naks_stamp end,s.naks_stamp,case when n%5<>0 then s.naks_stamp end,
       'да','SM-V-'||p.line,date '2026-10-01',case when n%7=0 then 'ожидает НК' else 'годен' end,
-      case when n%7<>0 then 'SM-C-'||p.line end,case when n%7<>0 then date '2026-10-02' end,
+      case when n%7<>0 then 'SM-C-'||p.line||case when n%5=0 then '-T' else '' end end,case when n%7<>0 then date '2026-10-02' end,
       'да','SM-P-'||p.line,date '2026-10-01','проведено',date '2026-10-02','SM-D-'||p.line,'SM-TV-'||p.line,'годен'
       from line_programs p cross join generate_series(1,100) n join welder_stamps s on s.naks_stamp='Q'||lpad((n-1+((right(p.line,4)::int-1)%10)*100)::text,3,'0')
       where p.project_title=$1`, [SMOOTHNESS_PROJECT])
@@ -37,6 +42,12 @@ export async function seedSmoothnessFixture() {
     await db.query(`insert into audit_changes(operation_id,entity,entity_id,label,area,kind,changes)
       select id,'weld_joints','0','Тестовая запись','welding','update','{"notes":{"before":"","after":"проверка"}}'::jsonb from audit_operations where id like 'smoothness-%'`)
   })
+  // Fixtures insert raw welds after release preparation. Populate their
+  // memberships before measuring navigation and scrolling in document lists.
+  await withE2eDatabase(db => drizzle(db, { schema }).transaction(async tx => {
+    const rows = await tx.select().from(schema.weldJoints).where(eq(schema.weldJoints.projectTitle, SMOOTHNESS_PROJECT))
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map(), { documentNamesOnly: true })
+  }))
 }
 export async function cleanupSmoothnessFixture() {
   await cleanupLineProgramProjects([SMOOTHNESS_PROJECT])

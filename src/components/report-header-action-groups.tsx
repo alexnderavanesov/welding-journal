@@ -388,6 +388,7 @@ type LnkHeaderActionsProps = {
   currentReportDisabled?: boolean
   onOpenToRequestReport: () => void
   onOpenWaitingNkReport: () => void
+  onOpenWaitingRepairReport: () => void
   onOpenConclusionsReport: () => void
   availability?: WorkflowAvailability
   onWorkflowMenuOpenChange?: (open: boolean) => void
@@ -416,6 +417,7 @@ export function LnkHeaderActions({
   currentReportDisabled,
   onOpenToRequestReport,
   onOpenWaitingNkReport,
+  onOpenWaitingRepairReport,
   onOpenConclusionsReport,
   availability = 'ready',
   onWorkflowMenuOpenChange = () => undefined,
@@ -571,6 +573,7 @@ export function LnkHeaderActions({
           { label: 'Текущая версия', onClick: onOpenCurrentReport, disabled: currentReportDisabled },
           { label: 'Ожидание заявки', onClick: onOpenToRequestReport },
           { label: 'Ожидание НК', onClick: onOpenWaitingNkReport },
+          { label: 'Ожидает ремонта', onClick: onOpenWaitingRepairReport },
           { label: 'Показать заключения', onClick: onOpenConclusionsReport },
         ]}
       />

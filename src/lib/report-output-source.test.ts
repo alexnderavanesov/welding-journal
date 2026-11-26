@@ -11,7 +11,9 @@ describe('explicit report snapshots', () => {
     const first = { report: { title: 'First' }, sourceRows: 501, truncated: false, generatedAt: '2026-10-25T18:00:00Z' }
     const second = { ...first, sourceRows: 502, generatedAt: '2026-10-25T18:01:00Z' }
     serverMocks.readReportOutputSnapshot.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
-    expect(await loadReportOutputSnapshot({ report: 'lnk' })).toMatchObject(first)
+    const controller = new AbortController()
+    expect(await loadReportOutputSnapshot({ report: 'lnk' }, controller.signal)).toMatchObject(first)
+    expect(serverMocks.readReportOutputSnapshot.mock.calls[0][0].signal).toBe(controller.signal)
     expect(await loadReportOutputSnapshot({ report: 'lnk' })).toMatchObject(second)
     expect(first.sourceRows).toBe(501)
     expect(second.sourceRows).toBe(502)
@@ -36,11 +38,14 @@ describe('explicit report snapshots', () => {
 it('downloads fresh files on demand with the captured filters, order and columns, independent of preview rows', async () => {
   vi.useFakeTimers()
   serverMocks.readReportOutputSnapshot.mockResolvedValue({ report: { title: 'Limited preview', tables: [] }, sourceRows: 200000, truncated: true, generatedAt: '2026-10-26T12:00:00Z' })
-  const fetch = vi.fn(async () => new Response('full workbook', { headers: { 'X-Report-Filename': 'welding-journal-current.xlsx' } }))
+  const name = 'Сварочный журнал — текущая версия 26.10.2026 16꞉24.xlsx'
+  const fetch = vi.fn(async () => new Response('full workbook', { headers: { 'Content-Disposition': `attachment; filename="report.xlsx"; filename*=UTF-8''${encodeURIComponent(name)}` } }))
   vi.stubGlobal('fetch', fetch)
   const create = vi.fn(() => 'blob:full'), revoke = vi.fn()
   vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: revoke })
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    expect(this.download).toBe(name)
+  })
   const fieldKeys = ['joint', 'line'], columnFilters = { line: '=A' }, sort: WeldSort = { fieldKey: 'joint', direction: 'desc' }
   const output = await loadReportOutputSnapshot({ report: 'weldingJournal', fieldKeys, columnFilters, sort })
   expect(fetch).not.toHaveBeenCalled()

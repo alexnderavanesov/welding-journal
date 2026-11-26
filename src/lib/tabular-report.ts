@@ -3,16 +3,16 @@ import type { PrintableReport } from '@/lib/printable-report'
 import type { ExportWorkbookOptions } from '@/lib/weld-export-types'
 import { FIELD_BY_KEY, type WeldInput } from '@/lib/weld-fields'
 
-export type TabularReportData = { rows: WeldInput[]; fields: NonNullable<ExportWorkbookOptions['fields']>; sheetName: string; filename: string }
+export type TabularReportData = { rows: WeldInput[]; fields: NonNullable<ExportWorkbookOptions['fields']>; sheetName: string; downloadTitle: string }
 export type ReportPreviewContent = { report: PrintableReport; onDownloadExcel?: (signal?: AbortSignal) => Promise<void> }
 
 /** Shared formatting and export metadata; file delivery is handled separately. */
-export function buildTabularReport({ rows, fields, sheetName, title, filename, emptyMessage }: {
+export function buildTabularReport({ rows, fields, sheetName, title, downloadTitle = sheetName, emptyMessage }: {
   rows: WeldInput[]
   fields: NonNullable<ExportWorkbookOptions['fields']>
   sheetName: string
   title: string
-  filename: string
+  downloadTitle?: string
   emptyMessage: string
 }) {
   const createReport = () => ({
@@ -35,7 +35,7 @@ export function buildTabularReport({ rows, fields, sheetName, title, filename, e
   })
   let report: ReturnType<typeof createReport> | undefined
   return {
-    exportData: { rows, fields, sheetName, filename },
+    exportData: { rows, fields, sheetName, downloadTitle },
     // Complete Excel consumes only raw export rows. Avoid formatting a second,
     // discarded preview matrix for every batch of a large download.
     get report() { return report ??= createReport() },

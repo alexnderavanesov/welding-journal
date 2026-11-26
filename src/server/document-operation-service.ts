@@ -343,7 +343,7 @@ async function persistOperation(tx: SystemDocumentSequenceTransaction, state: Sn
   }
   if (rows.length) {
     await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, previous, { documentNamesOnly: true })
-    await upsertSourcedSystemDocumentsInTransaction({ tx, documents: sourced })
+    await upsertSourcedSystemDocumentsInTransaction({ tx, documents: sourced, lockedRows: changedRows })
     await preserveOperationSpecialists(tx, groups, sourceMap)
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(rows, previous) })
   }

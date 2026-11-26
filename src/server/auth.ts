@@ -38,7 +38,8 @@ export function createAuth(database: ReturnType<typeof requireDb>) {
     account: { accountLinking: { enabled: false } },
     verification: { storeIdentifier: 'hashed' },
     rateLimit: { enabled: true, storage: 'database', window: 60, max: 100,
-      customRules: { '/sign-in/email': { window: 60, max: 60 } } },
+      // The public sign-in handler owns both the source and account budgets.
+      customRules: { '/sign-in/email': false } },
     advanced: { useSecureCookies: configuration.baseURL.startsWith('https:'),
       ipAddress: { ipAddressHeaders: process.env.AUTH_TRUST_PROXY === 'true' ? ['x-forwarded-for'] : [] } },
     databaseHooks: { session: { create: { before: async session => {
@@ -58,24 +59,82 @@ export function getAuth() { return instance ??= createAuth(requireDb()) }
 export const AUTH_HTTP_ENDPOINTS = new Map([
   ['/sign-in/email', 'POST'], ['/sign-out', 'POST'], ['/get-session', 'GET'],
 ])
+
+// Count streamed bytes too, including requests with no Content-Length.
+async function readSignInBody(request: Request): Promise<string | null> {
+  const maxBytes = 16 * 1024
+  if (Number(request.headers.get('content-length')) > maxBytes) return null
+  const reader = request.body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let size = 0
+  const deadline = AbortSignal.any([request.signal, AbortSignal.timeout(10_000)])
+  const cancel = () => { void reader.cancel().catch(() => {}) }
+  deadline.addEventListener('abort', cancel, { once: true })
+  try {
+    for (;;) {
+      deadline.throwIfAborted()
+      const { done, value } = await reader.read()
+      deadline.throwIfAborted()
+      if (done) return Buffer.concat(chunks).toString('utf8')
+      size += value.byteLength
+      if (size > maxBytes) {
+        void reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(value)
+    }
+  } finally { deadline.removeEventListener('abort', cancel); reader.releaseLock() }
+}
+
+let activeSignIns = 0
+function throttled() {
+  return Response.json({ message: 'Слишком много попыток. Повторите через минуту.' },
+    { status: 429, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' } })
+}
+
+async function signIn(request: Request) {
+  const { accountRateLimit, AccountRateLimitError, limitSignInAccount } = await import('./account-management')
+  const { isIP } = await import('node:net')
+  const forwarded = process.env.AUTH_TRUST_PROXY === 'true' ? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() : undefined
+  const ip = forwarded && isIP(forwarded) ? forwarded : 'shared'
+  let busySource = false
+  try { await accountRateLimit(`signin-path:${ip}`, 60) }
+  catch (error) {
+    if (!(error instanceof AccountRateLimitError)) return throttled()
+    busySource = true
+  }
+  let body: string | null
+  try { body = await readSignInBody(request) }
+  catch { return new Response(null, { status: 408, headers: { 'Cache-Control': 'no-store' } }) }
+  if (body === null) return Response.json({ message: 'Слишком большой запрос входа.' }, { status: 413, headers: { 'Cache-Control': 'no-store' } })
+  let email: unknown
+  const type = request.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
+  if (type === 'application/x-www-form-urlencoded') {
+    const addresses = new URLSearchParams(body).getAll('email')
+    if (addresses.length !== 1) return Response.json({ message: 'Укажите один адрес почты.' }, { status: 400, headers: { 'Cache-Control': 'no-store' } })
+    email = addresses[0]
+  } else if (type === 'application/json' || !type) {
+    try { email = JSON.parse(body)?.email } catch { /* Better Auth validates the body. */ }
+  }
+  else return Response.json({ message: 'Некорректный формат запроса входа.' }, { status: 415, headers: { 'Cache-Control': 'no-store' } })
+  try { await limitSignInAccount(typeof email === 'string' ? email.trim().toLowerCase() : '', busySource, getAuthConfiguration().secret) }
+  catch { return throttled() }
+  return getAuth().handler(new Request(request.url, { method: request.method, headers: request.headers, body, signal: request.signal }))
+}
+
 export async function handleAuthRequest(request: Request) {
   const path = new URL(request.url).pathname.slice('/api/auth'.length)
   if (AUTH_HTTP_ENDPOINTS.get(path) !== request.method) return new Response('Не найдено.', { status: 404 })
+  let response: Response
   if (path === '/sign-in/email') {
-    const { createHash } = await import('node:crypto')
-    const { accountRateLimit } = await import('./account-management')
-    const payload = await request.clone().json().catch(() => null)
-    const emailKey = createHash('sha256').update(String(payload?.email ?? '').trim().toLowerCase()).digest('hex')
-    try {
-      // Bound anonymous key creation before storing a new per-email bucket.
-      // Proxy headers are accepted only after the operator explicitly enables trust.
-      const ip = process.env.AUTH_TRUST_PROXY === 'true' ? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim().slice(0, 100) || 'shared' : 'shared'
-      await accountRateLimit(`signin-path:${ip}`, 60)
-      await accountRateLimit(`signin:${emailKey}`, 8)
-    }
-    catch { return Response.json({ message: 'Слишком много попыток. Повторите через минуту.' }, { status: 429, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' } }) }
-  }
-  const response = await getAuth().handler(request)
+    // Bound body readers and password work before touching the body or database.
+    // Leave room for the supported 25-person office starting work together.
+    if (activeSignIns >= 64) return throttled()
+    activeSignIns++
+    try { response = await signIn(request) }
+    finally { activeSignIns-- }
+  } else response = await getAuth().handler(request)
   response.headers.set('Cache-Control', 'no-store')
   return response
 }

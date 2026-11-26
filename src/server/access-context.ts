@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { getRequestHeaders } from '@tanstack/react-start/server'
@@ -24,7 +25,7 @@ export async function readAccessIdentity(): Promise<AccessIdentity | null> {
 }
 export async function requireIdentity() {
   const identity = await readAccessIdentity()
-  if (!identity) throw new Error('AUTH_REQUIRED: Войдите в систему. Сеанс завершён или доступ отозван.')
+  if (!identity) throw new PublicRequestError('AUTH_REQUIRED: Войдите в систему. Сеанс завершён или доступ отозван.', 401)
   return identity
 }
 export async function requirePermission(permission: Permission) {

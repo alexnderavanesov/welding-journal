@@ -1,6 +1,8 @@
 import { openDocumentOperation, confirmDocumentOperation } from '../document-operation-ui'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
+import { requireDb } from '../../src/db'
+import { initializeSystemDocumentIndexesInTransaction } from '../../src/server/system-document-index'
 import { deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
@@ -75,6 +77,10 @@ async function seed() {
     await db.query(`insert into generated_document_weld_joints(document_id,weld_joint_id)
       select d.id,(p->>'weldJointId')::int from generated_documents d
       cross join lateral jsonb_array_elements(d.source_metadata::jsonb->'sourcePositions') p`)
+    // Release preparation already ran on the empty disposable database. This
+    // raw legacy fixture now supplies facts that normally predate that step.
+    const keys = definitions.map(({ type }) => 'systemDocumentIndex:' + type)
+    expect((await db.query('delete from app_settings where key=any($1::text[])', [keys])).rowCount).toBe(keys.length)
   })
 }
 
@@ -137,12 +143,32 @@ async function planOverHttp(page: Page, observedRpc: string, documentIds: number
   return payload.result!
 }
 
+async function readPrimaryHistory() {
+  const expected = [
+    { type: 'system:pstoConclusion', title: 'Первичная диаграмма', date: '2026-09-02' },
+    { type: 'system:pstoRequest', title: 'Первичная заявка ПСТО', date: '2026-09-01' },
+    { type: 'system:tvmtConclusion', title: 'Первичное заключение ТВМТ', date: '2026-09-03' },
+    { type: 'system:tvmtRequest', title: 'Первичная заявка ТВМТ', date: '2026-09-02' },
+  ]
+  const historical = await withE2eDatabase(async db => (await db.query(`select d.id,d.type,d.title,d.row_count,
+    d.period_from::text as period_from,d.period_to::text as period_to,
+    count(a.weld_joint_id)::int as links,
+    count(*) filter (where w.project_title=$2 and substring(w.joint from 2)::int%2=0)::int as first_cycle_links
+    from generated_documents d
+    left join generated_document_weld_joints a on a.document_id=d.id
+    left join weld_joints w on w.id=a.weld_joint_id
+    where d.title=any($1::text[]) group by d.id order by d.id`,
+  [expected.map(row => row.title), project])).rows)
+  expect(historical).toHaveLength(expected.length)
+  for (const { type, title, date } of expected) {
+    expect(historical.find(row => row.type === type)).toMatchObject({ title, period_from: date, period_to: date,
+      row_count: count / 2, links: count / 2, first_cycle_links: count / 2 })
+  }
+  return historical
+}
+
 async function checkHistoricalPlan(page: Page, observedRpc: string) {
-  const historical = await withE2eDatabase(async db => (await db.query(`select id,type,title,row_count
-    from generated_documents where title=any($1::text[]) and row_count=100000 order by id`,
-  [['Первичная заявка ПСТО', 'Первичная диаграмма', 'Первичная заявка ТВМТ', 'Первичное заключение ТВМТ']])).rows)
-  expect(historical).toHaveLength(4)
-  expect(historical.map(row => row.type).sort()).toEqual(definitions.map(definition => `system:${definition.storage}`).sort())
+  const historical = await readPrimaryHistory()
   const before = await mutationFingerprint()
   const plan = await planOverHttp(page, observedRpc, historical.map(row => row.id))
   expect(plan.selectedCount).toBe(4)
@@ -183,6 +209,9 @@ test(historicalPlanOnly ? 'scoped tail only: four indivisible historical documen
   if (historicalPlanOnly) { expect(count).toBe(200_000); expect(packetSample).toBe(0) }
   await seed()
   initialFacts = await facts()
+  await requireDb().transaction(initializeSystemDocumentIndexesInTransaction)
+  expect(await facts()).toEqual(initialFacts)
+  const primaryHistory = await readPrimaryHistory()
   const errors: string[] = [], calls: string[] = []
   let observedRpc = ''
   page.on('pageerror', error => errors.push(error.message))
@@ -204,8 +233,8 @@ test(historicalPlanOnly ? 'scoped tail only: four indivisible historical documen
       const current = await withE2eDatabase(async db => (await db.query(`select id from generated_documents
         where type='system:pstoRequest' and source_metadata::jsonb->>'sourceKind'='pstoCycle' order by id limit 1`)).rows[0])
       expect(current).toBeDefined()
-      // The ordinary initial plan creates lazy primary-history indexes. Do it
-      // before the fingerprint, just as the original full run did before split.
+      // Exercise the ordinary initial plan before checking the four large
+      // historical documents, as the complete split workflow does.
       const prepared = await planOverHttp(page, observedRpc, [current.id])
       expect(prepared.selectedCount).toBe(1)
       expect(prepared.batches).toEqual([[current.id]])
@@ -267,6 +296,7 @@ test(historicalPlanOnly ? 'scoped tail only: four indivisible historical documen
     if (sqlBefore !== undefined && sqlAfter !== undefined) expect(sqlAfter - sqlBefore).toBeLessThan(300 * (previews + applies))
     console.log(JSON.stringify({ phase: 'four-kind selected operations', count, milliseconds: Date.now() - started, previews, applies, maxPreviewBytes: Math.max(...responseBytes), sqlBefore, sqlAfter }))
     expect(await facts()).toEqual(initialFacts)
+    expect(await readPrimaryHistory()).toEqual(primaryHistory)
     const documentCounts = await sourcedDocumentCounts()
     if (packetSample) {
       expect(completedPackets).toBe(packetSample)

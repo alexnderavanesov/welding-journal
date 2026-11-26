@@ -103,6 +103,8 @@
 
 ## Full pre-commit audit
 
+- Standing user decision (2026-11-26): on every full pre-commit audit, measure the recurring Chrome workflows from user input to the visible result on matching local fixtures. Compare the candidate with both the previous release and the fixed reference release of 2026-11-24 (`f8fabb7c8dee1fb581a3d3fe7642cbe18c102146`). Keep the reference across releases so cumulative slowdowns remain visible. Record repeated timings and both comparisons in the dated report. Resolve a confirmed material user-visible regression, or obtain explicit user acceptance before release. The workflows, measurement conditions and handling of new features are in the [audit plan](docs/precommit-audit-2026-10-01.md#контроль-скорости-между-выпусками).
+
 - Excel import and data replacement were checked in the 2026-11-24 local pre-commit audit at the user's request. The checked settings, qualifications, permissions, retry behavior and persisted outcomes are in [the audit report](docs/precommit-audit-2026-11-24.md). The agreed scope remains recorded in [the audit plan](docs/precommit-audit-2026-10-01.md).
 
 - Next large systemic audit (user decision, 2026-11-23): review one-time scripts and release data steps after intervening releases, and remove those confirmed obsolete. Account for supported upgrades and restoration of older backups. The scope and document-line example are in [the audit plan](docs/precommit-audit-2026-10-01.md). Carry this item forward until that audit.

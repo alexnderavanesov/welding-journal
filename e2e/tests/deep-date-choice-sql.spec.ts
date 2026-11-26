@@ -9,7 +9,7 @@ import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '../../s
 import { buildReportQueryWhere, getReportOrderBy } from '../../src/server/weld-read'
 import { buildColumnChoiceWhere, buildColumnTextEqualsWhere } from '../../src/server/weld-server-shared'
 import type { WeldReportKind } from '../../src/server/weld-contracts'
-import { withE2eDatabase } from '../database'
+import { E2E_DATABASE_NAME, withE2eDatabase } from '../database'
 
 // Compare the frozen text predicate with the real production builder. DateStyle
 // changes and synthetic rows are transaction-local in the disposable database.
@@ -117,7 +117,7 @@ async function execute(client: Client, query: SQL) {
 
 async function isolated<T>(run: (client: Client) => Promise<T>) {
   return withE2eDatabase(async client => {
-    expect((await client.query('select current_database() as name')).rows[0].name).toBe('welding_tracker_e2e')
+    expect((await client.query('select current_database() as name')).rows[0].name).toBe(E2E_DATABASE_NAME)
     await client.query('begin')
     try {
       const seed = (await client.query('select id,project_title,subtitle_code,line,joint,isometry from weld_joints for update')).rows

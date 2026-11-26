@@ -165,7 +165,9 @@ test('creation: header count without names tab, cancelled draft, successful shar
   const split = dialog.getByRole('combobox', { name: 'Разделение документов', exact: true })
   await expect(split).toHaveValue('none')
   await expect(dialog.getByText('Будет создано: 1', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Создать заявку', exact: true })).toBeVisible()
   await split.selectOption('line')
+  await expect(dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true })).toBeVisible()
   await expect(dialog.getByText('Будет создано: 2', { exact: true })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Обновить номера и имена', exact: true })).toHaveCount(0)
   await dialog.screenshot({ path: info.outputPath('creation-split-header.png') })
@@ -175,7 +177,7 @@ test('creation: header count without names tab, cancelled draft, successful shar
   await selectRows(dialog)
   await split.selectOption('line')
   await expect(dialog.getByText('Будет создано: 2', { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true }).click()
   await expect(dialog).toBeHidden()
   const stored = await withE2eDatabase(async db => ({
     names: (await db.query('select distinct vik_request from weld_joints where project_title=$1', [project])).rows,

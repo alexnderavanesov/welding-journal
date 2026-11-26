@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { createSmoothnessProbe } from '../smoothness-probe'
 import { seedSmoothnessFixture, cleanupSmoothnessFixture, SMOOTHNESS_PROJECT } from '../smoothness-fixture'
 import { withLineProgramFixture } from '../line-program-fixtures'
+import { assertFullWeldReportColumns } from '../full-weld-report-columns'
 
 const enabled = process.env.WIDE_REPORT_MEASUREMENTS === '1'
 test.skip(!enabled, 'Explicit local comparison of wide report tables')
@@ -57,8 +58,9 @@ test('wide reports: native scrolling and resizing with flat rows and three expan
   test.setTimeout(600000)
   const probe = await createSmoothnessProbe(page, info), surfaces: object[] = []
   try {
-    for (const route of ['journal', 'lnk', 'psto']) {
+    for (const route of ['journal', 'lnk', 'psto'] as const) {
       const grid = await openWideReport(page, route)
+      const expectedColumns = await assertFullWeldReportColumns(grid)
       for (const grouped of [false, true]) {
         if (grouped) await expandThreeLevels(page)
         const geometry = await grid.evaluate(element => {
@@ -67,9 +69,7 @@ test('wide reports: native scrolling and resizing with flat rows and three expan
             scrollWidth: viewport.scrollWidth, clientWidth: viewport.clientWidth,
             rows: element.querySelectorAll('.ag-row').length, cells: element.querySelectorAll('.ag-cell').length }
         })
-        // Removing eight stamp fields reduces the full PSTO view from 65 to
-        // 57 columns. It remains a wide view; journal/LNK still exceed 100.
-        expect(geometry.columnCount).toBeGreaterThanOrEqual(route === 'psto' ? 57 : 100)
+        expect(geometry.columnCount).toBeGreaterThanOrEqual(expectedColumns)
         expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth * 5)
         surfaces.push({ route, grouped, ...geometry })
         for (let round = 0; round < 3; round++) {

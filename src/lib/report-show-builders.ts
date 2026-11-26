@@ -27,6 +27,8 @@ import { buildTabularReport } from '@/lib/tabular-report'
 import type { WeldField, WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { getLnkDisplayValue, getPstoDisplayValue } from '@/lib/lnk-status'
 
+import { LNK_WAITING_REPAIR_FIELDS } from './lnk-waiting-repair-report'
+
 const WAITING_LNK_FIELDS_WITH_STATUS = [
   ...LNK_WAITING_NK_FIELDS,
   { key: 'workflowStatus', dbName: '__workflow_status', label: 'Статус', kind: 'text', group: 'ЛНК', visible: true, virtual: true },
@@ -38,8 +40,17 @@ export function buildLnkWaitingNkReport(rows: ReportRow[]) {
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание НК',
     title: 'Ожидание НК',
-    filename: 'lnk-waiting-nk.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает НК»',
+  })
+}
+
+export function buildLnkWaitingRepairReport(rows: WeldInput[]) {
+  return buildTabularReport({
+    rows,
+    fields: LNK_WAITING_REPAIR_FIELDS,
+    sheetName: 'Ожидает ремонта',
+    title: 'ЛНК: ожидает ремонта',
+    emptyMessage: 'Нет стыков, ожидающих ремонта',
   })
 }
 
@@ -49,7 +60,6 @@ export function buildLnkToRequestReport(rows: ReportRow[]) {
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание заявки',
     title: 'Ожидание заявки',
-    filename: 'lnk-waiting-request.xlsx',
     emptyMessage: 'Нет стыков, по которым нужно создать заявку ЛНК',
   })
 }
@@ -60,7 +70,6 @@ export function buildLnkConclusionsReport(rows: ReportRow[]) {
     fields: LNK_CONCLUSIONS_FIELDS,
     sheetName: 'Заключения ЛНК',
     title: 'Заключения ЛНК',
-    filename: 'lnk-conclusions.xlsx',
     emptyMessage: 'Нет заключений ЛНК для показа',
   })
 }
@@ -71,7 +80,6 @@ export function buildPstoWaitingRequestReport(rows: ReportRow[]) {
     fields: PSTO_WAITING_REQUEST_FIELDS,
     sheetName: 'Ожидает заявку ПСТО',
     title: 'Ожидает заявку ПСТО',
-    filename: 'psto-waiting-request.xlsx',
     emptyMessage: 'Нет стыков, по которым нужно создать заявку ПСТО',
   })
 }
@@ -82,7 +90,6 @@ export function buildPstoResultsReport(rows: ReportRow[]) {
     fields: PSTO_RESULTS_FIELDS,
     sheetName: 'Результаты ПСТО',
     title: 'Результаты ПСТО',
-    filename: 'psto-results.xlsx',
     emptyMessage: 'Нет результатов ПСТО для показа',
   })
 }
@@ -91,14 +98,13 @@ export function buildCurrentReport(
   rows: WeldInput[],
   fields: WeldField[],
   title: string,
-  filename: string,
 ) {
   return buildTabularReport({
     rows,
     fields,
     sheetName: 'Текущая версия',
     title,
-    filename,
+    downloadTitle: title,
     emptyMessage: 'В текущем фильтре нет стыков для показа',
   })
 }
@@ -108,7 +114,6 @@ export function buildWeldingJournalCurrentReport(rows: WeldInput[], fields: Weld
     prepared ? rows : buildWeldingJournalRows(rows),
     fields,
     'Сварочный журнал: текущая версия',
-    'welding-journal-current.xlsx',
   )
 }
 
@@ -116,12 +121,12 @@ export function buildPstoCurrentReport(rows: WeldInput[], fields: WeldField[]) {
   // Snapshot the same current-cycle values as the table, including cancellation.
   // Keep source metadata for shared export formatting and never mutate live rows.
   const displayed = rows.map(row => ({ ...row, ...Object.fromEntries(fields.map(field => [field.key, getPstoDisplayValue(row, field.key as WeldFieldKey)])) }))
-  return buildCurrentReport(displayed, fields, 'ПСТО и ТВМТ: текущая версия', 'psto-current.xlsx')
+  return buildCurrentReport(displayed, fields, 'ПСТО и ТВМТ: текущая версия')
 }
 
 export function buildLnkCurrentReport(rows: WeldInput[], fields: WeldField[]) {
   const displayed = rows.map(row => ({ ...row, ...Object.fromEntries(fields.map(field => [field.key, getLnkDisplayValue(row, field.key as WeldFieldKey)])) }))
-  return buildCurrentReport(displayed, fields, 'ЛНК: текущая версия', 'lnk-current.xlsx')
+  return buildCurrentReport(displayed, fields, 'ЛНК: текущая версия')
 }
 
 export function buildWeldingJournalWaitingWeldReport(rows: WeldInput[], prepared = false) {
@@ -130,7 +135,6 @@ export function buildWeldingJournalWaitingWeldReport(rows: WeldInput[], prepared
     fields: WELDING_JOURNAL_WAITING_WELD_FIELDS,
     sheetName: 'Ожидает сварку',
     title: 'Сварочный журнал: ожидает сварку',
-    filename: 'welding-journal-waiting-weld.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает сварку»',
   })
 }
@@ -141,7 +145,7 @@ export function buildWeldingJournalWaitingRequestReport(rows: WeldInput[]) {
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание заявки',
     title: 'Сварочный журнал: ожидание заявки',
-    filename: 'welding-journal-waiting-request.xlsx',
+    downloadTitle: 'Ожидает заявки',
     emptyMessage: 'Нет стыков, по которым нужно создать заявку ЛНК',
   })
 }
@@ -152,7 +156,7 @@ export function buildWeldingJournalWaitingControlReport(rows: WeldInput[]) {
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание НК',
     title: 'Сварочный журнал: ожидание НК',
-    filename: 'welding-journal-waiting-control.xlsx',
+    downloadTitle: 'Ожидает контроль',
     emptyMessage: 'Нет стыков со статусом «ожидает НК»',
   })
 }
@@ -163,7 +167,6 @@ export function buildWeldingJournalWaitingRepairReport(rows: WeldInput[]) {
     fields: WELDING_JOURNAL_WAITING_REPAIR_FIELDS,
     sheetName: 'Ожидает ремонт',
     title: 'Сварочный журнал: ожидает ремонт',
-    filename: 'welding-journal-waiting-repair.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает ремонт»',
   })
 }
@@ -174,7 +177,7 @@ export function buildWeldingJournalCancelledAcceptedReport(rows: WeldInput[]) {
     fields: LNK_CONCLUSIONS_FIELDS,
     sheetName: 'Отмененные годные',
     title: 'Сварочный журнал: отмененные годные результаты',
-    filename: 'welding-journal-cancelled-accepted.xlsx',
+    downloadTitle: 'Отмененные годные результаты',
     emptyMessage: 'Нет отмененных годных результатов для показа',
   })
 }
@@ -185,7 +188,6 @@ export function buildWeldingJournalSystemReport(rows: WeldInput[], prepared = fa
     fields: WELDING_JOURNAL_SYSTEM_FIELDS,
     sheetName: 'Системная версия',
     title: 'Сварочный журнал: системная версия',
-    filename: 'welding-journal-system.xlsx',
     emptyMessage: 'Нет стыков для показа в системной версии',
   })
 }

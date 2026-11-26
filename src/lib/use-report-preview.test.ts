@@ -9,6 +9,27 @@ function deferredReport() {
   return { resolve, load: vi.fn(() => promise) }
 }
 
+it.each([false, true])('returns focus after closing unless a newer field was selected (%s)', async moveToField => {
+  const trigger = document.createElement('button'), field = document.createElement('input')
+  document.body.append(trigger, field)
+  let repaint!: FrameRequestCallback
+  const frame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { repaint = callback; return 1 })
+  try {
+    const { result } = renderHook(() => useReportPreview())
+    trigger.focus()
+    await act(async () => { await result.current.open(async () => ({ report: { title: 'Отчёт' } })) })
+    act(() => result.current.previewProps!.onClose())
+    trigger.blur()
+    if (moveToField) field.focus()
+    act(() => repaint(0))
+    expect(document.activeElement).toBe(moveToField ? field : trigger)
+  } finally {
+    frame.mockRestore()
+    trigger.remove()
+    field.remove()
+  }
+})
+
 it('coalesces double opening and ignores a late response after closing the preview', async () => {
   const pending = deferredReport()
   const { result } = renderHook(() => useReportPreview('journal'))

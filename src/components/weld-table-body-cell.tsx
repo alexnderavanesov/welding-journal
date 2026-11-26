@@ -163,6 +163,7 @@ export function getWeldTableBodyCellTooltip({
   const linkState = getWeldTableCellLinkState({
     row,
     fieldKey,
+    isEditableCell,
     visibleValue,
     canOpenDocument,
     canOpenLnkRequest,
@@ -266,6 +267,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   } = getWeldTableCellLinkState({
     row,
     fieldKey,
+    isEditableCell,
     visibleValue,
     journal: journalTooltips,
     canOpenDocument: Boolean(onOpenDocument),
@@ -385,6 +387,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
 function getWeldTableCellLinkState({
   row,
   fieldKey,
+  isEditableCell,
   visibleValue,
   canOpenDocument,
   canOpenLnkRequest,
@@ -393,6 +396,7 @@ function getWeldTableCellLinkState({
 }: {
   row: WeldRow
   fieldKey: WeldFieldKey
+  isEditableCell: boolean
   visibleValue: unknown
   canOpenDocument: boolean
   canOpenLnkRequest: boolean
@@ -432,6 +436,7 @@ function getWeldTableCellLinkState({
     hasVisibleValue &&
     canOpenLnkResult &&
     !defectDescriptionField &&
+    !(isEditableCell && (fieldKey === 'preRkExposureScheme' || fieldKey === 'preRkDefectDescription')) &&
     Boolean(
       (metadata ? metadata.lnkResultMethod : getLnkResultMethodForField(fieldKey)) ||
       (preHeatTreatmentField &&

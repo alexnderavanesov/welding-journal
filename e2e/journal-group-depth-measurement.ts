@@ -1,10 +1,13 @@
 import { expect, type Page } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { rpcName } from './rpc'
+import { ACCOUNT_ACTIVITY_REFRESH_MS } from '../src/lib/account-activity'
 
 /** Same 18 cards, viewport and columns; only grouping depth changes. */
 export async function measureJournalGroupDepth(page: Page, browser: string) {
   const samples: unknown[] = [], errors: string[] = [], requests: string[] = []
+  const observationStarted = performance.now()
+  let measuredActivityRequests = 0
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('request', request => { const name = rpcName(request.url()); if (name) requests.push(name) })
@@ -60,11 +63,16 @@ export async function measureJournalGroupDepth(page: Page, browser: string) {
           reads: state.reads, readMs: state.readMs, targets: state.targets, rows: document.querySelectorAll('.ag-row').length, groups: document.querySelectorAll('.ag-row-group').length,
           sticky: document.querySelectorAll('.ag-grid-sticky-top-rows-container .ag-row').length, cells: document.querySelectorAll('.ag-cell').length }
       })
-      samples.push({ depth, action, repeat, elapsed, ...sample, requests: requests.slice(before) })
+      const observed = requests.slice(before)
+      const activity = observed.filter(name => name === 'refreshAccountActivity_createServerFn_handler')
+      measuredActivityRequests += activity.length
+      samples.push({ depth, action, repeat, elapsed, ...sample, requests: observed })
       console.log('DEPTH_SAMPLE', JSON.stringify(samples.at(-1)))
-      expect(requests.slice(before)).toEqual([])
+      expect(observed.filter(name => name !== 'refreshAccountActivity_createServerFn_handler')).toEqual([])
     }
   }
   expect(errors).toEqual([])
-  await writeFile(`/tmp/journal-depth-${process.env.JOURNAL_DEPTH_LABEL}.json`, JSON.stringify({ browser, samples, errors }, null, 2))
+  const observationMs = performance.now() - observationStarted
+  expect(measuredActivityRequests).toBeLessThanOrEqual(Math.ceil(observationMs / ACCOUNT_ACTIVITY_REFRESH_MS))
+  await writeFile(`/tmp/journal-depth-${process.env.JOURNAL_DEPTH_LABEL}.json`, JSON.stringify({ browser, samples, errors, measuredActivityRequests, observationMs }, null, 2))
 }

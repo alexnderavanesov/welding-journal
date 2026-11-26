@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import type { DocumentHistoryReportRequest } from '@/lib/document-history-report'
@@ -17,10 +18,10 @@ export function normalizeDocumentHistoryReportRequest(input: DocumentHistoryRepo
     || typeof input.title !== 'string' || !input.title.trim() || input.title.length > 200
     || !Array.isArray(input.columns) || !input.columns.length || input.columns.length > 13
     || input.columns.some(column => !column || typeof column.key !== 'string' || typeof column.label !== 'string' || !column.label.trim() || column.label.length > 200)
-    || new Set(input.columns.map(column => column.key)).size !== input.columns.length) throw new Error('Некорректные параметры списка документов.')
+    || new Set(input.columns.map(column => column.key)).size !== input.columns.length) throw new PublicRequestError('Некорректные параметры списка документов.')
   const source = input.source
   if (source.kind === 'generated' ? !Array.isArray(source.types) || !source.types.length || source.types.some(type => !isGeneratedDocumentType(type))
-    : !isSystemDocumentType(source.type)) throw new Error('Неизвестный вид документов.')
+    : !isSystemDocumentType(source.type)) throw new PublicRequestError('Неизвестный вид документов.')
   const query = { startRow: 0, endRow: 500, rowGroupCols: input.rowGroupCols, groupKeys: [], sortModel: input.sortModel,
     search: input.search, cells: { columns: input.columns.map(column => column.key) } }
   const request = source.kind === 'generated' ? normalizeGeneratedDocumentHistoryGridRequest({ ...query, ...source })
@@ -78,10 +79,10 @@ export async function readDocumentHistoryReport(input: DocumentHistoryReportRequ
 
 export function documentHistoryWorksheetRow(values: Array<string | number>, index: number, columns?: DocumentHistoryReportRequest['columns']) {
   const cells = values.map((value, column) => {
-    if (String(value).length > 32767) throw new Error(columns?.[column]?.key === 'jointComposition'
+    if (String(value).length > 32767) throw new PublicRequestError(columns?.[column]?.key === 'jointComposition'
       ? '«Состав стыков» одного из документов превышает лимит Excel: 32 767 символов в ячейке. Закройте предпросмотр, скройте этот столбец в реестре и снова нажмите «Показать», чтобы скачать список без состава.'
       : 'Текст ячейки превышает допустимый размер Excel. Уточните фильтры списка документов.')
-    if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Некорректное число в списке документов.')
+    if (typeof value === 'number' && !Number.isFinite(value)) throw new PublicRequestError('Некорректное число в списке документов.')
     let letter = '', position = column + 1
     while (position) { letter = String.fromCharCode(65 + (position - 1) % 26) + letter; position = Math.floor((position - 1) / 26) }
     const ref = `${letter}${index + 1}`, style = index === 0 ? 1 : 0
@@ -93,7 +94,7 @@ export function documentHistoryWorksheetRow(values: Array<string | number>, inde
 
 export async function createDocumentHistoryExcelResponse(input: DocumentHistoryReportRequest, signal: AbortSignal) {
   normalizeDocumentHistoryReportRequest(input)
-  return createTabularExcelResponse({ sheetName: 'Реестр документов', filename: 'documents.xlsx',
+  return createTabularExcelResponse({ sheetName: 'Реестр документов', downloadTitle: input.title,
     row: (values: Array<string | number>, index) => documentHistoryWorksheetRow(values, index, input.columns),
     columns: input.columns.length,
     header: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>'

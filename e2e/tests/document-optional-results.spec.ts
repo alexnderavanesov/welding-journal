@@ -123,7 +123,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
     await expect(names).toHaveCount(2)
     for (const name of await names.all()) await expect(name).toHaveValue('')
     await expect(dialog.getByRole('status').filter({ hasText: 'Будет создано: 2' })).toBeVisible()
-    const save = dialog.getByRole('button', { name: isPre ? 'Сохранить результат до ТО' : 'Сохранить результат', exact: true })
+    const save = dialog.getByRole('button', { name: isPre ? 'Создать 2 заключения' : 'Создать 2 диаграммы', exact: true })
     await expect(save).toBeDisabled()
     const date = dialog.getByLabel(isPre ? 'Дата контроля' : 'Дата ПСТО', { exact: true })
     await date.fill('')

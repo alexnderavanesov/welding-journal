@@ -1,3 +1,4 @@
+import { PublicRequestError } from '@/lib/public-request-error'
 import { REPORT_ACCESS_AREAS, SETTING_ACCESS_AREAS, type Permission } from '@/lib/access-permissions'
 import { normalizePreHeatTreatmentResultEditBatch } from '@/lib/pre-heat-treatment-result-edit-plan'
 import { requireWorkflowDocumentArea, workflowDocumentReferenceArea } from '@/lib/workflow-document-area'
@@ -220,7 +221,7 @@ export const OPERATION_POLICIES = {
 type Input = Record<string, any>
 function reportArea(data: Input) {
   const area = REPORT_ACCESS_AREAS[data.report ?? 'weldingJournal']
-  if (!area) throw new Error('Неизвестный отчёт.')
+  if (!area) throw new PublicRequestError('Неизвестный отчёт.')
   return area
 }
 export function getOperationPolicy(filename: string, name: string) {

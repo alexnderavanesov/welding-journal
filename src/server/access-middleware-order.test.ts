@@ -20,6 +20,7 @@ vi.mock('./audit-origin-policy', () => ({ createAuditOriginResolver: () => undef
 vi.mock('./workflow-conflict-diagnostics', () => ({ reportWorkflowConflict: vi.fn() }))
 
 import { accessMiddleware } from './access-middleware'
+import { OPERATION_POLICIES } from './access-operation-policy'
 
 type Middleware = (input: { next: () => Promise<{ result: unknown }>; data: unknown; serverFnMeta: { filename: string; name: string } }) => Promise<unknown>
 function invoke(next = vi.fn(async () => ({ result: { ok: true } }))) {
@@ -28,6 +29,24 @@ function invoke(next = vi.fn(async () => ({ result: { ok: true } }))) {
 }
 
 beforeEach(() => { state.permissions = []; state.documents = []; state.identityError = undefined; vi.clearAllMocks() })
+
+it('requires a session before every registered business handler, including resource lookups', async () => {
+  state.identityError = new Error('AUTH_REQUIRED: Войдите в систему.')
+  const publicAccountCalls = new Set(['account-api.ts#getCurrentAccount', 'account-api.ts#refreshAccountActivity', 'account-api.ts#completeAccountLink'])
+  for (const key of Object.keys(OPERATION_POLICIES)) {
+    const [file, name] = key.split('#')
+    const next = vi.fn(async () => ({ result: null }))
+    const result = (accessMiddleware as unknown as Middleware)({ next, data: {}, serverFnMeta: { filename: '/src/server/' + file, name } })
+    if (publicAccountCalls.has(key)) {
+      await result
+      expect(next, key).toHaveBeenCalledOnce()
+    } else {
+      await expect(result, key).rejects.toBe(state.identityError)
+      expect(next, key).not.toHaveBeenCalled()
+    }
+  }
+  expect(state.reads).not.toHaveBeenCalled()
+})
 
 it('signals an expired identity but not a transient failure, and denies both before running an operation', async () => {
   for (const expired of [false, true]) {

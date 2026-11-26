@@ -224,6 +224,9 @@ test('снятие и повторное исключение сохраняют
   })
   await open(page)
   await decide(page, root.id, true)
+  // The operator can revisit a saved exception hours later. Keep document
+  // versions distinct from the weld's service timestamp without a timed wait.
+  await withE2eDatabase(db => db.query("update weld_joints set updated_at=updated_at - interval '2 hours' where id=$1", [root.id]))
   const before = await stored()
   const documents = () => withE2eDatabase(async db => (await db.query(`select d.*, array_agg(r.weld_joint_id order by r.weld_joint_id) as positions
     from generated_documents d join generated_document_weld_joints r on r.document_id=d.id

@@ -10,9 +10,12 @@ test('native set filter keeps its initial size and expands with the AG Grid hand
   const grid = page.getByRole('grid', { name: 'Пользователи и права', exact: true })
   await grid.locator('[col-id="name"] .ag-header-cell-filter-button').click()
   const popup = page.locator('.read-only-grid-popup').filter({ visible: true })
-  await expect(popup.getByRole('textbox')).toBeVisible()
+  const search = popup.getByRole('textbox')
+  await expect(search).toBeVisible()
+  await search.focus()
   expect((await popup.boundingBox())!.width).toBe(360)
   await resize(page, popup, true)
+  await expect(search).toBeFocused()
   const resized = (await popup.boundingBox())!
   await expect(popup.getByRole('button', { name: 'Применить', exact: true })).toBeInViewport()
   await popup.getByRole('textbox').fill('нет такого имени')
@@ -86,13 +89,20 @@ test('line program native filter retains compact default and grows its values li
   try {
     await page.setViewportSize({ width: 1600, height: 1100 })
     await page.goto('/line-program')
-    await page.locator('.ag-header-cell-filter-button').first().click()
+    const opener = page.locator('.ag-header-cell-filter-button').first()
+    await opener.click()
     const popup = page.locator('.program-grid-popup.ag-filter-menu').filter({ visible: true })
-    await expect(popup.getByRole('textbox')).toBeVisible()
+    const search = popup.getByRole('textbox')
+    await expect(search).toBeVisible()
     expect((await popup.boundingBox())!.width).toBe(284)
+    // A cold navigation can display this filter while focus is still on body.
+    await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+    await expect(page.locator('body')).toBeFocused()
     await resize(page, popup, true)
+    await expect(search).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(popup).not.toBeVisible()
+    await expect.poll(() => opener.evaluate(button => button.closest('.ag-header-cell')?.contains(document.activeElement))).toBe(true)
   } finally {
     await withE2eDatabase(db => db.query('delete from line_programs where id=$1', [id]))
   }

@@ -30,7 +30,7 @@ async function growFixture(commonCount: 50 | 4000) {
         stamp_1_k,stamp_1_k_fact,has_vik,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,psto_required)
         select p.id,p.project_title,p.subtitle_code,p.line,'ОП'||lpad(n::text,4,'0'),'2026-10-01',
         'Т1','действующий','актуальная','РД','М01',108,4,600.25,$2,$2,
-        'да','FAMILY-VIK','2026-10-02','годен','FAMILY-VIK-C','2026-10-03','нет'
+        'да','FAMILY-VIK','2026-10-02','годен','FAMILY-VIK-C-T','2026-10-03','нет'
         from line_programs p cross join generate_series(1,10) n where p.project_title=$1`, [project, stamp])
     }
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,

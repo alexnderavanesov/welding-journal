@@ -224,6 +224,21 @@ test(`${process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1' ? 'PLAN DIAGNOSTIC ONLY: '
         expect(loaded).toBeLessThanOrEqual(500)
         measurements.push({ kind, fraction, rows, loaded, firstIndex: Math.min(...indices), lastIndex: Math.max(...indices), heap: heap.usedSize })
       }
+      // These 111 document names span more than one server block in each
+      // 120000-document tab. Include unloaded matches in the actual header action.
+      const prefix = kind === 'generated:weldingJournal' ? 'J2-999' : 'PRE-NK-99'
+      const search = grid.getByRole('textbox', { name: 'Поиск документов', exact: true })
+      await search.fill(prefix)
+      await expect(grid.getByText('Найдено: 111', { exact: true })).toBeVisible({ timeout: 120_000 })
+      const header = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
+      await header.click()
+      await expect(grid.getByText('Выбрано: 111', { exact: true })).toBeVisible({ timeout: 120_000 })
+      await expect(header).toBeFocused()
+      await page.keyboard.press('Space')
+      await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
+      await expect(header).toBeFocused()
+      await search.clear()
+      await expect(grid.getByText(`Найдено: ${total}`, { exact: true })).toBeVisible({ timeout: 120_000 })
     }
     expect(errors).toEqual([])
   } finally {

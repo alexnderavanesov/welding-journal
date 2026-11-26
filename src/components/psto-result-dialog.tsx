@@ -318,6 +318,7 @@ export function PstoResultDialog({
       )}
 
       <ResultDialogFooter
+        submitLabel={systemDocumentCreationPlan.batchSubmitLabel}
         saveBlockReason={saveBlockReason}
         blockReasonActions={rootCauseActions.map((action) => ({
           key: action.key,

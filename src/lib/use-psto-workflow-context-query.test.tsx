@@ -173,6 +173,7 @@ describe('PSTO workflow query load policy', () => {
   })
 
   it('does not refetch candidates for checkbox-only changes', async () => {
+    serverMocks.listPstoWorkflowRows.mockResolvedValue([{ id: 4 }, { id: 6 }])
     const queryClient = createQueryClient()
     const { rerender } = renderHook(
       ({ request }: { request: PstoWorkflowRowsRequest }) =>

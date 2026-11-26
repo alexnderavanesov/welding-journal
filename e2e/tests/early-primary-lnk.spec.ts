@@ -5,6 +5,7 @@ import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-se
 import { eq } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
+import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { pstoActionRow } from './psto-grid-helpers'
@@ -125,6 +126,9 @@ async function seedJoint(joint: string, historical: boolean) {
     const rows = await tx.select().from(weldJoints).where(eq(weldJoints.id, id))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
   })
+  // These raw historical rows also omit the calculated final status. Publish it
+  // before the user opens the editor and captures the row version.
+  await ensureDispatcherTaskIndexFresh()
   return id
 }
 

@@ -63,6 +63,8 @@ for (const kind of ['generated', 'system'] as const) test(`document registry out
   const downloaded = page.waitForEvent('download')
   await modal.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
   const download = await downloaded
+  const title = (await frame.getByRole('heading', { level: 1 }).innerText()).replace(': ', ' — ')
+  expect(download.suggestedFilename().replace(/ \d{2}\.\d{2}\.\d{4} \d{2}꞉\d{2}\.xlsx$/, '')).toBe(title)
   expect(await download.failure()).toBeNull()
   const workbook = XLSX.read(await readFile((await download.path())!)), sheet = workbook.Sheets[workbook.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 })
@@ -79,6 +81,9 @@ for (const kind of ['generated', 'system'] as const) test(`document registry out
   // Grouping must still output leaves rather than only the visible group rows.
   await openDocumentGridColumnMenu(page, 'line')
   await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
+  // Grouping fetches a new grid root. Assert the group actually appeared
+  // before asking for a report on that view.
+  await expect(grid.locator('.ag-row-group').filter({ hasText: 'LINE-A' }).first()).toBeVisible()
   await grid.getByRole('button', { name: 'Показать', exact: true }).click()
   await modal.getByRole('button', { name: 'Далее', exact: true }).click()
   await expect(frame.getByText(renamed, { exact: true })).toBeVisible()

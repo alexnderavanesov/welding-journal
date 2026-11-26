@@ -113,6 +113,13 @@ describe('S3 PDF storage without a database', () => {
     await expect(store.remove(key())).rejects.toThrow('недоступно')
     expect(send).toHaveBeenCalledTimes(1)
   })
+  it('distinguishes a zero-length stored PDF from an unavailable service on HEAD', async () => {
+    const { send, store } = fixture()
+    send.mockResolvedValueOnce({ ContentLength: 0 }).mockRejectedValueOnce({ $metadata: { httpStatusCode: 503 } })
+    await expect(store.size(key())).rejects.toThrow('Размер PDF в хранилище не соответствует редакции.')
+    await expect(store.size(key())).rejects.toThrow('Хранилище PDF недоступно.')
+    expect(send.mock.calls.map(([command]) => command.constructor)).toEqual([HeadObjectCommand, HeadObjectCommand])
+  })
   it('honors the cleanup deadline before issuing a request', async () => {
     const { send, store } = fixture()
     await expect(store.remove(key(), AbortSignal.abort())).rejects.toThrow()

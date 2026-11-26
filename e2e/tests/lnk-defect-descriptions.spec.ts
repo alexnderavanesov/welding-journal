@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import { withE2eDatabase } from '../database'
+import { withLineProgramFixture } from '../line-program-fixtures'
 
 const JOINT = 'F-DEFECTS'
 const CONCURRENT_JOINT = 'F-DEFECTS-CONCURRENT'
@@ -86,6 +87,70 @@ test('shows and edits independent VIK, UZK and PVK defect descriptions', async (
   expect(history.some(row => row.entity === 'pre_heat_treatment_controls' && row.changes.defectDescription?.after === 'Трещина до ТО' && row.changes.defectDescription.origin === 'user')).toBe(true)
 })
 
+test('RK exposure descriptions save the blue default, typed defects and intentional blanks at their own stage', async ({ page }) => {
+  const joint = 'F84521'
+  const empty = '0-250:\n250-500:\n500-0:'
+  const beforeHeat = '0-250: Старый дефект\n250-500:\n500-0:'
+  await withLineProgramFixture(async db => {
+    const { rows: [row] } = await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,
+      officiality,revision_actuality,connection_type,d1,d2,t1,t2,has_rk,rk_control_basis,rk_result,rk_conclusion,
+      rk_conclusion_date,lnk_defect_description,lnk_created_at,lnk_updated_at)
+      values ('E2E РК','RK','RK-1',$1,'2026-08-15','действующий','актуальная','СШ',219,219,6,6,'да','проект',
+      'ремонт','РК-2','2026-08-17',$2,now(),now())
+      returning id`, [joint, empty])
+    await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,result,conclusion_name,conclusion_date,defect_description)
+      values ($1,'РК','вырез','РК-1','2026-08-16',$2)`, [row.id, beforeHeat])
+  })
+  const stored = () => withE2eDatabase(async db => (await db.query(`select w.lnk_defect_description as main, p.defect_description as pre
+    from weld_joints w join pre_heat_treatment_controls p on p.weld_joint_id=w.id and p.method='РК' where w.joint=$1`, [joint])).rows[0])
+  await configureDefectColumns(page, new Set(['joint', 'rkExposureScheme', 'lnkDefectDescription', 'preRkExposureScheme', 'preRkDefectDescription']))
+  await page.goto('/lnk')
+  const row = lnkGridRow(page, joint)
+  await expect(row).toBeVisible()
+  const title = 'Снимки и описание дефектов РК'
+  const main = await openDefectEditor(page, row, 'rkExposureScheme', title)
+  const descriptionHeading = 'Описание дефекта (запись после «:»)'
+  await expect(main.getByText(descriptionHeading, { exact: true })).toHaveCSS('text-transform', 'uppercase')
+  await expect(main.getByPlaceholder('ДНО', { exact: true })).toHaveCount(3)
+  await expect(main.getByPlaceholder('ДНО', { exact: true }).first()).toHaveClass(/placeholder:text-sky-600/)
+  await main.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await expect(main).toBeHidden()
+  expect(await stored()).toMatchObject({ main: empty, pre: beforeHeat })
+
+  await openDefectEditor(page, row, 'rkExposureScheme', title)
+  await main.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(main).toBeHidden()
+  const allDno = '0-250: ДНО\n250-500: ДНО\n500-0: ДНО'
+  await expect.poll(stored).toMatchObject({ main: allDno, pre: beforeHeat })
+
+  // The two stages can have different results on the same joint.
+  await withLineProgramFixture(db => db.query("update weld_joints set rk_result='годен' where joint=$1", [joint]))
+  await page.reload()
+  await openDefectEditor(page, row, 'lnkDefectDescription', title)
+  await expect(main.getByPlaceholder('Например, ДНО или описание дефекта').first()).toHaveValue('ДНО')
+  await expect(main.getByPlaceholder('ДНО', { exact: true })).toHaveCount(0)
+  await main.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await expect(main).toBeHidden()
+
+  const pre = await openDefectEditor(page, row, 'preRkDefectDescription', title + ' до ТО')
+  await expect(pre.getByText(descriptionHeading, { exact: true })).toBeVisible()
+  const descriptions = pre.getByPlaceholder('ДНО', { exact: true })
+  await expect(descriptions.first()).toHaveValue('Старый дефект')
+  await descriptions.first().clear()
+  expect(await descriptions.first().evaluate(input => input.matches(':placeholder-shown'))).toBe(true)
+  await descriptions.nth(1).pressSequentially('Пора')
+  await descriptions.nth(2).fill(' ')
+  expect(await descriptions.nth(2).evaluate(input => input.matches(':placeholder-shown'))).toBe(false)
+  await pre.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(pre).toBeHidden()
+  await expect.poll(stored).toMatchObject({ main: allDno, pre: '0-250: ДНО\n250-500: Пора\n500-0:' })
+
+  await openDefectEditor(page, row, 'preRkExposureScheme', title + ' до ТО')
+  await expect(descriptions.nth(1)).toHaveValue('Пора')
+  await expect(descriptions.nth(2)).toHaveValue('')
+  await pre.getByRole('button', { name: 'Отмена', exact: true }).click()
+})
+
 test('does not overwrite a newer defect description from another user', async ({ browser, baseURL }) => {
   await seedDefectDescriptionJoint(CONCURRENT_JOINT)
   const firstContext = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL, viewport: { width: 1600, height: 1000 } })
@@ -114,7 +179,7 @@ test('does not overwrite a newer defect description from another user', async ({
     await expect(firstDialog).toBeHidden()
     await secondDialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
 
-    await expect(secondPage.getByRole('status')).toContainText('уже изменен другим пользователем')
+    await expect(secondPage.getByRole('status').filter({ hasText: 'уже изменен другим пользователем' })).toBeVisible()
     await expect(secondDialog).toBeVisible()
     await expect.poll(() => loadDefectDescriptions(CONCURRENT_JOINT)).toMatchObject({
       vikDefectDescription: 'Изменение первого пользователя',
@@ -151,10 +216,10 @@ async function editDefectCell({
   await expect(cell).toHaveText(value)
 }
 
-async function configureDefectColumns(page: Page) {
+async function configureDefectColumns(page: Page, visibleFields = DEFECT_FIELD_KEYS) {
   const hiddenFieldKeys = LNK_VISIBLE_FIELD_SECTIONS
     .flatMap((section) => section.fields.map((field) => field.key))
-    .filter((fieldKey) => !DEFECT_FIELD_KEYS.has(fieldKey))
+    .filter((fieldKey) => !visibleFields.has(fieldKey))
   await page.addInitScript(({ storageKey, hiddenFields }) => {
     window.localStorage.setItem(storageKey, JSON.stringify({
       activePreset: 'custom',

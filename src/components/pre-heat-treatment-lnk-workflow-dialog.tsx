@@ -912,6 +912,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         </div>
       )}
 
+      {creationPlan.familySummary && (
+        <p role="status" className="shrink-0 px-5 py-2 text-sm font-medium text-slate-800">{creationPlan.familySummary}</p>
+      )}
       <RequestDialogFooter
         isPending={mutation.isPending}
         isCreateDisabled={Boolean(saveBlockReason)}
@@ -926,11 +929,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         disabledReasonActionLabel={creationPlanError && workspaceTab !== 'documents'
           ? `Открыть ${mode === 'request' ? 'заявки' : 'заключения'} и имена`
           : undefined}
-        submitLabel={mode === 'request'
-          ? requestSubmitMode === 'extend'
-            ? 'Добавить в заявку до ТО'
-            : 'Создать заявку до ТО'
-          : 'Сохранить результат до ТО'}
+        submitLabel={mode === 'request' && requestSubmitMode === 'extend'
+          ? 'Добавить в заявку до ТО'
+          : creationPlan.batchSubmitLabel ?? (mode === 'request' ? 'Создать заявку до ТО' : 'Сохранить результат до ТО')}
         onDisabledReasonAction={creationPlanError && workspaceTab !== 'documents' ? () => setWorkspaceTab('documents') : undefined}
         onClose={onClose}
         onSubmit={() => onRunProtectedEdit(

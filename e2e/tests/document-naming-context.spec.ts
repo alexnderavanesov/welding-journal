@@ -304,7 +304,7 @@ for (const lostResponse of ['abort', 'truncated', 'gateway'] as const) test(`bro
     else if (lostResponse === 'gateway') await route.fulfill({ status: 502, contentType: 'text/plain', body: 'Bad Gateway' })
     else await route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
   })
-  const submit = dialog.getByRole('button', { name: 'Создать заявку', exact: true })
+  const submit = dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true })
   await expect(submit).toBeEnabled()
   if (lostResponse === 'gateway') {
     const owner = await withE2eDatabase(async db => (await db.query("select id from auth_users where email='owner@e2e.test'")).rows[0])
@@ -330,8 +330,9 @@ for (const lostResponse of ['abort', 'truncated', 'gateway'] as const) test(`bro
   // The error path refreshes rows: already requested joints are no longer
   // eligible. The UI must block duplicate creation, and the server must also
   // reject the exact old payload if a disconnected client replays it.
-  await expect(submit).toBeDisabled()
-  await expect(submit).toHaveAttribute('title', /выберите один или несколько стыков/)
+  const emptySubmit = dialog.getByRole('button', { name: 'Создать заявку', exact: true })
+  await expect(emptySubmit).toBeDisabled()
+  await expect(emptySubmit).toHaveAttribute('title', /выберите один или несколько стыков/)
   const retry = await page.request.post(submitted!.url, { data: submitted!.body,
     headers: { origin: new URL(submitted!.url).origin, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
   })
@@ -414,11 +415,11 @@ for (const role of ['owner', 'lnk-only', 'psto-only'] as const) test(`${role}: r
       await dialog.getByLabel('Дата заявки', { exact: true }).fill('2026-09-30')
       await dialog.getByRole('button', { name: 'Дополнительные действия с номерами и именами' }).click()
       await page.getByRole('button', { name: 'Обновить номера и имена', exact: true }).click()
-      await expect(dialog.getByRole('button', { name: 'Создать заявку', exact: true })).toBeEnabled()
+      await expect(dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true })).toBeEnabled()
       const beforeInvalidDate = await snapshot()
       const rejectedResponse = page.waitForResponse(response => rpcName(response.url()).startsWith(psto ? 'savePstoRepeatWorkflow_' : 'updateWeldJoints_'))
-      await expect(dialog.getByRole('button', { name: 'Создать заявку', exact: true })).toBeEnabled()
-      await dialog.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+      await expect(dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true })).toBeEnabled()
+      await dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true }).click()
       const rejectedBody = await (await rejectedResponse).text()
       expect(rejectedBody).not.toMatch(/01\.10\.2026|2026-10-01/)
       const rejected = await deserializeRpcResponse(rejectedBody) as { error?: Error }
@@ -443,8 +444,8 @@ for (const role of ['owner', 'lnk-only', 'psto-only'] as const) test(`${role}: r
     for (let i = 0; i < 2; i++) expect(names[i]).toMatch(psto
       ? new RegExp(`^pstoRequest-E2E naming context-CONTEXT-${i + 1}-CONTEXT-L${i + 1}-[0-9]+$`)
       : new RegExp(`^Заявка НК №CONTEXT-${i + 1}-[0-9]+$`))
-    await expect(dialog.getByRole('button', { name: 'Создать заявку', exact: true })).toBeEnabled({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+    await expect(dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true })).toBeEnabled({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Создать 2 заявки', exact: true }).click()
     await expect(dialog).toBeHidden({ timeout: 10_000 })
     await withE2eDatabase(async db => {
       const facts = (await db.query(`select subtitle_code,line,${psto ? 'psto_request' : 'vik_request'} as request from weld_joints where project_title=$1 order by line`, [project])).rows
